@@ -21,8 +21,8 @@ logotipo y cómo regenerar los iconos: `scripts/marca/README.md`.
 ## Primeros pasos en una máquina nueva
 
 ```bash
-git clone https://github.com/Jorgeperezr/clinica-odontologica.git
-cd clinica-odontologica
+git clone https://github.com/Jorgeperezr/clinube.git
+cd clinube
 bash scripts/comprobar-entorno.sh
 ```
 

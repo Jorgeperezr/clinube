@@ -28,8 +28,8 @@ sistema sea crítico para la operación. El código es idéntico en ambas.
    `docker compose`.
 2. **Clonar el repo:**
    ```bash
-   git clone https://github.com/Jorgeperezr/clinica-odontologica.git
-   cd clinica-odontologica
+   git clone https://github.com/Jorgeperezr/clinube.git
+   cd clinube
    ```
 3. **Configurar el entorno:**
    ```bash

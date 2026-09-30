@@ -46,7 +46,7 @@ version_minima() {
 }
 
 echo "════════════════════════════════════════════════════════════════"
-echo " Entorno para Clinube (clinica-odontologica)"
+echo " Entorno para Clinube"
 echo "════════════════════════════════════════════════════════════════"
 
 # ── 0. Dónde estamos ─────────────────────────────────────────────────
