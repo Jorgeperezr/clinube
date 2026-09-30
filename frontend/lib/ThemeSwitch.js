@@ -1,0 +1,170 @@
+"use client";
+
+/**
+ * Selector de apariencia: Claro · Oscuro · Sistema.
+ *
+ * Tres estados explícitos en vez de un interruptor de dos: "Sistema"
+ * es una preferencia real y distinta —seguir al sistema operativo— y
+ * esconderla detrás de un toggle obliga a la persona a re-elegir cada
+ * vez que su equipo cambia de modo.
+ *
+ * El indicador se desliza entre opciones; en el modo de movimiento
+ * reducido simplemente aparece (lo resuelve globals.css).
+ *
+ * Debajo, «Sin color»: el panel en grises, como el logotipo impreso en
+ * blanco y negro. Es de cada persona y de este navegador —no cambia lo
+ * que ven los demás—; la clínica entera puede elegirlo como tema en
+ * Configuración → Identidad visual.
+ */
+
+import { useEffect, useState } from "react";
+
+import {
+  onColorModeChanged, onSinColorChanged, readColorMode, readSinColor, setColorMode, setSinColor,
+} from "./theme";
+
+const OPTIONS = [
+  { key: "light", label: "Claro", icon: SunIcon },
+  { key: "dark", label: "Oscuro", icon: MoonIcon },
+  { key: "system", label: "Sistema", icon: SystemIcon },
+];
+
+const svg = {
+  width: 15, height: 15, viewBox: "0 0 24 24", fill: "none",
+  stroke: "currentColor", strokeWidth: 1.9,
+  strokeLinecap: "round", strokeLinejoin: "round",
+};
+
+function SunIcon() {
+  return (
+    <svg {...svg}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+    </svg>
+  );
+}
+function MoonIcon() {
+  return (
+    <svg {...svg}>
+      <path d="M20 14.5A8.2 8.2 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />
+    </svg>
+  );
+}
+function SystemIcon() {
+  return (
+    <svg {...svg}>
+      <rect x="2.8" y="4.5" width="18.4" height="12" rx="1.6" />
+      <path d="M8.5 20h7M12 16.5V20" />
+    </svg>
+  );
+}
+
+function GrisesIcon() {
+  return (
+    <svg {...svg}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5v17" />
+      <path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export default function ThemeSwitch({ compact = false }) {
+  const [mode, setMode] = useState("system");
+  const [sinColor, setSinColorEstado] = useState(false);
+
+  useEffect(() => {
+    setMode(readColorMode());
+    setSinColorEstado(readSinColor());
+    const a = onColorModeChanged((d) => setMode(d.mode));
+    const b = onSinColorChanged(setSinColorEstado);
+    return () => { a(); b(); };
+  }, []);
+
+  const index = Math.max(0, OPTIONS.findIndex((o) => o.key === mode));
+
+  return (
+    <div>
+      {!compact && (
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em",
+                      textTransform: "uppercase", color: "var(--nav-ink-soft)",
+                      marginBottom: 7 }}>
+          Apariencia
+        </div>
+      )}
+      <div role="radiogroup" aria-label="Apariencia"
+           style={{
+             position: "relative", display: "grid",
+             /* minmax(0,1fr) fuerza columnas EXACTAMENTE iguales: con
+                1fr a secas la columna de "Sistema" crecía con su texto
+                y el indicador dejaba de coincidir. */
+             gridTemplateColumns: `repeat(${OPTIONS.length}, minmax(0, 1fr))`,
+             gap: 0, padding: 3, borderRadius: 999,
+             background: "var(--nav-hover)",
+             border: "1px solid var(--nav-line)",
+           }}>
+        <span aria-hidden="true"
+              style={{
+                position: "absolute", top: 3, bottom: 3, left: 3,
+                width: `calc((100% - 6px) / ${OPTIONS.length})`,
+                transform: `translateX(${index * 100}%)`,
+                borderRadius: 999,
+                background: "var(--petrol)",
+                transition: "transform var(--dur) var(--ease)",
+              }} />
+        {OPTIONS.map((o) => {
+          const active = o.key === mode;
+          const Icon = o.icon;
+          return (
+            <button key={o.key} type="button" role="radio" aria-checked={active}
+                    title={o.label} aria-label={o.label}
+                    onClick={() => setColorMode(o.key)}
+                    style={{
+                      position: "relative", zIndex: 1, minWidth: 0,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      padding: "7px 0",
+                      background: "transparent", border: "none", borderRadius: 999,
+                      color: active ? "var(--nav-active-ink)" : "var(--nav-ink-soft)",
+                      cursor: "pointer",
+                      transition: "color var(--dur) var(--ease)",
+                    }}>
+              <Icon />
+            </button>
+          );
+        })}
+      </div>
+      <button type="button" role="switch" aria-checked={sinColor}
+              onClick={() => setSinColor(!sinColor)}
+              title="Sin color: el panel en grises, solo para ti y en este navegador"
+              aria-label="Sin color"
+              style={{
+                marginTop: 8, width: "100%", display: "flex", alignItems: "center",
+                justifyContent: compact ? "center" : "flex-start", gap: 8,
+                padding: compact ? "7px 0" : "6px 10px", borderRadius: 999, cursor: "pointer",
+                background: sinColor ? "var(--nav-hover)" : "transparent",
+                border: "1px solid var(--nav-line)", color: "var(--nav-ink-soft)",
+                fontSize: 12.5, fontWeight: 600,
+              }}>
+        <GrisesIcon />
+        {!compact && (
+          <>
+            <span style={{ flex: 1, textAlign: "left", color: sinColor ? "var(--nav-ink)" : undefined }}>
+              Sin color
+            </span>
+            <span aria-hidden="true" style={{
+              width: 28, height: 16, borderRadius: 999, flex: "none", position: "relative",
+              background: sinColor ? "var(--nav-ink)" : "var(--nav-line)",
+              transition: "background var(--dur) var(--ease)",
+            }}>
+              <span style={{
+                position: "absolute", top: 2, left: sinColor ? 14 : 2, width: 12, height: 12,
+                borderRadius: "50%", background: sinColor ? "var(--nav-bg)" : "var(--nav-ink-soft)",
+                transition: "left var(--dur) var(--ease)",
+              }} />
+            </span>
+          </>
+        )}
+      </button>
+    </div>
+  );
+}

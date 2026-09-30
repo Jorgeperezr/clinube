@@ -1,0 +1,926 @@
+"""Tests Sprint 22: plantillas, presupuesto automático, progreso,
+seguimientos, documentos con categorías clínicas y receta PDF."""
+
+from datetime import date, timedelta
+from decimal import Decimal
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+from rest_framework.test import APITestCase
+
+from apps.accounts.models import User
+from apps.agenda.models import Doctor
+from apps.common.models import Tenant
+from apps.patients.models import Patient
+
+
+class Sprint22Base(APITestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(
+            name="Clínica S22", ruc="1791234567001",
+            address="Av. Central 123", phone="+59372570001",
+        )
+        self.admin = User.objects.create_user(
+            email="admin@s22.ec", password="superseguro123", role="admin", tenant=self.tenant,
+        )
+        du = User.objects.create_user(
+            email="doc@s22.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Sofía Vega",
+        )
+        self.doctor = Doctor.objects.create(
+            tenant=self.tenant, user=du, license_number="MSP-12345",
+        )
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Luis", last_name="Paz", national_id="1102003001",
+        )
+        from apps.configuration.models import Treatment
+        from apps.specialties.models import Specialty
+        spec = Specialty.objects.create(tenant=self.tenant, name="Rehab S22")
+        self.t1 = Treatment.objects.create(
+            tenant=self.tenant, specialty=spec, name="Corona S22", base_price=Decimal("300.00"),
+        )
+        self.t2 = Treatment.objects.create(
+            tenant=self.tenant, specialty=spec, name="Limpieza S22", base_price=Decimal("50.00"),
+        )
+
+
+class TemplateAndBudgetTests(Sprint22Base):
+    def test_template_apply_and_auto_budget_with_progress(self):
+        self.client.force_authenticate(user=self.admin)
+
+        # Crear plantilla con 2 ítems
+        resp = self.client.post("/api/v1/clinical/plan-templates/", {
+            "name": "Rehabilitación básica",
+            "description": "Protocolo estándar",
+            "items": [
+                {"treatment": str(self.t1.id), "order": 1},
+                {"treatment": str(self.t2.id), "order": 2},
+            ],
+        }, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        template_id = resp.data["id"]
+
+        # Listar: total estimado = 350
+        resp = self.client.get("/api/v1/clinical/plan-templates/")
+        self.assertEqual(resp.data[0]["total_estimated"], "350.00")
+
+        # Aplicar al paciente → plan con 2 ítems y progreso 0%
+        resp = self.client.post(
+            f"/api/v1/patients/{self.patient.id}/apply-plan-template/",
+            {"template_id": template_id},
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        plan_id = resp.data["id"]
+        self.assertEqual(len(resp.data["items"]), 2)
+        self.assertEqual(resp.data["progress"], {"done": 0, "total": 2, "percent": 0})
+        item1 = resp.data["items"][0]["id"]
+
+        # Presupuesto automático desde el plan
+        resp = self.client.post(f"/api/v1/treatment-plans/{plan_id}/generate-budget/")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.data["total_amount"], "350.00")
+        self.assertEqual(len(resp.data["items"]), 2)
+
+        # Progreso: marcar 1 de 2 como realizado → 50%
+        resp = self.client.patch(f"/api/v1/treatment-plan-items/{item1}/", {"status": "done"})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/treatment-plans/")
+        plans = resp.data.get("results", resp.data)
+        self.assertEqual(plans[0]["progress"], {"done": 1, "total": 2, "percent": 50})
+
+
+class FollowUpTests(Sprint22Base):
+    def test_follow_up_alerts_due_and_overdue(self):
+        from apps.clinical.models import Evolution
+        Evolution.objects.create(
+            tenant=self.tenant, patient=self.patient, created_by=self.admin,
+            type="clinical_note", date=date.today() - timedelta(days=10),
+            notes="Control en 7 días", follow_up_date=date.today() - timedelta(days=3),
+        )
+        Evolution.objects.create(
+            tenant=self.tenant, patient=self.patient, created_by=self.admin,
+            type="clinical_note", date=date.today(), notes="Futuro",
+            follow_up_date=date.today() + timedelta(days=30),  # NO debe alertar
+        )
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.get("/api/v1/clinical/follow-ups/")
+        self.assertEqual(len(resp.data["results"]), 1)
+        self.assertEqual(resp.data["results"][0]["days_overdue"], 3)
+
+
+class DocumentTests(Sprint22Base):
+    def test_upload_clinical_photo(self):
+        self.client.force_authenticate(user=self.admin)
+        file = SimpleUploadedFile("rx-16.png", b"fake-image-bytes", content_type="image/png")
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/documents/", {
+            "doc_type": "radiograph", "description": "Rx periapical pieza 16", "file": file,
+        }, format="multipart")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/documents/")
+        docs = resp.data.get("results", resp.data)
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["doc_type"], "radiograph")
+
+
+class PrescriptionPDFTests(Sprint22Base):
+    def test_prescription_pdf_generated(self):
+        from apps.clinical.models import Evolution
+        evo = Evolution.objects.create(
+            tenant=self.tenant, patient=self.patient,
+            doctor=self.doctor, created_by=self.doctor_user,
+            type="prescription", date=date.today(),
+            notes="Amoxicilina 500mg\nCada 8 horas por 7 días",
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.get(f"/api/v1/evolutions/{evo.id}/prescription-pdf/")
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content)
+        self.assertTrue(body.startswith(b"%PDF"))
+
+    def test_non_prescription_404(self):
+        from apps.clinical.models import Evolution
+        evo = Evolution.objects.create(
+            tenant=self.tenant, patient=self.patient, created_by=self.admin,
+            type="clinical_note", date=date.today(), notes="No es receta",
+        )
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.get(f"/api/v1/evolutions/{evo.id}/prescription-pdf/")
+        self.assertEqual(resp.status_code, 404)
+
+
+class DoctorSignatureTests(APITestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="T firma")
+        du = User.objects.create_user(
+            email="d@firma.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Firma",
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du)
+        self.doctor_user = du
+
+    def test_doctor_saves_and_reads_own_signature(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        png_1px = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
+                   "FcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+        resp = self.client.post("/api/v1/doctors/me/signature/", {
+            "signature_image": png_1px, "license_number": "MSP-12345",
+        })
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.data["has_signature"])
+        resp = self.client.get("/api/v1/doctors/me/signature/")
+        self.assertEqual(resp.data["license_number"], "MSP-12345")
+        self.assertTrue(resp.data["signature_image"].startswith("data:image/png"))
+
+    def test_reception_cannot_use_signature_endpoint(self):
+        r = User.objects.create_user(
+            email="r@firma.ec", password="superseguro123", role="reception", tenant=self.tenant,
+        )
+        self.client.force_authenticate(user=r)
+        self.assertEqual(self.client.get("/api/v1/doctors/me/signature/").status_code, 403)
+
+    def test_prescription_pdf_with_signature(self):
+        from datetime import date
+
+        from apps.clinical.models import Evolution
+        self.doctor.signature_image = (
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
+            "FcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        self.doctor.save()
+        patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Rx", last_name="Firmada", national_id="4040404040",
+        )
+        evo = Evolution.objects.create(
+            tenant=self.tenant, patient=patient, doctor=self.doctor,
+            type="prescription", date=date.today(), notes="Amoxicilina 500mg c/8h por 7 días",
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.get(f"/api/v1/evolutions/{evo.id}/prescription-pdf/")
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content) if hasattr(resp, "streaming_content") else resp.content
+        self.assertTrue(body.startswith(b"%PDF"))
+
+
+class TemplateItemsAPITests(APITestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="T titem")
+        self.admin = User.objects.create_user(
+            email="a@titem.ec", password="superseguro123", role="admin", tenant=self.tenant,
+        )
+        from apps.configuration.models import Treatment
+        from apps.specialties.models import Specialty
+        sp = Specialty.objects.create(tenant=self.tenant, name="Esp TI")
+        self.treatment = Treatment.objects.create(
+            tenant=self.tenant, specialty=sp, name="Trat TI", base_price="120.00",
+        )
+
+    def test_build_template_via_api(self):
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.post("/api/v1/clinical/plan-templates/", {
+            "name": "Plantilla API", "description": "vía panel",
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        template_id = resp.data["id"]
+
+        resp = self.client.post(f"/api/v1/clinical/plan-templates/{template_id}/items/", {
+            "treatment": str(self.treatment.id),
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        item_id = resp.data["id"]
+
+        resp = self.client.get("/api/v1/clinical/plan-templates/")
+        tpl = next(t for t in resp.data if t["id"] == template_id)
+        self.assertEqual(len(tpl["items"]), 1)
+        self.assertEqual(tpl["total_estimated"], "120.00")
+
+        resp = self.client.delete(f"/api/v1/clinical/plan-template-items/{item_id}/")
+        self.assertEqual(resp.status_code, 204)
+
+
+class Form033FrontendContractTests(APITestCase):
+    """Contrato exacto que consume Form033Panel.js (Sprint 23)."""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="T 033fe")
+        du = User.objects.create_user(
+            email="d@033.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. MSP",
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du, license_number="MSP-777")
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Form", last_name="MSP", national_id="5050505050",
+        )
+
+    def test_create_form033_with_msp_literals(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/form033/", {
+            "date": "2026-07-11",
+            "motivo_consulta": "Dolor en molar inferior",
+            "embarazada": False,
+            "enfermedad_actual": "Dolor de 3 días",
+            "antecedentes_personales": {"Diabetes": {"checked": True, "detail": ""}},
+            "antecedentes_familiares": {"Cáncer": {"checked": True, "detail": ""}},
+            "examen_estomatognatico": {"Lengua": "Saburral"},
+            "temperatura": "36.8", "pulso": 72,
+            "frecuencia_respiratoria": 16, "presion_arterial": "120/80",
+        }, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        # Literal O: se arma solo desde la credencial (oculto en la UI)
+        self.assertIn("Dra. MSP", resp.data["registered_by"])
+        self.assertIn("MSP-777", resp.data["registered_by"])
+
+        # El GET lo lista para el panel
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/form033/")
+        data = resp.data if isinstance(resp.data, list) else resp.data.get("results", [])
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["antecedentes_personales"]["Diabetes"]["checked"], True)
+
+    def test_cie10_search_by_code_and_name(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        # Por código
+        resp = self.client.get("/api/v1/cie10/?q=K02")
+        codes = [r["code"] for r in resp.data["results"]]
+        self.assertTrue(any(c.startswith("K02") for c in codes))
+        # Por nombre
+        resp = self.client.get("/api/v1/cie10/?q=caries")
+        self.assertTrue(len(resp.data["results"]) > 0)
+
+
+class DiagnosisKindTests(APITestCase):
+    """Literal N: diagnóstico con CIE-10 y tipo PRE/DEF."""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="T diagN")
+        du = User.objects.create_user(
+            email="d@diagn.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Dx",
+        )
+        Doctor.objects.create(tenant=self.tenant, user=du)
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Dx", last_name="Test", national_id="6060606060",
+        )
+
+    def test_create_diagnosis_with_kind(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/diagnoses/", {
+            "code": "K02.1", "description": "Caries de la dentina",
+            "tooth_fdi_code": "16", "diagnosis_kind": "def", "date": "2026-07-12",
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.data["diagnosis_kind"], "def")
+        self.assertEqual(resp.data["kind_display"], "Definitivo")
+
+
+class CpoCeoAndExportTests(APITestCase):
+    """Sprint 25: índices CPO-ceo (J) y export del formulario 033 a PDF."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="T cpo")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        du = User.objects.create_user(
+            email="d@cpo.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. CPO", 
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du, license_number="MSP-999")
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Cpo", last_name="Test", national_id="7070707070",
+        )
+
+    def _set_tooth(self, fdi, code):
+        from apps.clinical.models import OdontogramState, ToothRecord
+        state = OdontogramState.objects.get(tenant=self.tenant, code=code)
+        ToothRecord.objects.create(
+            tenant=self.tenant, patient=self.patient, tooth_fdi_code=fdi,
+            surface="whole", state=state, date="2026-07-12",
+        )
+
+    def test_cpo_ceo_calculation(self):
+        # Permanentes: caries en 16, obturado en 26, extracción indicada en 36
+        self._set_tooth("16", "CARIES")
+        self._set_tooth("26", "OBTURADO")
+        self._set_tooth("36", "INDICADA_EXTRACCION")
+        # Temporal: caries en 55
+        self._set_tooth("55", "CARIES")
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/cpo-ceo/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.data["cpo"]["C"], 1)
+        self.assertEqual(resp.data["cpo"]["O"], 1)
+        self.assertEqual(resp.data["cpo"]["P"], 1)
+        self.assertEqual(resp.data["cpo"]["total"], 3)
+        self.assertEqual(resp.data["ceo"]["c"], 1)
+        self.assertEqual(resp.data["ceo"]["total"], 1)
+
+    def test_form033_pdf_export(self):
+        self._set_tooth("16", "CARIES")
+        self.client.force_authenticate(user=self.doctor_user)
+        # Crear una consulta 033 para que el PDF tenga contenido
+        self.client.post(f"/api/v1/patients/{self.patient.id}/form033/", {
+            "date": "2026-07-12", "motivo_consulta": "Control",
+            "antecedentes_personales": {}, "antecedentes_familiares": {},
+            "examen_estomatognatico": {},
+        }, format="json")
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/form033/export-pdf/")
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content) if hasattr(resp, "streaming_content") else resp.content
+        self.assertTrue(body.startswith(b"%PDF"))
+
+
+class OdontogramSurfaceTests(APITestCase):
+    """Sprint 26: registro por superficie + recesión/movilidad por pieza."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="T surf")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        du = User.objects.create_user(
+            email="d@surf.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Surf",
+        )
+        Doctor.objects.create(tenant=self.tenant, user=du)
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Sur", last_name="Face", national_id="8080808080",
+        )
+
+    def test_register_state_on_specific_surface(self):
+        from apps.clinical.models import OdontogramState
+        caries = OdontogramState.objects.get(tenant=self.tenant, code="CARIES")
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/tooth-records/", {
+            "tooth_fdi_code": "16", "surface": "occlusal", "state": str(caries.id),
+            "date": "2026-07-13",
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.data["surface"], "occlusal")
+
+        # El odontograma actual devuelve la superficie pintada
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/odontogram/current/")
+        teeth = resp.data["teeth"]
+        occ = [t for t in teeth if t["tooth_fdi_code"] == "16" and t["surface"] == "occlusal"]
+        self.assertEqual(len(occ), 1)
+
+    def test_register_mobility_and_recession(self):
+        from apps.clinical.models import OdontogramState
+        sano = OdontogramState.objects.get(tenant=self.tenant, code="SANO")
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/tooth-records/", {
+            "tooth_fdi_code": "21", "surface": "whole", "state": str(sano.id),
+            "mobility": 2, "recession": 3, "date": "2026-07-13",
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.data["mobility"], 2)
+        self.assertEqual(resp.data["recession"], 3)
+
+
+class OralHealthIndicatorsTests(APITestCase):
+    """Literal I: indicadores de salud bucal guardados en el Form033."""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="T ind")
+        du = User.objects.create_user(
+            email="d@ind.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Ind",
+        )
+        Doctor.objects.create(tenant=self.tenant, user=du)
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Ind", last_name="Bucal", national_id="9090909090",
+        )
+
+    def test_save_and_read_indicators(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        indicadores = {
+            "higiene": {"16": {"placa": 2, "calculo": 1, "gingivitis": 1}},
+            "enfermedad_periodontal": "moderada",
+            "oclusion": "II",
+            "fluorosis": "leve",
+        }
+        # Crear el Form033 con indicadores
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/form033/", {
+            "date": "2026-07-13", "indicadores_salud_bucal": indicadores,
+        }, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        record_id = resp.data["id"]
+
+        # Leerlo de vuelta
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/form033/")
+        data = resp.data if isinstance(resp.data, list) else resp.data.get("results", [])
+        self.assertEqual(data[0]["indicadores_salud_bucal"]["oclusion"], "II")
+
+        # Actualizarlo vía PATCH del detalle
+        indicadores["fluorosis"] = "severa"
+        resp = self.client.patch(f"/api/v1/form033/{record_id}/", {
+            "indicadores_salud_bucal": indicadores,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.data["indicadores_salud_bucal"]["fluorosis"], "severa")
+
+
+class Form033FullExportTests(APITestCase):
+    """El export PDF reúne todas las secciones del paciente."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="T full")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        du = User.objects.create_user(
+            email="d@full.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Full",
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du, license_number="MSP-111")
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Full", last_name="Export", national_id="1212121212",
+        )
+
+    def test_pdf_includes_all_sections(self):
+        from apps.clinical.models import InformedConsent
+
+        # Consentimiento
+        InformedConsent.objects.create(
+            tenant=self.tenant, patient=self.patient, title="Consentimiento de ortodoncia",
+            body_text="Texto del consentimiento",
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+        # Form033 con indicadores
+        self.client.post(f"/api/v1/patients/{self.patient.id}/form033/", {
+            "date": "2026-07-13",
+            "indicadores_salud_bucal": {"oclusion": "I", "fluorosis": "leve", "higiene": {}},
+        }, format="json")
+        # Examen
+        self.client.post(f"/api/v1/patients/{self.patient.id}/exam-requests/", {
+            "category": "rayos_x", "detail": "Radiografía panorámica",
+        })
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/form033/export-pdf/")
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content) if hasattr(resp, "streaming_content") else resp.content
+        self.assertTrue(body.startswith(b"%PDF"))
+        # El PDF con varias secciones pesa más que uno vacío
+        self.assertGreater(len(body), 2000)
+
+
+class Form033XlsxExportTests(APITestCase):
+    """El formulario oficial del MSP se autocompleta con los datos del sistema."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="Clínica XLSX")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        du = User.objects.create_user(
+            email="d@xlsx.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Maria Perez Lopez",
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du, license_number="MSP-333")
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Carlos Andres", last_name="Vaca Ruiz",
+            national_id="1313131313", sex="H",
+        )
+
+    def test_official_template_is_autofilled(self):
+        import io
+
+        import openpyxl
+
+        from apps.clinical.models import OdontogramState, ToothRecord
+
+        self.client.force_authenticate(user=self.doctor_user)
+        # Datos: consulta 033 + caries en la 16 + diagnóstico
+        self.client.post(f"/api/v1/patients/{self.patient.id}/form033/", {
+            "date": "2026-07-20", "motivo_consulta": "Dolor molar",
+            "embarazada": False, "enfermedad_actual": "Dolor de 2 días",
+            "temperatura": "36.9", "presion_arterial": "120/80",
+        }, format="json")
+        caries = OdontogramState.objects.get(tenant=self.tenant, code="CARIES")
+        ToothRecord.objects.create(
+            tenant=self.tenant, patient=self.patient, tooth_fdi_code="16",
+            surface="whole", state=caries, date="2026-07-20",
+        )
+        self.client.post(f"/api/v1/patients/{self.patient.id}/diagnoses/", {
+            "code": "K02.1", "description": "Caries de la dentina",
+            "diagnosis_kind": "def", "date": "2026-07-20",
+        })
+
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/form033/export-xlsx/")
+        self.assertEqual(resp.status_code, 200, resp.content[:200])
+        body = resp.content
+        self.assertTrue(body.startswith(b"PK"))  # firma zip de xlsx
+
+        # Reabrir y verificar las celdas clave del mapeo
+        wb = openpyxl.load_workbook(io.BytesIO(body))
+        ws1, ws2 = wb["1"], wb["2"]
+        self.assertEqual(ws1["T3"].value, "Clínica XLSX")
+        # Celdas que combinan etiqueta+campo: el valor se anexa bajo la etiqueta
+        self.assertIn("Vaca", ws1["A4"].value)             # primer apellido
+        self.assertIn("Carlos", ws1["Y4"].value)           # primer nombre
+        self.assertIn("H", ws1["AW4"].value)               # sexo
+        self.assertIn("Dolor molar", ws1["A9"].value)
+        self.assertIn("EMBARAZADA: NO", ws1["A9"].value)
+        self.assertEqual(str(ws1["A34"].value), "36.9")
+        self.assertEqual(ws1["AZ68"].value, 1)             # CPO: C=1 (caries en 16)
+        self.assertEqual(ws2["Y16"].value, "K02.1")        # diagnóstico CIE
+        self.assertEqual(ws2["AE16"].value, "X")           # marcado DEF
+        self.assertEqual(ws2["A24"].value, "MSP-333")      # registro del profesional
+
+
+class ExamRequestPDFTests(APITestCase):
+    """Sprint 36: solicitud de examen con campos clínicos y PDF."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="Clínica Examen")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        du = User.objects.create_user(
+            email="d@examen.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dr. Examen Solicitante",
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du, license_number="MSP-555")
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Pac", last_name="Examen",
+            national_id="1515151515", sex="H", birth_date="1990-05-10",
+        )
+
+    def test_create_exam_with_clinical_fields(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/exam-requests/", {
+            "category": "rayos_x", "detail": "Radiografía panorámica",
+            "justification": "Evaluación de terceros molares",
+            "observations": "Paciente con dolor mandibular",
+            "priority": "urgent",
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.data["priority"], "urgent")
+        self.assertEqual(resp.data["priority_display"], "Urgente")
+        self.assertEqual(resp.data["justification"], "Evaluación de terceros molares")
+        # Estado inicial pendiente
+        self.assertEqual(resp.data["status"], "pending")
+
+    def test_generate_exam_pdf(self):
+        from apps.clinical.models import ExamRequest
+        from apps.configuration.models import ClinicBranding
+
+        # Datos de contacto de la clínica
+        ClinicBranding.objects.create(
+            tenant=self.tenant, display_name="Clínica Dental Norte",
+            address="Av. Principal 123", phone="0999999999", email="info@dentalnorte.ec",
+        )
+        exam = ExamRequest.objects.create(
+            tenant=self.tenant, patient=self.patient, category="biometria",
+            detail="Biometría hemática", justification="Control prequirúrgico",
+            priority="normal", requested_by=self.doctor_user,
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.get(
+            f"/api/v1/patients/{self.patient.id}/exam-requests/{exam.id}/pdf/"
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content) if hasattr(resp, "streaming_content") else resp.content
+        self.assertTrue(body.startswith(b"%PDF"))
+        self.assertGreater(len(body), 1500)
+
+    def test_pdf_404_for_missing_exam(self):
+        import uuid
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.get(
+            f"/api/v1/patients/{self.patient.id}/exam-requests/{uuid.uuid4()}/pdf/"
+        )
+        self.assertEqual(resp.status_code, 404)
+
+
+class ConsentImprovementsTests(APITestCase):
+    """Sprint 37: PDF, plantillas, estados e inmutabilidad de consentimientos."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="Clínica Consent")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        du = User.objects.create_user(
+            email="d@consent.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Consent",
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=du, license_number="MSP-777")
+        self.doctor_user = du
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Con", last_name="Sentimiento",
+            national_id="1616161616", sex="M", birth_date="1985-03-15",
+        )
+
+    def test_consent_pdf_generates(self):
+        from apps.clinical.models import InformedConsent
+        consent = InformedConsent.objects.create(
+            tenant=self.tenant, patient=self.patient, title="Consentimiento de extracción",
+            body_text="Declaro aceptar el procedimiento.", procedure="Extracción de pieza 18",
+            risks="Sangrado, inflamación", created_by=self.doctor_user,
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.get(f"/api/v1/consents/{consent.id}/pdf/")
+        self.assertEqual(resp.status_code, 200)
+        body = b"".join(resp.streaming_content) if hasattr(resp, "streaming_content") else resp.content
+        self.assertTrue(body.startswith(b"%PDF"))
+
+    def test_template_crud(self):
+        self.client.force_authenticate(user=self.doctor_user)
+        # Crear
+        resp = self.client.post("/api/v1/consent-templates/", {
+            "procedure": "endodoncia", "title": "Consentimiento de endodoncia",
+            "risks": "Fractura radicular, reinfección",
+            "body_text": "Acepto el tratamiento de conducto.",
+        })
+        self.assertEqual(resp.status_code, 201, resp.content)
+        tid = resp.data["id"]
+        self.assertEqual(resp.data["procedure_display"], "Endodoncia")
+        # Filtrar por procedimiento
+        resp = self.client.get("/api/v1/consent-templates/?procedure=endodoncia")
+        results = resp.data.get("results", resp.data) if isinstance(resp.data, dict) else resp.data
+        self.assertEqual(len(results), 1)
+        # Editar
+        resp = self.client.patch(f"/api/v1/consent-templates/{tid}/",
+                                 {"title": "Endodoncia (actualizada)"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        # Eliminar
+        resp = self.client.delete(f"/api/v1/consent-templates/{tid}/")
+        self.assertEqual(resp.status_code, 204)
+
+    def test_signed_consent_is_immutable(self):
+        from django.utils import timezone
+
+        from apps.clinical.models import InformedConsent
+        consent = InformedConsent.objects.create(
+            tenant=self.tenant, patient=self.patient, title="Firmado",
+            body_text="x", status="signed", signed_at=timezone.now(),
+            created_by=self.doctor_user,
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+        # Intentar editar el cuerpo → rechazado
+        resp = self.client.patch(f"/api/v1/consents/{consent.id}/detail/",
+                                 {"body_text": "modificado"}, format="json")
+        self.assertEqual(resp.status_code, 400)
+        # Pero sí se puede anular
+        resp = self.client.patch(f"/api/v1/consents/{consent.id}/detail/",
+                                 {"status": "void"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data["status"], "void")
+
+    def test_audit_log_on_create(self):
+        from apps.clinical.models import ConsentAuditLog, InformedConsent
+        self.client.force_authenticate(user=self.doctor_user)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/consents/", {
+            "title": "Nuevo", "body_text": "acepto",
+        }, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        consent = InformedConsent.objects.get(id=resp.data["id"])
+        self.assertTrue(ConsentAuditLog.objects.filter(consent=consent, action="Creado").exists())
+
+
+class PeriodontalChartTests(APITestCase):
+    """Sprint 52: exploración periodontal, mediciones por sitio y estadísticas."""
+
+    def setUp(self):
+        from django.core.management import call_command
+        self.tenant = Tenant.objects.create(name="Clínica Perio")
+        call_command("bootstrap", tenant_name=self.tenant.name)
+        self.doctor_user = User.objects.create_user(
+            email="d@perio.ec", password="superseguro123", role="doctor",
+            tenant=self.tenant, full_name="Dra. Perio",
+        )
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Peri", last_name="Odonto",
+            national_id="2323232323",
+        )
+        self.client.force_authenticate(user=self.doctor_user)
+
+    def _crear_exam(self):
+        return self.client.post(
+            f"/api/v1/patients/{self.patient.id}/periodontal-exams/",
+            {"date": "2026-07-29"}, format="json",
+        )
+
+    def test_exam_seeds_32_teeth(self):
+        resp = self._crear_exam()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(len(resp.data["teeth"]), 32)
+        pieza = resp.data["teeth"][0]
+        self.assertEqual(len(pieza["probing_depth"]), 6)
+        self.assertEqual(len(pieza["bleeding"]), 6)
+        self.assertTrue(pieza["is_present"])
+
+    def test_update_measurements_and_derived_attachment_level(self):
+        exam = self._crear_exam().data
+        tooth = exam["teeth"][0]
+        resp = self.client.patch(f"/api/v1/periodontal-teeth/{tooth['id']}/", {
+            "probing_depth": [3, 4, 3, 2, 5, 4],
+            "gingival_margin": [1, 1, 0, 0, 2, 1],
+            "bleeding": [True, False, False, False, True, False],
+            "mobility": 2,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        # El nivel de inserción es derivado: sondaje + margen
+        self.assertEqual(resp.data["attachment_level"], [4, 5, 3, 2, 7, 5])
+        self.assertEqual(resp.data["mobility"], 2)
+
+    def test_series_validation(self):
+        exam = self._crear_exam().data
+        tid = exam["teeth"][0]["id"]
+        # Longitud incorrecta
+        r = self.client.patch(f"/api/v1/periodontal-teeth/{tid}/",
+                              {"probing_depth": [1, 2, 3]}, format="json")
+        self.assertEqual(r.status_code, 400)
+        # Fuera de rango
+        r = self.client.patch(f"/api/v1/periodontal-teeth/{tid}/",
+                              {"probing_depth": [1, 2, 3, 4, 5, 99]}, format="json")
+        self.assertEqual(r.status_code, 400)
+        # Movilidad fuera de grado
+        r = self.client.patch(f"/api/v1/periodontal-teeth/{tid}/",
+                              {"mobility": 7}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_statistics_are_computed_from_stored_data(self):
+        exam = self._crear_exam().data
+        t1, t2 = exam["teeth"][0], exam["teeth"][1]
+        self.client.patch(f"/api/v1/periodontal-teeth/{t1['id']}/", {
+            "probing_depth": [2, 2, 2, 2, 2, 2],
+            "gingival_margin": [1, 1, 1, 1, 1, 1],
+            "plaque": [True, True, True, False, False, False],
+            "bleeding": [True, False, False, False, False, False],
+        }, format="json")
+        # Pieza ausente: no debe entrar en los índices
+        self.client.patch(f"/api/v1/periodontal-teeth/{t2['id']}/", {
+            "is_present": False, "probing_depth": [9, 9, 9, 9, 9, 9],
+        }, format="json")
+
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/periodontal-exams/")
+        datos = resp.data.get("results", resp.data)
+        stats = datos[0]["statistics"]
+        # 31 piezas presentes × 6 sitios = 186
+        self.assertEqual(stats["sites"], 186)
+        self.assertAlmostEqual(stats["mean_probing_depth"], round(12 / 186, 2))
+        self.assertAlmostEqual(stats["mean_attachment_level"], round(18 / 186, 2))
+        self.assertAlmostEqual(stats["plaque_percent"], round(3 * 100 / 186, 2))
+        self.assertAlmostEqual(stats["bleeding_percent"], round(1 * 100 / 186, 2))
+
+    def test_tenant_isolation(self):
+        exam = self._crear_exam().data
+        tid = exam["teeth"][0]["id"]
+        otro = Tenant.objects.create(name="Otra Perio")
+        intruso = User.objects.create_user(
+            email="x@otra.ec", password="superseguro123", role="doctor", tenant=otro)
+        self.client.force_authenticate(user=intruso)
+        r = self.client.patch(f"/api/v1/periodontal-teeth/{tid}/", {"mobility": 3}, format="json")
+        self.assertEqual(r.status_code, 404)
+
+
+class BudgetUnderAgreementTests(Sprint22Base):
+    """
+    El presupuesto automático bajo convenio (Sprint 71).
+
+    Hasta ahora esta vista usaba siempre `Treatment.base_price`, así que los
+    convenios y tarifarios existían en la base de datos sin efecto ninguno
+    sobre lo que se le cobraba al paciente. Estas pruebas fijan que el
+    presupuesto sale con la tarifa del convenio y —lo que es igual de
+    importante— que NO pisa un precio escrito a mano.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from apps.configuration.models import Agreement, Tariff
+
+        self.Tariff = Tariff
+        self.agreement = Agreement.objects.create(
+            tenant=self.tenant, name="Seguro Andino", discount_percentage=Decimal("20.00"),
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def _plan_con(self, treatment, estimated_price=None, price_is_manual=False):
+        """Plan de un solo ítem, para aislar el precio que se está midiendo."""
+        from apps.clinical.models import TreatmentPlan, TreatmentPlanItem
+
+        plan = TreatmentPlan.objects.create(tenant=self.tenant, patient=self.patient)
+        TreatmentPlanItem.objects.create(
+            treatment_plan=plan, treatment=treatment, order=1,
+            price_is_manual=price_is_manual,
+            estimated_price=(
+                treatment.base_price if estimated_price is None else estimated_price
+            ),
+        )
+        return plan
+
+    def _presupuestar(self, plan):
+        resp = self.client.post(f"/api/v1/treatment-plans/{plan.id}/generate-budget/")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        return resp.data
+
+    def test_sin_convenio_el_presupuesto_no_cambia(self):
+        data = self._presupuestar(self._plan_con(self.t1))
+        self.assertEqual(data["total_amount"], "300.00")
+
+    def test_el_presupuesto_aplica_el_descuento_del_convenio(self):
+        self.patient.agreement = self.agreement
+        self.patient.save()
+        data = self._presupuestar(self._plan_con(self.t1))
+        self.assertEqual(data["total_amount"], "240.00")
+
+    def test_el_presupuesto_aplica_el_tarifario_pactado(self):
+        self.patient.agreement = self.agreement
+        self.patient.save()
+        self.Tariff.objects.create(
+            tenant=self.tenant, treatment=self.t1,
+            agreement=self.agreement, price=Decimal("175.00"),
+        )
+        data = self._presupuestar(self._plan_con(self.t1))
+        self.assertEqual(data["total_amount"], "175.00")
+
+    def test_un_precio_escrito_a_mano_no_lo_pisa_el_convenio(self):
+        """
+        Si el odontólogo pactó una cifra con el paciente, el tarifario no
+        debe reescribirla por la espalda. Solo se sustituye el valor que
+        puso el propio sistema.
+
+        El `price_is_manual=True` es del Sprint 84 y no es ruido: antes,
+        «lo puso una persona» se deducía de que el importe no coincidiera
+        con el de catálogo. Esta prueba construye el ítem por el ORM, así
+        que ahora tiene que declarar la intención, que es justamente lo
+        que el campo hace explícito. Por la API se deduce sola de que
+        venga un precio en la petición.
+        """
+        self.patient.agreement = self.agreement
+        self.patient.save()
+        plan = self._plan_con(
+            self.t1, estimated_price=Decimal("120.00"), price_is_manual=True,
+        )
+        self.assertEqual(self._presupuestar(plan)["total_amount"], "120.00")
+
+    def test_un_convenio_de_otra_clinica_no_se_puede_asignar(self):
+        """
+        El `queryset` del ForeignKey no filtra por tenant: sin validación,
+        mandar el id bastaba para que los tarifarios de otra clínica
+        fijaran el precio de este paciente.
+        """
+        from apps.configuration.models import Agreement
+
+        otra = Tenant.objects.create(name="Clínica Ajena S71", ruc="1791234567002")
+        ajeno = Agreement.objects.create(tenant=otra, name="Convenio ajeno")
+        resp = self.client.patch(
+            f"/api/v1/patients/{self.patient.id}/", {"agreement": str(ajeno.id)}
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.patient.refresh_from_db()
+        self.assertIsNone(self.patient.agreement_id)
+
+    def test_borrar_el_convenio_no_borra_al_paciente(self):
+        """
+        Terminar el contrato con una aseguradora no puede hacer desaparecer
+        a los pacientes que cubría: pasan a particulares.
+        """
+        self.patient.agreement = self.agreement
+        self.patient.save()
+        self.agreement.delete()
+        self.patient.refresh_from_db()
+        self.assertTrue(Patient.objects.filter(id=self.patient.id).exists())
+        self.assertIsNone(self.patient.agreement_id)
+        self.assertEqual(self._presupuestar(self._plan_con(self.t1))["total_amount"], "300.00")

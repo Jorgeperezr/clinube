@@ -1,0 +1,28 @@
+from django.urls import path
+
+from apps.billing import views
+
+urlpatterns = [
+    # Presupuestos
+    path("patients/<uuid:pk>/budgets/", views.BudgetListCreateView.as_view(), name="budget-list"),
+    path("budgets/<uuid:pk>/", views.BudgetDetailView.as_view(), name="budget-detail"),
+    path("budgets/<uuid:pk>/items/", views.BudgetItemCreateView.as_view(), name="budget-item-create"),
+    path("budgets/<uuid:pk>/approve/", views.BudgetApproveView.as_view(), name="budget-approve"),
+    path("budgets/<uuid:pk>/generate-payment-plan/", views.GeneratePaymentPlanView.as_view(), name="generate-payment-plan"),
+    # Planes de pago y cuotas
+    path("payment-plans/<uuid:pk>/installments/", views.PaymentPlanInstallmentsView.as_view(), name="payment-plan-installments"),
+    path("installments/<uuid:pk>/pay/", views.PayInstallmentView.as_view(), name="installment-pay"),
+    # Estado de cuenta
+    path("patients/<uuid:pk>/payments/", views.PatientPaymentListCreateView.as_view(), name="patient-payments"),
+    path("patients/birthdays/", views.BirthdaysView.as_view(), name="patient-birthdays"),
+    path("patients/<uuid:pk>/account-statement/", views.PatientAccountStatementView.as_view(), name="account-statement"),
+    # Honorarios
+    path("doctors/<uuid:pk>/fees/", views.DoctorFeeListCreateView.as_view(), name="doctor-fees"),
+    # Reportes (Sprint 9)
+    path("reports/financial/", views.FinancialReportView.as_view(), name="report-financial"),
+    path("reports/appointments-summary/", views.AppointmentsSummaryReportView.as_view(), name="report-appointments-summary"),
+    path("reports/delinquency/", views.DelinquencyReportView.as_view(), name="report-delinquency"),
+    path("reports/production-by-doctor/", views.ProductionByDoctorReportView.as_view(), name="report-production"),
+    path("reports/new-patients/", views.NewPatientsReportView.as_view(), name="report-new-patients"),
+    path("reports/inventory/", views.InventoryReportView.as_view(), name="report-inventory"),
+]

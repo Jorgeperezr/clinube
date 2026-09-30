@@ -1,0 +1,400 @@
+# PROJECT_ANALYSIS — Clinube (gestión para clínicas odontológicas)
+
+> Análisis de arquitectura y estado del proyecto, realizado sobre el código real
+> del repositorio (rama `main`, tras el Sprint 52). Verificado ejecutando la
+> suite de tests del backend (161 tests), el linter (`ruff`) y el build estático
+> del panel Next.js — resultados en la sección [Estado verificado](#5-estado-verificado-del-proyecto).
+
+---
+
+## 1. Resumen ejecutivo
+
+Sistema SaaS multi-tenant para la gestión integral de clínicas odontológicas en
+Ecuador, alineado con el formulario oficial MSP HCU-033/2021 y con la LOPDP
+(auditoría de acceso a datos clínicos, borrado lógico, opt-in de mensajería).
+
+El proyecto está en un estado **muy avanzado y funcional**: backend completo
+(10 módulos de dominio), panel web completo (7 secciones + panel de plataforma
+para el superadministrador), microservicio de WhatsApp operativo en modo
+simulado, CI en verde y documentación de despliegue. Lo pendiente de mayor
+tamaño es la **app móvil de pacientes (Flutter)**, la **activación real de
+WhatsApp** (credenciales de Meta) y la **decisión/ejecución del hosting de
+producción**.
+
+| Dimensión | Estado |
+|---|---|
+| Backend (Django + DRF) | Completo — 10 apps, 161 tests |
+| Panel web (Next.js 14) | Completo — 12 páginas, build estático OK |
+| Gateway WhatsApp (FastAPI) | Completo en modo simulado; sin credenciales Meta |
+| App móvil (Flutter) | No iniciada |
+| Despliegue a producción | Preparado (compose prod, DEPLOY.md); hosting sin decidir |
+| CI (GitHub Actions) | Lint + tests backend, lint gateway, build frontend |
+
+---
+
+## 2. Arquitectura
+
+### 2.1 Vista de servicios (docker-compose)
+
+```
+                        ┌──────────────┐
+   navegador ──http──▶  │    nginx     │  puerto 80
+                        └──────┬───────┘
+        ┌──────────────────────┼───────────────────────────┐
+        │ /api/ /admin/        │ /whatsapp/webhook         │ /  (panel estático
+        │ /media/ /static/     │                           │    en producción)
+        ▼                      ▼                           ▼
+ ┌─────────────┐      ┌──────────────────┐        Next.js (dev: puerto 3000;
+ │ django-api  │◀────▶│ whatsapp-gateway │        prod: export estático servido
+ │ (gunicorn)  │ token│    (FastAPI)     │        por nginx desde volumen)
+ └──┬───┬──────┘ int. └────────┬─────────┘
+    │   │                      │  Meta WhatsApp Cloud API (simulado sin credenciales)
+    ▼   ▼
+ postgres  redis ◀── celery-worker / celery-beat
+```
+
+- **`django-api/`** — Fuente de verdad de todo el dominio. Django 5.0 + DRF 3.15,
+  PostgreSQL 16, JWT (simplejwt con rotación y blacklist), Celery 5.4 + Redis
+  para tareas (recordatorios, morosidad diaria), drf-spectacular (OpenAPI en
+  `/api/v1/schema/swagger-ui/`).
+- **`whatsapp-gateway/`** — Microservicio FastAPI sin lógica de negocio: envía
+  plantillas a Meta y traduce el webhook (estados de entrega, mensajes
+  entrantes) a eventos internos que reenvía a Django. Comunicación protegida
+  con `INTERNAL_SERVICE_TOKEN` compartido; firma del webhook de Meta verificada.
+- **`frontend/`** — Next.js 14 (App Router, JavaScript, `"use client"`), sin
+  framework de UI: sistema de diseño propio con tokens CSS (temas claro/oscuro,
+  personalización de marca por clínica). En producción se exporta a estático
+  (`output: "export"`) y lo sirve nginx.
+- **`nginx/`** — Proxy único de entrada: API/admin/media → Django, webhook →
+  gateway, resto → panel estático.
+
+### 2.2 Multi-tenancy
+
+- `common.Tenant` (clínica) + abstracta `TenantAwareModel` (UUID pk, FK a
+  tenant, timestamps) heredada por todos los modelos de dominio.
+- `TenantMiddleware` resuelve el tenant del usuario autenticado (resolución
+  perezosa, post-JWT) y las vistas filtran siempre por `request.tenant`.
+- `TenantAwareJWTAuthentication`: al suspender una clínica sus usuarios pierden
+  acceso al instante aunque tengan tokens vigentes.
+- Jerarquía de roles: `superadmin` (plataforma, sin tenant) → por clínica:
+  `admin`, `doctor`, `reception`, `auxiliary`. El superadmin **no** accede a
+  datos operativos (verificado por tests).
+- Aislamiento entre clínicas cubierto por tests (listado y lectura por ID).
+
+### 2.3 Patrones de diseño empleados
+
+- **Servicios de dominio**: `billing/services.py` centraliza la definición de
+  "paciente moroso" (usada por agenda, reportes y la tarea Celery);
+  `inventory/services.py` el descuento FEFO de stock.
+- **Strategy en el odontograma** (`frontend/lib/odontogram/`): `contract.js`
+  define el contrato, `registry.js` es el punto único de extensión; 4 vistas
+  intercambiables (Clásico MSP, Anatómico, Ficha periodontal, 3D) sobre una
+  única fuente de datos. Solo la ficha periodontal es un híbrido documentado
+  (tiene endpoints propios para mediciones periodontales).
+- **Registro histórico inmutable** en el odontograma (`ToothRecord`): nunca se
+  sobrescribe; el "estado actual" se deriva del último registro por
+  pieza/superficie.
+- **Soft delete** (`SoftDeleteModel`) para datos clínicos y financieros; nunca
+  DELETE físico.
+- **Auditoría transversal**: `AuditLogMiddleware` para escrituras + auditoría
+  explícita de lecturas clínicas (exigencia LOPDP), `ConsentAuditLog` por
+  consentimiento.
+- **Configuración parametrizable sin código**: `SystemParameter` (clave-valor:
+  morosidad, recordatorios, alertas), catálogo de estados del odontograma,
+  plantillas de planes y de consentimientos.
+
+---
+
+## 3. Modelo de datos (50 modelos, 10 apps)
+
+| App | Modelos principales | Rol |
+|---|---|---|
+| `common` | Tenant, PlatformConfiguration | Multi-tenancy y configuración global del SaaS |
+| `accounts` | User (email, roles), OTPCode, AuditLog, PasswordResetToken, DeviceToken | Identidad: JWT staff, OTP pacientes, auditoría |
+| `patients` | Patient (+soft delete), MedicalBackground, PatientDocument | Padrón, antecedentes, documentos por categoría |
+| `agenda` | Doctor (color, firma, licencia, feed iCal), Appointment (estados + check-in/atención/check-out) | Agenda con anti-solapamiento y bloqueo por morosidad |
+| `clinical` | ClinicalRecord, Evolution, Diagnosis (CIE-10 PRE/DEF), TreatmentPlan(+Template), OdontogramState (catálogo 22 estados MSP), ToothRecord (pieza/superficie/movilidad/recesión), RadiographPhoto, InformedConsent (+ConsentTemplate, ConsentAuditLog, flujo de estados), Cie10, Form033Record, ExamRequest, PeriodontalExam/PeriodontalTooth (6 sitios) | Historia clínica completa alineada al Form. 033 |
+| `specialties` | Specialty, SpecialtyForm (JSONField) | Formularios flexibles por especialidad |
+| `billing` | Budget/BudgetItem, PaymentPlan/Installment (reparto exacto de centavos), Payment, DoctorFee | Presupuestos → cuotas → cobros; morosidad |
+| `inventory` | Product, Batch (vencimiento), InventoryMovement | Stock con FEFO, alertas de mínimo y caducidad |
+| `whatsapp` | WhatsAppTemplate, WhatsAppMessageLog, WhatsAppOptIn | Plantillas, trazabilidad de envíos, opt-in LOPDP |
+| `configuration` | Treatment, Agreement, Tariff, SystemParameter, TreatmentInventoryItem, ClinicBranding | Catálogos, tarifarios, parámetros, identidad visual |
+
+Convenciones: PK UUID en todo el dominio, `tenant` obligatorio, `created_at`/
+`updated_at`, borrado lógico donde aplica. El nivel de inserción periodontal es
+derivado (sondaje + margen), no almacenado — buen ejemplo del criterio general
+de no duplicar datos derivables.
+
+---
+
+## 4. Módulos y estado de implementación
+
+### 4.1 Terminado y probado (backend + panel)
+
+- **Usuarios y seguridad**: login JWT, refresh con rotación/blacklist, OTP por
+  WhatsApp para pacientes, recuperación de acceso, gestión de usuarios, throttling.
+- **Pacientes**: registro (cédula única por sede), búsqueda, ordenamientos,
+  vista lista/tarjetas, ficha completa con pestañas, cumpleaños, documentos
+  (subida, escaneo por cámara a PDF, vista previa, borrado suave con permisos,
+  descarga autenticada con validación de tenant).
+- **Agenda**: día/semana/mes, anti-solapamiento, estados completos, flujo
+  llegada → atención → salida, bloqueo por morosidad con override, aviso de
+  pacientes en sala, color por profesional, feed iCalendar por doctor.
+- **Historia clínica**: evoluciones con seguimientos, diagnósticos CIE-10
+  (catálogo sembrado), planes con plantillas y progreso, consentimientos con
+  firma táctil y flujo de estados (firmado = inmutable), recetas con firma
+  manuscrita del doctor, solicitudes de examen con PDF, formulario MSP 033
+  completo (literales A–O) con export a PDF y a la plantilla Excel oficial.
+- **Odontograma**: 22 estados MSP por pieza/superficie, registro por
+  simbología, histórico inmutable, índices CPO-ceo automáticos, 4 vistas
+  (Strategy), ficha periodontal con 6 sitios e índices agregados.
+- **Tratamientos y pagos**: presupuestos, aprobación, planes de cuotas con
+  reparto exacto, cobros parciales, estado de cuenta, morosidad, honorarios,
+  cobros directos desde la ficha.
+- **Inventario**: productos, lotes, movimientos, alertas, descuento FEFO
+  automático al completar tratamientos.
+- **Reportes** (admin): financiero, morosidad, producción por doctor, pacientes
+  nuevos, inventario, actividad de citas; exports a Excel; impresión.
+- **Plataforma (superadmin)**: dashboard, gestión de clínicas y de sus
+  administradores, auditoría propia, configuración global.
+- **Personalización por clínica**: logo con recorte, extracción de paleta,
+  6 temas + colores manuales con contraste WCAG AA garantizado, claro/oscuro.
+- **WhatsApp (modo simulado)**: recordatorios de cita (idempotentes vía
+  `reminder_sent_at`), recordatorios de pago, aviso de llegada, OTP,
+  confirmación de cita por respuesta del paciente, opt-in.
+
+### 4.2 Parcial / preparado pero no activo
+
+| Funcionalidad | Estado | Qué falta |
+|---|---|---|
+| WhatsApp real | Gateway completo, modo simulado | Verificación del negocio en Meta + credenciales en `.env` (sin cambios de código) |
+| Google Calendar | Fase 1 (feed iCal de solo lectura) operativa; `google_calendar_event_id` ya existe | Fase 2: OAuth2 bidireccional |
+| Firma electrónica legal (firmaEC) | Firma manuscrita estampada operativa | Integración con certificados .p12 por doctor |
+| Cloud Storage | `USE_CLOUD_STORAGE` + django-storages listos | Bucket GCS y activación (hoy: FileSystemStorage) |
+| Hosting de producción | `docker-compose.prod.yml`, DEPLOY.md, scripts de backup cifrado | Decidir VM vs. PC+túnel y ejecutar la Fase 12 |
+| Escáner de documentos | Captura por cámara con realce | Recorte de bordes/perspectiva (OpenCV.js) — documentado como mejora futura |
+
+### 4.3 No iniciado
+
+- **App móvil de pacientes (Flutter)** — el backend ya la contempla (OTP,
+  `visible_to_patient` en evoluciones, DeviceToken).
+- **Tests automatizados del frontend** y del **gateway** (CI solo lint/build).
+- **Convenios/tarifarios en el panel** — modelos y API existen
+  (`Agreement`, `Tariff`); no se encontró UI en Configuración.
+
+---
+
+## 5. Estado verificado del proyecto
+
+Ejecutado durante este análisis (2026-07-31):
+
+| Verificación | Resultado |
+|---|---|
+| `manage.py test --settings=config.settings_test` | **161 tests: 160 OK, 1 fallo** (ver abajo) |
+| `ruff check apps config` | Sin errores |
+| `next build` (export estático) | Compila sin errores |
+
+**El único fallo es un test dependiente de la hora local**, no un bug de
+producto: `apps.billing.tests.Sprint45Tests.test_waiting_patients_after_checkin`
+crea una cita a `now + 1h`; ejecutado cerca de la medianoche de Guayaquil
+(UTC-5) la cita cae en la fecha local siguiente y el endpoint
+`appointments/waiting/` filtra por `scheduled_start__date=hoy`
+(`agenda/views.py:366`). El mismo patrón de riesgo existe en el test de
+cumpleaños. Es un test *flaky* de frontera de medianoche que puede pintar el CI
+de rojo intermitentemente.
+
+Nota de entorno: dos errores adicionales que aparecieron al primer intento
+(`TokenBackend`/`cryptography`) eran del contenedor de análisis (paquete
+`cryptography` del sistema roto), no del proyecto; con dependencias limpias no
+ocurren.
+
+---
+
+## 6. Riesgos y deuda técnica
+
+### 6.1 Riesgos técnicos
+
+1. ~~**Servido de `/media/` en producción.**~~ **RESUELTO (Sprint 66).** El
+   diagnóstico era correcto en la conclusión y equivocado en un detalle: sí
+   existía un `location /media/`, pero *proxyaba a Django*, que solo publica
+   media con `DEBUG=True`, así que en producción devolvía 404 igualmente. Al
+   ir a corregirlo apareció algo peor de lo previsto: los documentos de
+   pacientes **sí** estaban afectados, porque el serializador devolvía la ruta
+   `/media/...` y la rejilla de miniaturas la usaba en un `<img>` — publicar
+   /media/ para arreglar el logotipo habría dejado radiografías y documentos
+   clínicos descargables sin sesión. Ahora nginx sirve solo
+   `/media/branding/` y niega el resto, y `file_url` apunta al endpoint
+   autenticado. Verificado con nginx real: logotipo 200, radiografía y
+   documento 404, incluidos intentos de salto de directorio.
+2. ~~**Test flaky de medianoche**~~ **RESUELTO (Sprints 61 y 70).** La suite
+   pasa ahora en nueve fechas frontera (fin de mes, fin de año, 29 de febrero,
+   1 de marzo) y en cuatro husos horarios. El CI ejecuta una segunda pasada con
+   la clínica en UTC+14 para que la fecha del servidor y la local NUNCA
+   coincidan, que es la condición en la que aparecen estos fallos.
+3. **JWT en `localStorage`** (`frontend/lib/api.js`): expuesto ante XSS. Riesgo
+   moderado (no hay contenido de terceros inyectable hoy), pero una migración a
+   cookies `httpOnly` o mitigaciones CSP es deseable antes de crecer.
+4. ~~**Sin tests del gateway FastAPI**~~ **RESUELTO (Sprint 69).** 30 pruebas
+   sobre firma del webhook, parseo del formato de Meta, verificación de la URL
+   y token interno; el trabajo de CI pasa a ejecutarlas además del lint. Al
+   escribirlas apareció un fallo real: una excepción inesperada al procesar un
+   evento devolvía 500, y Meta acaba desactivando el webhook de la cuenta ante
+   los 5xx repetidos.
+5. **Sin observabilidad** — **CORREGIDO en su parte crítica (Sprint 75).**
+   El diagnóstico era optimista: no es que los errores «solo quedaran en
+   stdout», es que **no quedaban en ninguna parte**. Comprobado con un 500
+   real y `DEBUG=False`: sin bloque `LOGGING`, el manejador `console` de
+   Django está filtrado por `require_debug_true` y `mail_admins` necesita
+   `ADMINS`, que estaba vacío; la traza no llegaba ni a la salida estándar.
+   Ahora hay registro estructurado en JSON con id de correlación
+   (`X-Request-ID`), una línea por petición y la traza completa de cada
+   500, con redacción de datos personales — incluidos los valores de la
+   cadena de consulta, que en `?search=` llevan apellidos de pacientes.
+   **Queda pendiente** la otra mitad: alertas (Sentry o equivalente) y un
+   monitor externo que vigile `/api/v1/ready/`. Eso necesita una cuenta y
+   una decisión de hosting, no código.
+6. **Backups** — **CORREGIDO (Sprint 76).** Aquí el análisis se pasaba de
+   pesimista en un punto y se quedaba corto en otro. La programación
+   automática **sí** estaba documentada (DEPLOY.md traía la línea de cron
+   diaria); lo que faltaba de verdad era la prueba de restauración. Y
+   había algo peor que no estaba anotado: la «verificación de integridad»
+   de `backup.sh` era un `gzip -t`, que solo prueba que el archivo se
+   descomprime. Un volcado cortado a la mitad —disco lleno, contenedor
+   reiniciado— comprime perfectamente y pasaba la prueba: el guion
+   anunciaba «correcto» una copia irrecuperable. Comprobado cortando un
+   volcado a propósito.
+   Ahora `backup.sh` comprueba que el volcado termine donde `pg_dump` lo
+   cierra, y `scripts/verificar-backup.sh` lo **restaura de verdad** en
+   una base desechable, cuenta filas y la destruye; devuelve un código de
+   salida para que cron pueda avisar. Verificado que falla ante volcado
+   truncado, esquema sin datos y frase de cifrado equivocada. Los guiones
+   funcionan además sin Docker.
+
+### 6.2 Deuda técnica y limpieza
+
+1. ~~**Código muerto de los Sprints 50–51**~~ **RESUELTO (Sprint 67).**
+   Eliminados `frontend/lib/odontogram/CompactView.js`,
+   `AdvancedCompactView.js` y `advanced/AdvancedCompactView.js`: 948 líneas
+   sin un solo importador. Queda pendiente, y a propósito, renombrar la
+   función que `PeriodontalMatrix.js` exporta por defecto (se sigue llamando
+   `AdvancedCompactView`, nombre heredado que confunde): es un cambio
+   puramente cosmético dentro de un archivo que el usuario pidió no tocar,
+   así que no compensa el riesgo hasta que haya otro motivo para abrirlo.
+2. **README desactualizado en tres puntos**: dice "132 tests" (son 161); la
+   línea final de la sección de estado conserva un texto residual del Sprint 0
+   ("Lo que no está implementado todavía: … pacientes, agenda, …") que
+   contradice todo lo anterior; y faltan las secciones de los Sprints 50–51
+   (existen en el historial de git, el 52 los sustituyó). El README (72 KB) ya
+   mezcla guía de uso con changelog — conviene separar un `CHANGELOG.md`.
+3. **Páginas monolíticas en el frontend**: `configuracion/page.js` (866 líneas),
+   `paciente/page.js` (630), `ClinicalTabs.js` (567), `plataforma/page.js`
+   (532). Funcionan, pero elevan el costo de cada cambio.
+4. **Pantalla en blanco ante cualquier error de la API** — **CORREGIDO en
+   su mayor parte (Sprint 73), con dos archivos pendientes.** El patrón
+   `setCosas(data.results || data)` estaba repetido en 40 puntos y da por
+   hecho que la petición fue bien. Cuando no lo es, el cuerpo sigue siendo
+   JSON válido pero es un objeto, así que entra en el estado y el
+   `cosas.map(...)` de más abajo lanza «map is not a function»: React
+   derriba el árbol y la pantalla se queda **en blanco**, sin dato, sin
+   aviso y sin pista. No es hipotético: el límite es de 60 peticiones por
+   minuto y por usuario, y basta con recorrer las pestañas de
+   Configuración deprisa para provocarlo. Encontrado usando la aplicación
+   con un navegador real, no con los tests ni con `next build`.
+   Corregidos los 14 archivos que se podían tocar, con `readList()` /
+   `readObject()` en `lib/api.js`. **Siguen cayendo** `lib/ClinicalTabs.js`
+   (Plan de tratamiento, Documentos y Consentimientos) y
+   `lib/periodontal/PeriodontalMatrix.js`, que el usuario pidió no
+   modificar: son 6 puntos y basta aplicarles el mismo cambio de una línea.
+
+5. **Frontend sin linter ni tipos**: no hay ESLint configurado ni TypeScript;
+   el CI solo compila. Los bugs de los Sprints 41–42 (tupla vs. objeto de
+   `useConfirm`) son exactamente la clase de error que estas herramientas
+   atrapan.
+6. **Throttle de OTP aproximado**: la ventana exacta de 10 minutos quedó
+   anotada como pendiente en `settings.py:187`.
+7. **Duplicidad latente `full_name` vs. `first_name/last_name`** entre `User`
+   (full_name) y `Patient` (first/last) — no es un bug, pero obliga a
+   formatear en cada vista.
+8. ~~**UI faltante para convenios y tarifarios**~~ **RESUELTO (Sprint 71).**
+   El diagnóstico se quedaba corto: faltaba la pantalla, sí, pero además
+   `Agreement` y `Tariff` **no los leía nadie**. El presupuesto se calculaba
+   siempre con `Treatment.base_price`, así que una clínica podía cargar el
+   tarifario entero de una aseguradora y seguir cobrando la tarifa
+   particular; y no existía forma de decir qué paciente está cubierto por
+   qué convenio. Ahora hay `Patient.agreement`, un único punto de
+   resolución de precios (`apps/configuration/pricing.py`) con precedencia
+   declarada, y el presupuesto automático lo usa. Al conectarlo aparecieron
+   dos agujeros de aislamiento: ni `TariffSerializer` ni `PatientSerializer`
+   comprobaban que el tratamiento o el convenio recibidos fueran de la
+   misma clínica — el `queryset` que DRF deduce de un ForeignKey no filtra
+   por tenant.
+
+### 6.3 Fortalezas a preservar
+
+Multi-tenancy y auditoría desde el día 1; regla de negocio en el backend (la UI
+solo refleja); tests de aislamiento entre clínicas; catálogos parametrizables
+sin código; documentación de decisiones en el propio código; suite E2E que
+recorre todos los módulos; accesibilidad (WCAG AA verificado, reduced-motion).
+
+---
+
+## 7. Oportunidades de mejora
+
+- **Producto**: portal/app del paciente (el diferencial pendiente más grande);
+  recordatorios por correo como plan B sin depender de Meta; agenda con lista
+  de espera; caja diaria/cierre de caja; facturación electrónica SRI (Ecuador)
+  como módulo futuro de alto valor.
+- **Ingeniería**: contrato OpenAPI ya generado → cliente tipado para el
+  frontend; snapshot de datos derivados costosos si el volumen crece (CPO-ceo
+  e índices periodontales se calculan al vuelo — correcto hoy, medible mañana);
+  índices de BD para búsquedas de pacientes cuando haya volumen real.
+- **Operación**: entorno de staging con datos sintéticos; job de restauración
+  de backup automatizado que valide el `.enc` semanalmente.
+
+---
+
+## 8. Roadmap propuesto (priorizado)
+
+### P0 — Estabilización (esfuerzo bajo, riesgo que ya existe)
+1. Corregir el test flaky de medianoche (congelar el tiempo en los tests de
+   `waiting`/`birthdays` o crear las citas con fecha local controlada).
+2. ~~Verificar y corregir el servido de `/media/` en producción.~~ Hecho en el
+   Sprint 66, aunque no como se proponía aquí: servirlo entero habría expuesto
+   radiografías y documentos clínicos (ver 6.1).
+3. ~~Eliminar el código muerto de los Sprints 50–51~~ (Sprint 67). Queda el
+   renombrado del export de `PeriodontalMatrix`.
+4. Actualizar el README: contador de tests (161), texto residual del estado,
+   secciones 50–51; opcionalmente extraer el changelog.
+
+### P1 — Camino a producción real (el mayor valor pendiente)
+5. Decidir hosting (DEPLOY.md ya compara opciones) y ejecutar la Fase 12:
+   dominio + TLS, `.env` de producción, HSTS definitivo.
+6. Programar y **probar** backups automáticos (cron + restauración de prueba).
+7. Completar la verificación del negocio en Meta y activar WhatsApp real;
+   afinar la ventana exacta del throttle de OTP.
+8. Tests del gateway FastAPI (webhook: firma, parseo, reenvío) y subir el job
+   de CI de lint-only a tests.
+9. Observabilidad mínima: Sentry (Django + Next) y healthchecks monitorizados.
+
+### P2 — Completar el alcance funcional
+10. ~~UI de convenios y tarifarios en Configuración~~ (Sprint 71). Incluyó
+    lo que el backend «ya listo» no tenía: vínculo paciente–convenio y uso
+    real de la tarifa al presupuestar.
+11. App móvil de pacientes (Flutter): login OTP, citas, evoluciones visibles,
+    estado de cuenta — el backend ya expone lo necesario.
+12. Google Calendar Fase 2 (OAuth bidireccional).
+13. Firma electrónica firmaEC (.p12) para recetas y consentimientos.
+
+### P3 — Salud del código a mediano plazo
+14. ESLint (+ eventual migración incremental a TypeScript) y tests de frontend
+    (Playwright sobre los flujos del QA-CHECKLIST).
+15. Trocear las páginas monolíticas del panel en componentes por pestaña.
+16. Revisión de seguridad previa a escalar: almacenamiento de tokens, CSP,
+    rate-limits por endpoint sensibles, dependencia `cryptography`/renovación
+    de versiones (Django 5.0 sale de soporte extendido — planificar salto a LTS).
+
+---
+
+*Documento generado a partir del análisis del código en el Sprint 52. Antes de
+implementar cualquier característica nueva, revisar la sección 4.2: varias
+funcionalidades ya tienen implementación parcial o backend completo esperando UI.*

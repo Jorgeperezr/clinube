@@ -1,0 +1,503 @@
+from datetime import date, timedelta
+from decimal import Decimal
+from unittest.mock import patch
+
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
+
+from apps.accounts.models import User
+from apps.agenda.models import Doctor
+from apps.billing.models import Budget, Installment, Payment, PaymentPlan
+from apps.common.models import Tenant
+from apps.configuration.models import Treatment
+from apps.patients.models import Patient
+from apps.specialties.models import Specialty
+
+
+class BillingTests(APITestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Clínica Test", ruc="1234567890001")
+        self.reception = User.objects.create_user(
+            email="recep@test.com", password="superseguro123", role="reception", tenant=self.tenant
+        )
+        self.doctor_user = User.objects.create_user(
+            email="doc@test.com", password="superseguro123", role="doctor", tenant=self.tenant
+        )
+        self.doctor = Doctor.objects.create(tenant=self.tenant, user=self.doctor_user)
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Carlos", last_name="Ruiz", national_id="0707070707"
+        )
+        self.specialty = Specialty.objects.create(tenant=self.tenant, name="Ortodoncia")
+        self.treatment = Treatment.objects.create(
+            tenant=self.tenant, name="Brackets", specialty=self.specialty, base_price="1000.00"
+        )
+
+    def _create_budget_with_item(self, unit_price="1000.00", quantity=1):
+        budget = Budget.objects.create(tenant=self.tenant, patient=self.patient)
+        from apps.billing.models import BudgetItem
+        BudgetItem.objects.create(
+            budget=budget, treatment=self.treatment,
+            quantity=quantity, unit_price=Decimal(unit_price),
+        )
+        budget.recalculate_total()
+        return budget
+
+    def test_create_budget(self):
+        self.client.force_authenticate(user=self.reception)
+        resp = self.client.post(
+            reverse("budget-list", kwargs={"pk": self.patient.id}),
+            {"patient": str(self.patient.id), "notes": "Presupuesto ortodoncia"},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_budget_total_recalculates_with_items(self):
+        budget = self._create_budget_with_item(unit_price="500.00", quantity=2)
+        self.assertEqual(budget.total_amount, Decimal("1000.00"))
+
+    def test_generate_payment_plan_divides_evenly(self):
+        budget = self._create_budget_with_item(unit_price="1200.00")
+        budget.status = Budget.Status.APPROVED
+        budget.save()
+        self.client.force_authenticate(user=self.reception)
+        resp = self.client.post(
+            reverse("generate-payment-plan", kwargs={"pk": budget.id}),
+            {"installment_count": 3, "first_due_date": str(date.today())},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        plan = PaymentPlan.objects.get(budget=budget)
+        self.assertEqual(plan.installments.count(), 3)
+        # La suma de las cuotas debe ser exactamente el total (sin centavos perdidos)
+        total_cuotas = sum(i.amount for i in plan.installments.all())
+        self.assertEqual(total_cuotas, Decimal("1200.00"))
+
+    def test_payment_plan_last_installment_absorbs_rounding(self):
+        # 1000 / 3 = 333.33, 333.33, 333.34 (la última ajusta)
+        budget = self._create_budget_with_item(unit_price="1000.00")
+        budget.status = Budget.Status.APPROVED
+        budget.save()
+        self.client.force_authenticate(user=self.reception)
+        self.client.post(
+            reverse("generate-payment-plan", kwargs={"pk": budget.id}),
+            {"installment_count": 3, "first_due_date": str(date.today())},
+        )
+        plan = PaymentPlan.objects.get(budget=budget)
+        amounts = sorted(i.amount for i in plan.installments.all())
+        self.assertEqual(amounts, [Decimal("333.33"), Decimal("333.33"), Decimal("333.34")])
+
+    def test_cannot_generate_plan_for_unapproved_budget(self):
+        budget = self._create_budget_with_item()
+        self.client.force_authenticate(user=self.reception)
+        resp = self.client.post(
+            reverse("generate-payment-plan", kwargs={"pk": budget.id}),
+            {"installment_count": 3, "first_due_date": str(date.today())},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_pay_installment_marks_paid_when_settled(self):
+        budget = self._create_budget_with_item(unit_price="300.00")
+        budget.status = Budget.Status.APPROVED
+        budget.save()
+        self.client.force_authenticate(user=self.reception)
+        self.client.post(
+            reverse("generate-payment-plan", kwargs={"pk": budget.id}),
+            {"installment_count": 1, "first_due_date": str(date.today())},
+        )
+        installment = Installment.objects.get()
+        resp = self.client.post(
+            reverse("installment-pay", kwargs={"pk": installment.id}),
+            {"amount": "300.00", "method": "cash"},
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        installment.refresh_from_db()
+        self.assertEqual(installment.status, "paid")
+
+    def test_partial_payment_keeps_installment_pending(self):
+        budget = self._create_budget_with_item(unit_price="300.00")
+        budget.status = Budget.Status.APPROVED
+        budget.save()
+        self.client.force_authenticate(user=self.reception)
+        self.client.post(
+            reverse("generate-payment-plan", kwargs={"pk": budget.id}),
+            {"installment_count": 1, "first_due_date": str(date.today())},
+        )
+        installment = Installment.objects.get()
+        # Pago parcial (100 de 300)
+        self.client.post(
+            reverse("installment-pay", kwargs={"pk": installment.id}),
+            {"amount": "100.00", "method": "cash"},
+        )
+        installment.refresh_from_db()
+        self.assertEqual(installment.status, "pending")
+        self.assertEqual(installment.balance, Decimal("200.00"))
+
+    def test_account_statement(self):
+        budget = self._create_budget_with_item(unit_price="600.00")
+        budget.status = Budget.Status.APPROVED
+        budget.save()
+        self.client.force_authenticate(user=self.reception)
+        self.client.post(
+            reverse("generate-payment-plan", kwargs={"pk": budget.id}),
+            {"installment_count": 2, "first_due_date": str(date.today())},
+        )
+        resp = self.client.get(
+            reverse("account-statement", kwargs={"pk": self.patient.id})
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["total_amount"], "600.00")
+        self.assertEqual(resp.data["balance"], "600.00")
+
+    def test_overdue_detection_in_statement(self):
+        budget = self._create_budget_with_item(unit_price="600.00")
+        budget.status = Budget.Status.APPROVED
+        budget.save()
+        # Plan con primera cuota vencida (ayer)
+        plan = PaymentPlan.objects.create(
+            tenant=self.tenant, budget=budget, patient=self.patient,
+            total_amount=Decimal("600.00"), installment_count=1,
+        )
+        Installment.objects.create(
+            tenant=self.tenant, payment_plan=plan, patient=self.patient,
+            number=1, due_date=date.today() - timedelta(days=1), amount=Decimal("600.00"),
+        )
+        self.client.force_authenticate(user=self.reception)
+        resp = self.client.get(
+            reverse("account-statement", kwargs={"pk": self.patient.id})
+        )
+        self.assertEqual(resp.data["overdue_count"], 1)
+
+
+class AppointmentsSummaryReportTests(APITestCase):
+    """Sprint 31: indicador de actividad de citas."""
+
+    def test_summary_counts_and_rates(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from apps.agenda.models import Appointment, Doctor
+        from apps.common.models import Tenant
+
+        tenant = Tenant.objects.create(name="T citas-rep")
+        admin = User.objects.create_user(
+            email="a@citasrep.ec", password="superseguro123", role="admin", tenant=tenant,
+        )
+        du = User.objects.create_user(
+            email="d@citasrep.ec", password="superseguro123", role="doctor", tenant=tenant,
+        )
+        doctor = Doctor.objects.create(tenant=tenant, user=du)
+        patient = Patient.objects.create(
+            tenant=tenant, first_name="Rep", last_name="Citas", national_id="1414141414",
+        )
+        base = timezone.now() - timedelta(days=1)
+        for i, st in enumerate(["completed", "completed", "completed", "no_show", "cancelled"]):
+            Appointment.objects.create(
+                tenant=tenant, patient=patient, doctor=doctor,
+                scheduled_start=base + timedelta(hours=i),
+                scheduled_end=base + timedelta(hours=i, minutes=30),
+                status=st,
+            )
+
+        self.client.force_authenticate(user=admin)
+        resp = self.client.get("/api/v1/reports/appointments-summary/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.data["total"], 5)
+        self.assertEqual(resp.data["by_status"]["completed"], 3)
+        self.assertEqual(resp.data["attendance_rate"], 75.0)   # 3 de (3+1)
+        self.assertEqual(resp.data["cancellation_rate"], 20.0)  # 1 de 5
+
+    def test_summary_requires_admin(self):
+        from apps.common.models import Tenant
+        tenant = Tenant.objects.create(name="T citas-perm")
+        reception = User.objects.create_user(
+            email="r@citasperm.ec", password="superseguro123", role="reception", tenant=tenant,
+        )
+        self.client.force_authenticate(user=reception)
+        resp = self.client.get("/api/v1/reports/appointments-summary/")
+        self.assertEqual(resp.status_code, 403)
+
+
+class Sprint45Tests(APITestCase):
+    """Pago desde la ficha, cumpleaños y pacientes en espera."""
+
+    def setUp(self):
+        from apps.common.models import Tenant
+        self.tenant = Tenant.objects.create(name="T s45")
+        self.admin = User.objects.create_user(
+            email="a@s45.ec", password="superseguro123", role="admin", tenant=self.tenant)
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Cum", last_name="Pleaños",
+            national_id="1919191919")
+
+    def test_register_payment_from_patient_file(self):
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.post(f"/api/v1/patients/{self.patient.id}/payments/", {
+            "amount": "45.50", "method": "cash", "date": "2026-07-28",
+        }, format="json")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        # Aparece en el listado del propio paciente
+        resp = self.client.get(f"/api/v1/patients/{self.patient.id}/payments/")
+        rows = resp.data.get("results", resp.data)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(str(rows[0]["amount"]), "45.50")
+
+    def test_birthdays_today_and_upcoming(self):
+        from datetime import date, timedelta
+
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        soon = today + timedelta(days=3)
+        # Los años base son BISIESTOS a propósito: con uno normal, este
+        # test reventaba con ValueError cada 29 de febrero.
+        Patient.objects.create(tenant=self.tenant, first_name="Hoy", last_name="Cumple",
+                               national_id="2020202020",
+                               birth_date=date(1988, today.month, today.day))
+        Patient.objects.create(tenant=self.tenant, first_name="Pronto", last_name="Cumple",
+                               national_id="2121212121",
+                               birth_date=date(1984, soon.month, soon.day))
+        Patient.objects.create(tenant=self.tenant, first_name="Lejos", last_name="Cumple",
+                               national_id="2222222222", birth_date=date(1980, 1, 1))
+
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.get("/api/v1/patients/birthdays/?days=7")
+        self.assertEqual(resp.status_code, 200)
+        nombres = [r["full_name"] for r in resp.data]
+        self.assertIn("Hoy Cumple", nombres)
+        self.assertIn("Pronto Cumple", nombres)
+        # El de enero solo aparecería si hoy cayera en esa ventana
+        self.assertTrue(resp.data[0]["is_today"])
+
+    def test_waiting_patients_after_checkin(self):
+        from datetime import datetime, time, timedelta
+
+        from django.utils import timezone
+
+        from apps.agenda.models import Appointment, Doctor
+
+        du = User.objects.create_user(email="d@s45.ec", password="superseguro123",
+                                      role="doctor", tenant=self.tenant, full_name="Dra. Espera")
+        doctor = Doctor.objects.create(tenant=self.tenant, user=du)
+        # La cita debe caer en la fecha LOCAL de hoy: el endpoint de
+        # pacientes en sala filtra por `scheduled_start__date=hoy`. Con
+        # `now + 1 hora` la prueba fallaba al ejecutarse en la última hora
+        # del día, porque la cita se iba a la fecha siguiente.
+        start = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time(10, 0)),
+            timezone.get_current_timezone(),
+        )
+        appt = Appointment.objects.create(
+            tenant=self.tenant, patient=self.patient, doctor=doctor,
+            scheduled_start=start, scheduled_end=start + timedelta(minutes=30),
+            status="confirmed")
+
+        # Antes del check-in no hay nadie esperando
+        self.client.force_authenticate(user=du)
+        self.assertEqual(len(self.client.get("/api/v1/appointments/waiting/").data), 0)
+
+        # Recepción marca la llegada
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.post(f"/api/v1/appointments/{appt.id}/checkin/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+
+        # El doctor ve el aviso de que su paciente llegó
+        self.client.force_authenticate(user=du)
+        esperando = self.client.get("/api/v1/appointments/waiting/").data
+        self.assertEqual(len(esperando), 1)
+        self.assertEqual(esperando[0]["patient_name"], "Cum Pleaños")
+        self.assertIn("waiting_minutes", esperando[0])
+
+
+class BirthdayEdgeCaseTests(APITestCase):
+    """
+    Fronteras de calendario del listado de cumpleaños (Sprint 70).
+
+    Los tres casos que cubre esta clase se descubrieron ejecutando la
+    suite con el reloj movido a fechas frontera. Se fijan aquí con la
+    fecha SIMULADA en vez de con el reloj real, para que se comprueben en
+    cada ejecución y no un día al año —o uno cada cuatro—.
+    """
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Clínica Fechas", ruc="1790055555001")
+        self.admin = User.objects.create_user(
+            email="admin@fechas.ec", password="superseguro123",
+            role="admin", tenant=self.tenant,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def _birthdays(self, hoy, days=7):
+        """Consulta el endpoint como si hoy fuese `hoy`."""
+        from unittest import mock
+
+        with mock.patch("django.utils.timezone.localdate", return_value=hoy):
+            resp = self.client.get(f"/api/v1/patients/birthdays/?days={days}")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        return resp.data
+
+    def test_nacido_el_29_de_febrero_aparece_en_anio_no_bisiesto(self):
+        """
+        Tres de cada cuatro años ese cumpleaños no existe en el calendario.
+        La ventana salta del 28 de febrero al 1 de marzo, así que el
+        paciente desaparecía de la lista sin que nadie lo notara. Se le
+        felicita el 28.
+        """
+        from datetime import date
+
+        Patient.objects.create(tenant=self.tenant, first_name="Bisiesto", last_name="Paciente",
+                               national_id="2902290229", birth_date=date(2000, 2, 29))
+
+        datos = self._birthdays(date(2027, 2, 27))          # 2027 no es bisiesto
+        nombres = [r["full_name"] for r in datos]
+        self.assertIn("Bisiesto Paciente", nombres)
+        fila = next(r for r in datos if r["full_name"] == "Bisiesto Paciente")
+        self.assertEqual(fila["in_days"], 1)                 # cae el 28
+        self.assertFalse(fila["is_today"])
+        self.assertEqual(fila["turns"], 27)
+
+    def test_nacido_el_29_de_febrero_en_anio_bisiesto_cae_en_su_dia(self):
+        from datetime import date
+
+        Patient.objects.create(tenant=self.tenant, first_name="Bisiesto", last_name="Paciente",
+                               national_id="2902290229", birth_date=date(2000, 2, 29))
+
+        fila = self._birthdays(date(2028, 2, 29))[0]         # 2028 sí es bisiesto
+        self.assertTrue(fila["is_today"])
+        self.assertEqual(fila["in_days"], 0)
+        self.assertEqual(fila["turns"], 28)
+
+    def test_los_anios_que_cumple_al_cruzar_el_fin_de_anio(self):
+        """
+        Con la ventana a caballo entre diciembre y enero, la edad se
+        contaba sobre el año en curso y salía uno de menos.
+        """
+        from datetime import date
+
+        Patient.objects.create(tenant=self.tenant, first_name="Enero", last_name="Paciente",
+                               national_id="0201020102", birth_date=date(2000, 1, 2))
+
+        fila = self._birthdays(date(2026, 12, 30))[0]
+        self.assertEqual(fila["full_name"], "Enero Paciente")
+        self.assertEqual(fila["in_days"], 3)
+        self.assertEqual(fila["turns"], 27)                  # cumple 27 en 2027, no 26
+
+    def test_usa_la_fecha_local_de_la_clinica(self):
+        """
+        Con el servidor en UTC y la clínica en Guayaquil (UTC−5), entre
+        medianoche y las 05:00 la fecha del servidor ya es la del día
+        siguiente: se listaba el cumpleaños de mañana y se perdía el de
+        hoy. El endpoint debe mirar la fecha local.
+        """
+        from datetime import date
+
+        Patient.objects.create(tenant=self.tenant, first_name="Hoy", last_name="Local",
+                               national_id="1010101010", birth_date=date(1990, 6, 15))
+
+        fila = self._birthdays(date(2026, 6, 15), days=0)[0]
+        self.assertTrue(fila["is_today"])
+        self.assertEqual(fila["turns"], 36)
+
+    def test_ventana_de_cero_dias_solo_trae_los_de_hoy(self):
+        from datetime import date
+
+        Patient.objects.create(tenant=self.tenant, first_name="Hoy", last_name="Cumple",
+                               national_id="1111111112", birth_date=date(1990, 6, 15))
+        Patient.objects.create(tenant=self.tenant, first_name="Manana", last_name="Cumple",
+                               national_id="1111111113", birth_date=date(1990, 6, 16))
+
+        nombres = [r["full_name"] for r in self._birthdays(date(2026, 6, 15), days=0)]
+        self.assertEqual(nombres, ["Hoy Cumple"])
+
+
+class FechaLocalDeLaClinicaTests(APITestCase):
+    """
+    La fecha que manda es la de la CLÍNICA, no la del servidor (Sprint 74).
+
+    El Sprint 70 corrigió esto en el listado de cumpleaños y dejó los otros
+    diez sitios donde se usaba `timezone.now().date()`, que devuelve la
+    fecha UTC y no la del huso configurado. El efecto no es teórico: en
+    Guayaquil (UTC−5) la fecha UTC va un día por delante entre las 19:00 y
+    medianoche, así que **todos los días, durante cinco horas**, una cuota
+    que vence HOY se contaba como vencida. La clínica reclamaría a un
+    paciente que todavía no debe nada.
+
+    Se comprueba con la fecha simulada en vez de esperar a esa franja: así
+    se verifica en cada ejecución y no cinco horas al día.
+    """
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Clínica Husos", ruc="1790000009001")
+        self.reception = User.objects.create_user(
+            email="recep@husos.ec", password="superseguro123",
+            role="reception", tenant=self.tenant,
+        )
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Zoe", last_name="Luna",
+            national_id="0900900900",
+        )
+        self.client.force_authenticate(user=self.reception)
+
+    def _estado_de_cuenta(self):
+        return self.client.get(
+            reverse("account-statement", kwargs={"pk": self.patient.id})
+        )
+
+    def _cuota(self, due_date):
+        budget = Budget.objects.create(
+            tenant=self.tenant, patient=self.patient, status=Budget.Status.APPROVED,
+            total_amount=Decimal("100.00"),
+        )
+        plan = PaymentPlan.objects.create(
+            tenant=self.tenant, budget=budget, patient=self.patient,
+            total_amount=Decimal("100.00"), installment_count=1,
+        )
+        return Installment.objects.create(
+            tenant=self.tenant, payment_plan=plan, patient=self.patient,
+            number=1, due_date=due_date, amount=Decimal("100.00"),
+        )
+
+    def test_una_cuota_que_vence_hoy_no_esta_vencida_aunque_en_utc_sea_manana(self):
+        """
+        Guayaquil a las 20:00 = 01:00 UTC del día siguiente. Con la fecha
+        UTC, la cuota de hoy salía vencida cinco horas antes de tiempo.
+        """
+        hoy_en_la_clinica = date(2026, 3, 10)
+        self._cuota(due_date=hoy_en_la_clinica)
+        with patch("apps.billing.views.timezone.localdate", return_value=hoy_en_la_clinica):
+            resp = self._estado_de_cuenta()
+        self.assertEqual(resp.data["overdue_count"], 0,
+                         "una cuota que vence hoy no puede estar vencida")
+
+    def test_una_cuota_de_ayer_si_esta_vencida(self):
+        """El otro lado: la corrección no puede dejar de contar lo vencido."""
+        hoy_en_la_clinica = date(2026, 3, 10)
+        self._cuota(due_date=hoy_en_la_clinica - timedelta(days=1))
+        with patch("apps.billing.views.timezone.localdate", return_value=hoy_en_la_clinica):
+            resp = self._estado_de_cuenta()
+        self.assertEqual(resp.data["overdue_count"], 1)
+
+    def test_el_pago_sin_fecha_se_registra_con_la_del_dia_de_la_clinica(self):
+        """
+        Un cobro de las 20:00 en Guayaquil quedaba con la fecha del día
+        siguiente: descuadra el cierre de caja y el estado de cuenta.
+        """
+        budget = Budget.objects.create(
+            tenant=self.tenant, patient=self.patient, status=Budget.Status.APPROVED,
+            total_amount=Decimal("100.00"),
+        )
+        plan = PaymentPlan.objects.create(
+            tenant=self.tenant, budget=budget, patient=self.patient,
+            total_amount=Decimal("100.00"), installment_count=1,
+        )
+        cuota = Installment.objects.create(
+            tenant=self.tenant, payment_plan=plan, patient=self.patient,
+            number=1, due_date=date(2026, 3, 10), amount=Decimal("100.00"),
+        )
+        hoy_en_la_clinica = date(2026, 3, 10)
+        with patch("apps.billing.views.timezone.localdate", return_value=hoy_en_la_clinica):
+            resp = self.client.post(
+                reverse("installment-pay", kwargs={"pk": cuota.id}),
+                {"amount": "100.00", "method": "cash"},
+            )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.content)
+        self.assertEqual(Payment.objects.get().date, hoy_en_la_clinica)

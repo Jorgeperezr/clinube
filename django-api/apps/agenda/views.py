@@ -1,0 +1,401 @@
+import logging
+from datetime import timedelta
+
+from django.utils import timezone
+from django.utils.dateparse import parse_date
+from rest_framework import generics, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.accounts.funciones import TieneFuncion
+from apps.agenda.models import Appointment, Doctor
+from apps.agenda.serializers import (
+    AppointmentSerializer,
+    DoctorSerializer,
+    RescheduleSerializer,
+)
+from apps.common.permissions import HasRole
+
+logger = logging.getLogger("apps.agenda")
+
+# Crear, mover y cancelar citas es una FUNCIÓN de cada profesional (ver
+# apps/accounts/funciones.py); por defecto la tiene recepción, como antes.
+CAN_MANAGE_AGENDA = TieneFuncion.para("agenda")
+CAN_VIEW_AGENDA = HasRole.for_roles("admin", "reception", "doctor", "auxiliary")
+
+
+class DoctorListView(generics.ListAPIView):
+    """GET /api/v1/doctors/ — listado de doctores activos."""
+
+    serializer_class = DoctorSerializer
+    permission_classes = [CAN_VIEW_AGENDA]
+
+    def get_queryset(self):
+        # El `order_by` no es cosmético: sin un orden estable, paginar un
+        # conjunto es quedarse a merced de lo que devuelva la base, y una
+        # misma fila puede salir dos veces o no salir en ninguna página.
+        # Django lo avisa («UnorderedObjectListWarning») y aquí se veía en
+        # la salida de las pruebas.
+        return Doctor.objects.filter(
+            tenant=self.request.tenant, is_active=True
+        ).select_related("user").order_by("user__full_name", "user__email")
+
+
+class AppointmentListCreateView(generics.ListCreateAPIView):
+    """
+    GET/POST /api/v1/appointments/ — RF-AGN-03.
+    Filtros: ?doctor_id=&status=&date_from=&date_to=
+    """
+
+    serializer_class = AppointmentSerializer
+    filterset_fields = ["doctor", "status", "patient"]
+
+    def get_permissions(self):
+        return [CAN_MANAGE_AGENDA()] if self.request.method == "POST" else [CAN_VIEW_AGENDA()]
+
+    def get_queryset(self):
+        qs = Appointment.objects.filter(tenant=self.request.tenant).select_related(
+            "patient", "doctor", "doctor__user"
+        )
+        # Un doctor solo ve su propia agenda por defecto
+        user = self.request.user
+        if user.role == "doctor":
+            qs = qs.filter(doctor__user=user)
+
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+        if date_from:
+            qs = qs.filter(scheduled_start__date__gte=parse_date(date_from))
+        if date_to:
+            qs = qs.filter(scheduled_start__date__lte=parse_date(date_to))
+        return qs.order_by("scheduled_start")
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Bloqueo por morosidad (RF-AGN-07 / RN-AGN-01): antes de crear la
+        # cita se verifica que el paciente no esté moroso. La regla vive en
+        # el backend, no en el cliente, para que aplique igual desde la web
+        # o la app. Admin/recepción pueden forzar con override=true (excepción
+        # manual documentada en el SRS).
+        from apps.billing.services import is_patient_delinquent
+
+        patient = serializer.validated_data["patient"]
+        override = str(request.data.get("override", "")).lower() in ("true", "1", "yes")
+
+        if not override and is_patient_delinquent(patient, request.tenant):
+            return Response(
+                {
+                    "error": {
+                        "code": "patient_delinquent",
+                        "message": (
+                            "El paciente tiene cuotas vencidas. Regularice el pago o "
+                            "use override=true para agendar de todas formas."
+                        ),
+                    }
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        serializer.save(tenant=request.tenant, created_by=request.user)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class AppointmentDetailView(generics.RetrieveUpdateAPIView):
+    """GET/PATCH /api/v1/appointments/{id}/"""
+
+    serializer_class = AppointmentSerializer
+
+    def get_permissions(self):
+        return [CAN_VIEW_AGENDA()] if self.request.method == "GET" else [CAN_MANAGE_AGENDA()]
+
+    def get_queryset(self):
+        return Appointment.objects.filter(tenant=self.request.tenant)
+
+
+class _AppointmentActionView(APIView):
+    """Base para acciones de cambio de estado sobre una cita."""
+
+    permission_classes = [CAN_MANAGE_AGENDA]
+
+    def get_appointment(self, request, pk):
+        return generics.get_object_or_404(
+            Appointment, pk=pk, tenant=request.tenant
+        )
+
+
+class AppointmentConfirmView(_AppointmentActionView):
+    """POST /appointments/{id}/confirm/ — RF-AGN-04."""
+
+    def post(self, request, pk):
+        appt = self.get_appointment(request, pk)
+        appt.status = Appointment.Status.CONFIRMED
+        appt.save(update_fields=["status"])
+        return Response(AppointmentSerializer(appt).data)
+
+
+class AppointmentCancelView(_AppointmentActionView):
+    """POST /appointments/{id}/cancel/ — RF-AGN-04."""
+
+    def post(self, request, pk):
+        appt = self.get_appointment(request, pk)
+        appt.status = Appointment.Status.CANCELLED
+        appt.save(update_fields=["status"])
+        return Response(AppointmentSerializer(appt).data)
+
+
+class AppointmentRescheduleView(_AppointmentActionView):
+    """POST /appointments/{id}/reschedule/ — RF-AGN-04."""
+
+    def post(self, request, pk):
+        appt = self.get_appointment(request, pk)
+        serializer = RescheduleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_start = serializer.validated_data["new_start"]
+        new_end = serializer.validated_data["new_end"]
+
+        if new_end <= new_start:
+            return Response(
+                {"detail": "La hora de fin debe ser posterior a la de inicio."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validar solapamiento en el nuevo horario
+        appt.scheduled_start = new_start
+        appt.scheduled_end = new_end
+        if appt.overlaps_with_existing():
+            return Response(
+                {"detail": "El doctor ya tiene una cita en ese horario."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        appt.status = Appointment.Status.RESCHEDULED
+        appt.save(update_fields=["scheduled_start", "scheduled_end", "status"])
+        return Response(AppointmentSerializer(appt).data)
+
+
+class AppointmentCheckinView(_AppointmentActionView):
+    """POST /appointments/{id}/checkin/ — RF-AGN-05.
+    Dispara aviso al doctor por WhatsApp (RF-WSP-05) — se activa en Sprint 10."""
+
+    def post(self, request, pk):
+        appt = self.get_appointment(request, pk)
+        appt.checkin_at = timezone.now()
+        appt.save(update_fields=["checkin_at"])
+        # Aviso al doctor por WhatsApp de que su paciente llegó (RF-WSP-05).
+        # Se dispara de forma asíncrona (Celery) para no bloquear el check-in.
+        # Si el broker no está disponible, el check-in NO debe fallar: el
+        # aviso es secundario, el registro de llegada es lo crítico.
+        try:
+            from apps.whatsapp.tasks import notify_doctor_patient_arrived
+
+            notify_doctor_patient_arrived.delay(str(appt.id))
+        except Exception:
+            # El registro de llegada es lo crítico y no se toca. Pero que
+            # el aviso sea secundario no lo hace invisible: si el broker
+            # lleva días caído, ningún doctor se entera de que su paciente
+            # ha llegado y con un `pass` nadie llegaba a saberlo.
+            logger.warning(
+                "No se pudo encolar el aviso de llegada al doctor",
+                exc_info=True,
+                extra={"appointment_id": str(appt.id)},
+            )
+        return Response(AppointmentSerializer(appt).data)
+
+
+class AppointmentCheckoutView(_AppointmentActionView):
+    """POST /appointments/{id}/checkout/ — RF-AGN-05."""
+
+    permission_classes = [HasRole.for_roles("admin", "reception", "doctor")]
+
+    def post(self, request, pk):
+        appt = self.get_appointment(request, pk)
+        appt.checkout_at = timezone.now()
+        appt.status = Appointment.Status.COMPLETED
+        appt.save(update_fields=["checkout_at", "status"])
+        return Response(AppointmentSerializer(appt).data)
+
+
+class AgendaViewList(generics.ListAPIView):
+    """
+    GET /api/v1/agenda/view/?mode=daily|weekly|monthly&doctor_id=&date=
+    Vista consolidada de la agenda (RF-AGN-01, 02). Devuelve las citas
+    del rango correspondiente al modo y fecha ancla.
+    """
+
+    serializer_class = AppointmentSerializer
+    permission_classes = [CAN_VIEW_AGENDA]
+
+    def get_queryset(self):
+        mode = self.request.query_params.get("mode", "daily")
+        date_str = self.request.query_params.get("date")
+        anchor = parse_date(date_str) if date_str else timezone.localdate()
+
+        if mode == "weekly":
+            start = anchor - timedelta(days=anchor.weekday())
+            end = start + timedelta(days=6)
+        elif mode == "monthly":
+            start = anchor.replace(day=1)
+            next_month = (start + timedelta(days=32)).replace(day=1)
+            end = next_month - timedelta(days=1)
+        else:  # daily
+            start = end = anchor
+
+        qs = Appointment.objects.filter(
+            tenant=self.request.tenant,
+            scheduled_start__date__gte=start,
+            scheduled_start__date__lte=end,
+        ).select_related("patient", "doctor", "doctor__user")
+
+        doctor_id = self.request.query_params.get("doctor_id")
+        if doctor_id:
+            qs = qs.filter(doctor_id=doctor_id)
+
+        user = self.request.user
+        if user.role == "doctor":
+            qs = qs.filter(doctor__user=user)
+
+        return qs.order_by("scheduled_start")
+
+
+
+class AppointmentStartView(APIView):
+    """
+    POST /api/v1/appointments/{id}/start/ — inicio de la atención.
+    Flujo completo: check-in (llegó, en espera) → start (en atención)
+    → checkout (finalizada). Requiere check-in previo.
+    """
+
+    permission_classes = [CAN_MANAGE_AGENDA]
+
+    def post(self, request, pk):
+        try:
+            appt = Appointment.objects.get(pk=pk, tenant=request.tenant)
+        except Appointment.DoesNotExist:
+            return Response({"detail": "Cita no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        if not appt.checkin_at:
+            return Response(
+                {"detail": "El paciente aún no hizo check-in (botón Llegó)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if appt.attention_started_at:
+            return Response({"detail": "La atención ya fue iniciada."}, status=status.HTTP_400_BAD_REQUEST)
+
+        appt.attention_started_at = timezone.now()
+        appt.save(update_fields=["attention_started_at"])
+        return Response(AppointmentSerializer(appt).data)
+
+
+
+class DoctorCalendarURLView(APIView):
+    """
+    GET /api/v1/doctors/{id}/calendar-url/ — devuelve la URL secreta del
+    feed iCalendar para suscribirse desde Google/Apple/Outlook Calendar.
+    Solo admin o el propio doctor.
+    """
+
+    permission_classes = [HasRole.for_roles("admin", "doctor")]
+
+    def get(self, request, pk):
+        try:
+            doctor = Doctor.objects.get(pk=pk, tenant=request.tenant)
+        except Doctor.DoesNotExist:
+            return Response({"detail": "Doctor no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        if request.user.role == "doctor" and doctor.user_id != request.user.id:
+            return Response(
+                {"detail": "Solo puedes ver la URL de tu propio calendario."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        path = f"/api/v1/calendar/{doctor.calendar_token}.ics"
+        return Response({
+            "url_path": path,
+            "url": request.build_absolute_uri(path),
+            "instructions": (
+                "En Google Calendar: Otros calendarios → + → Desde URL → pegar la URL. "
+                "Google actualiza las suscripciones cada varias horas."
+            ),
+        })
+
+
+
+class DoctorMySignatureView(APIView):
+    """
+    GET/POST /api/v1/doctors/me/signature/ — el doctor gestiona su propia
+    firma manuscrita (dibujada en pantalla táctil o con el mouse) y su
+    número de registro profesional. La firma se estampa en las recetas.
+    """
+
+    permission_classes = [HasRole.for_roles("doctor")]
+
+    def _my_doctor(self, request):
+        return Doctor.objects.filter(tenant=request.tenant, user=request.user).first()
+
+    def get(self, request):
+        doctor = self._my_doctor(request)
+        if not doctor:
+            return Response({"detail": "Tu usuario no tiene perfil de doctor."}, status=404)
+        return Response({
+            "license_number": doctor.license_number,
+            "has_signature": bool(doctor.signature_image),
+            "signature_image": doctor.signature_image or None,
+        })
+
+    def post(self, request):
+        doctor = self._my_doctor(request)
+        if not doctor:
+            return Response({"detail": "Tu usuario no tiene perfil de doctor."}, status=404)
+        signature = str(request.data.get("signature_image", ""))
+        if signature and not signature.startswith("data:image/"):
+            return Response({"detail": "Formato de firma inválido."}, status=400)
+        if "signature_image" in request.data:
+            doctor.signature_image = signature
+        if "license_number" in request.data:
+            doctor.license_number = str(request.data["license_number"]).strip()
+        doctor.save()
+        return Response({"has_signature": bool(doctor.signature_image),
+                         "license_number": doctor.license_number})
+
+
+class WaitingPatientsView(APIView):
+    """
+    GET /api/v1/appointments/waiting/ — Sprint 45.
+    Pacientes que ya llegaron a la clínica y aún no son atendidos. El
+    odontólogo ve solo los suyos; admin y recepción ven los de toda la
+    clínica (para saber a quién avisar).
+
+    No requiere un modelo de notificaciones: la señal ya está en los datos
+    —hay check-in registrado y la atención no ha comenzado—, de modo que
+    el aviso es siempre coherente con el estado real de la agenda.
+    """
+
+    permission_classes = [HasRole.for_roles("admin", "reception", "doctor", "auxiliary")]
+
+    def get(self, request):
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        qs = Appointment.objects.filter(
+            tenant=request.tenant,
+            checkin_at__isnull=False,
+            attention_started_at__isnull=True,
+            scheduled_start__date=today,
+        ).exclude(status__in=["cancelled", "no_show"]).select_related("patient", "doctor__user")
+
+        if request.user.role == "doctor":
+            doctor = Doctor.objects.filter(tenant=request.tenant, user=request.user).first()
+            qs = qs.filter(doctor=doctor) if doctor else qs.none()
+
+        data = [{
+            "id": str(a.id),
+            "patient_id": str(a.patient_id),
+            "patient_name": f"{a.patient.first_name} {a.patient.last_name}",
+            "doctor_name": (a.doctor.user.full_name or a.doctor.user.email) if a.doctor else "—",
+            "scheduled_start": a.scheduled_start.isoformat(),
+            "checkin_at": a.checkin_at.isoformat(),
+            "waiting_minutes": int((timezone.now() - a.checkin_at).total_seconds() // 60),
+        } for a in qs.order_by("checkin_at")]
+        return Response(data)
