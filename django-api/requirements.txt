@@ -20,4 +20,12 @@ openpyxl==3.1.5
 # Ya venía instalada de forma transitiva con google-auth; se declara
 # explícita porque ahora el código la importa de forma directa y no debe
 # depender de que otra librería la siga arrastrando.
-cryptography==50.0.1
+#
+# Desde la 49, cryptography solo publica ruedas de macOS para Apple
+# Silicon: en un Mac Intel pip intentaba compilarla y eso exige Rust
+# (fallaba al crear el .venv). En ese caso, y SOLO en ese, se queda en la
+# 48.0.1, la última con rueda para Intel. Sus avisos abiertos son de
+# PKCS#7 y de verificación de certificados X.509, que este proyecto no
+# usa; y el servidor (Linux) y el CI siguen con la 50.
+cryptography==50.0.1; sys_platform != "darwin" or platform_machine != "x86_64"
+cryptography==48.0.1; sys_platform == "darwin" and platform_machine == "x86_64"
