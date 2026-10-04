@@ -97,6 +97,7 @@ function PatientDetail() {
 
       <PatientAgreement patient={patient} canEdit={role === "admin" || role === "reception"}
                         onChanged={(p) => setPatient(p)} />
+      {(role === "admin" || role === "reception") && <AutorizacionWhatsApp patient={patient} />}
 
       {/* Las siete pestañas no caben a lo ancho de una tableta: medido,
           a 1024 px la última llegaba a 1189 y arrastraba a TODA la página
@@ -627,7 +628,7 @@ function EvolutionsTab({ patientId }) {
                     onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </div>
         <div className="field">
-          <label>Fecha de seguimiento (opcional — genera alerta)</label>
+          <label>Fecha de seguimiento (opcional, genera un aviso)</label>
           <input type="date" value={form.follow_up_date}
                  onChange={(e) => setForm({ ...form, follow_up_date: e.target.value })} />
         </div>
@@ -801,6 +802,87 @@ function PatientAgreement({ patient, canEdit, onChanged }) {
         </>
       )}
       {error && <span style={{ color: "var(--red)" }}>{error}</span>}
+    </div>
+  );
+}
+
+
+/**
+ * Autorización del paciente para recibir recordatorios por WhatsApp.
+ *
+ * Sin ella no sale ningún recordatorio de cita ni de pago (lo exigen Meta
+ * y la LOPDP; ver apps/whatsapp/tasks.py). Hasta ahora no había dónde
+ * registrarla salvo el administrador técnico de Django, así que en la
+ * práctica los recordatorios no llegaban a nadie.
+ */
+function AutorizacionWhatsApp({ patient }) {
+  const [confirmar, ConfirmUI] = useConfirm();
+  const [activa, setActiva] = useState(undefined);   // undefined = cargando
+  const [error, setError] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+
+  useEffect(() => {
+    api(`/patients/${patient.id}/whatsapp-optin/`)
+      .then(readList)
+      .then((lista) => setActiva(lista.find((o) => o.is_active) || null))
+      .catch(() => setActiva(null));
+  }, [patient.id]);
+
+  async function registrar() {
+    const ok = await confirmar({
+      title: "Recordatorios por WhatsApp",
+      message: `¿${patient.first_name || patient.full_name} autorizó recibir recordatorios de citas y pagos por WhatsApp?`,
+      confirmLabel: "Sí, registrar",
+    });
+    if (!ok) return;
+    setOcupado(true); setError("");
+    try {
+      setActiva(await readObject(await api(`/patients/${patient.id}/whatsapp-optin/`, {
+        method: "POST", body: JSON.stringify({ channel: "registro_recepcion" }),
+      })));
+    } catch (err) { setError(err.message); }
+    finally { setOcupado(false); }
+  }
+
+  async function retirar() {
+    const ok = await confirmar({
+      title: "Retirar la autorización",
+      message: "Dejará de recibir recordatorios por WhatsApp hasta que la autorice otra vez.",
+      confirmLabel: "Retirar", danger: true,
+    });
+    if (!ok) return;
+    setOcupado(true); setError("");
+    try {
+      await readObject(await api(`/whatsapp-optin/${activa.id}/revoke/`, { method: "POST" }));
+      setActiva(null);
+    } catch (err) { setError(err.message); }
+    finally { setOcupado(false); }
+  }
+
+  if (activa === undefined) return null;
+  const enlace = { background: "transparent", border: "none", padding: 0, color: "var(--petrol)",
+                   fontSize: 13, cursor: "pointer" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                  fontSize: 13, color: "var(--ink-soft)", marginBottom: 4 }}>
+      <span>Recordatorios por WhatsApp:</span>
+      {activa ? (
+        <>
+          <strong style={{ color: "var(--ink)" }}>
+            Autorizados desde el {new Date(activa.opted_in_at).toLocaleDateString("es-EC")}
+          </strong>
+          <button type="button" style={enlace} disabled={ocupado} onClick={retirar}>Retirar</button>
+        </>
+      ) : (
+        <>
+          <strong style={{ color: "var(--ink)" }}>No autorizados</strong>
+          {patient.phone
+            ? <button type="button" style={enlace} disabled={ocupado} onClick={registrar}>Registrar autorización</button>
+            : <span>(falta el teléfono)</span>}
+        </>
+      )}
+      {error && <span style={{ color: "var(--red)" }}>{error}</span>}
+      {ConfirmUI}
     </div>
   );
 }

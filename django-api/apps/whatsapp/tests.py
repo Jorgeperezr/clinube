@@ -35,6 +35,23 @@ class OptInTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertTrue(resp.data["is_active"])
 
+    def test_registrarla_dos_veces_no_duplica(self):
+        self.client.force_authenticate(user=self.reception)
+        url = reverse("whatsapp-optin-list", kwargs={"pk": self.patient.id})
+        primera = self.client.post(url, {"channel": "registro_recepcion"})
+        segunda = self.client.post(url, {"channel": "registro_recepcion"})
+        self.assertEqual(primera.data["id"], segunda.data["id"])
+        self.assertEqual(WhatsAppOptIn.objects.filter(patient=self.patient).count(), 1)
+
+    def test_no_se_registra_a_nombre_de_un_paciente_de_otra_clinica(self):
+        otra = Tenant.objects.create(name="Otra clínica")
+        ajeno = Patient.objects.create(tenant=otra, first_name="Luis", last_name="Mora",
+                                       national_id="1313131313", phone="+593988777666")
+        self.client.force_authenticate(user=self.reception)
+        resp = self.client.post(reverse("whatsapp-optin-list", kwargs={"pk": ajeno.id}), {})
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(WhatsAppOptIn.objects.filter(patient=ajeno).exists())
+
     def test_revoke_optin(self):
         optin = WhatsAppOptIn.objects.create(tenant=self.tenant, patient=self.patient)
         self.client.force_authenticate(user=self.reception)

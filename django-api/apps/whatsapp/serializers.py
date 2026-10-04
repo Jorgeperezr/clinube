@@ -19,9 +19,6 @@ class WhatsAppOptInSerializer(serializers.ModelSerializer):
     class Meta:
         model = WhatsAppOptIn
         fields = ["id", "patient", "channel", "opted_in_at", "revoked_at", "is_active"]
-        read_only_fields = ["id", "opted_in_at", "revoked_at", "is_active"]
-
-    def validate_patient(self, value):
-        if value.tenant_id != self.context["request"].tenant.id:
-            raise serializers.ValidationError("El paciente no pertenece a esta clínica.")
-        return value
+        # El paciente sale de la URL (/patients/<id>/whatsapp-optin/), no
+        # del cuerpo: pedirlo dos veces solo servía para que no coincidieran.
+        read_only_fields = ["id", "patient", "opted_in_at", "revoked_at", "is_active"]

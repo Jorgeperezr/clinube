@@ -27,18 +27,40 @@ class WhatsAppTemplateListCreateView(generics.ListCreateAPIView):
 
 
 class WhatsAppOptInListCreateView(generics.ListCreateAPIView):
-    """GET/POST /api/v1/patients/{id}/whatsapp-optin/ — RN-WSP-02."""
+    """
+    GET/POST /api/v1/patients/{id}/whatsapp-optin/ — RN-WSP-02.
+
+    Sin una autorización activa no sale ningún recordatorio por WhatsApp
+    (ver apps/whatsapp/tasks.py): se registra desde la ficha del paciente.
+    """
 
     serializer_class = WhatsAppOptInSerializer
     permission_classes = [CAN_MANAGE_OPTIN]
 
+    def _paciente(self):
+        from apps.patients.models import Patient
+
+        # Antes se guardaba el id de la URL tal cual: una clínica podía
+        # registrar autorizaciones a nombre de pacientes de otra.
+        return generics.get_object_or_404(Patient, pk=self.kwargs["pk"], tenant=self.request.tenant)
+
     def get_queryset(self):
         return WhatsAppOptIn.objects.filter(
-            patient_id=self.kwargs["pk"], tenant=self.request.tenant
+            patient=self._paciente(), tenant=self.request.tenant
         ).order_by("-opted_in_at")
 
-    def perform_create(self, serializer):
-        serializer.save(tenant=self.request.tenant, patient_id=self.kwargs["pk"])
+    def create(self, request, *args, **kwargs):
+        paciente = self._paciente()
+        # Registrarla otra vez no crea una segunda autorización activa.
+        activa = WhatsAppOptIn.objects.filter(
+            patient=paciente, tenant=request.tenant, revoked_at__isnull=True
+        ).first()
+        if activa:
+            return Response(WhatsAppOptInSerializer(activa).data)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(tenant=request.tenant, patient=paciente)
+        return Response(serializer.data, status=201)
 
 
 class WhatsAppOptInRevokeView(APIView):
