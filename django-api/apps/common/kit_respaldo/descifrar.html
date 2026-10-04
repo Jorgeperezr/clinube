@@ -90,6 +90,16 @@
         cifrar</strong> y contiene datos de salud. Bórralo cuando termines de usarlo.</div>
     </div>
 
+    <div class="tarjeta" id="adjuntos" hidden>
+      <h2>Archivos</h2>
+      <p id="adjuntos-nota" class="suave"></p>
+      <div class="acciones"><button id="todos-adjuntos" class="secundario">Descargar todos</button></div>
+      <div class="desplazable" style="max-height:260px">
+        <table><thead><tr><th>Archivo</th><th class="num">Tamaño</th><th></th></tr></thead>
+          <tbody id="lista-adjuntos"></tbody></table>
+      </div>
+    </div>
+
     <div class="tarjeta" id="visor" hidden>
       <h2 id="visor-titulo"></h2>
       <p id="visor-nota" class="suave"></p>
@@ -247,8 +257,37 @@ function mostrar() {
     tr.append(celda(nombre(modelo)), celda(nf.format(porTabla[modelo].length), "num"), celda(b));
     cuerpo.append(tr);
   });
+  mostrarAdjuntos(m);
   $("visor").hidden = true;
   $("resultado").hidden = false;
+}
+
+/* Los archivos (radiografías, documentos…) van en «archivos», con su
+   ruta original y el contenido en base64. Solo están si se pidieron al
+   generar la copia. */
+const tamano = (b) => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+const nombreDe = (ruta) => ruta.split("/").pop();
+function bytesDe(a) {
+  const bin = atob(a.contenido || "");
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function mostrarAdjuntos(m) {
+  const lista = contenido.archivos || [];
+  const omitidos = (m.archivos && m.archivos.omitidos) || [];
+  $("adjuntos").hidden = !lista.length && !omitidos.length;
+  if ($("adjuntos").hidden) return;
+  $("adjuntos-nota").textContent = `${nf.format(lista.length)} ${lista.length === 1 ? "archivo" : "archivos"}.`
+    + (omitidos.length ? ` ${nf.format(omitidos.length)} no entraron en esta copia (están en manifest.archivos.omitidos del JSON).` : "");
+  $("todos-adjuntos").hidden = !lista.length;
+  $("lista-adjuntos").replaceChildren(...lista.map((a) => {
+    const b = document.createElement("button"); b.className = "secundario"; b.textContent = "Descargar";
+    b.style.padding = "2px 10px"; b.onclick = () => descargar(bytesDe(a), nombreDe(a.ruta), "application/octet-stream");
+    const tr = document.createElement("tr");
+    tr.append(celda(a.ruta), celda(tamano(a.bytes || 0), "num"), celda(b));
+    return tr;
+  }));
 }
 
 function celda(x, clase) {
@@ -300,6 +339,12 @@ function csv(modelo) {
 }
 
 $("json").addEventListener("click", () => descargar(JSON.stringify(contenido, null, 1), "respaldo-descifrado.json", "application/json"));
+$("todos-adjuntos").addEventListener("click", async () => {
+  for (const a of contenido.archivos || []) {
+    descargar(bytesDe(a), nombreDe(a.ruta), "application/octet-stream");
+    await new Promise((r) => setTimeout(r, 250));   // el navegador bloquea ráfagas de descargas
+  }
+});
 $("csvs").addEventListener("click", async () => {
   for (const modelo of Object.keys(porTabla)) {
     descargar(csv(modelo), `${modelo}.csv`, "text/csv;charset=utf-8");

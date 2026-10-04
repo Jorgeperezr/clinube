@@ -11,7 +11,9 @@ Uso:
 Pide la frase sin mostrarla en pantalla (o la lee de la variable de
 entorno FRASE_RESPALDO, para automatizarlo) y escribe al lado del
 archivo un .json con todo el contenido. Con --csv deja además un CSV
-por tabla, separado por punto y coma, que Excel abre directamente.
+por tabla, separado por punto y coma, que Excel abre directamente. Si
+la copia lleva los archivos (radiografías, documentos), los deja en una
+carpeta al lado, con sus rutas originales.
 
 Necesita Python 3.8+ y la biblioteca «cryptography»:
     python3 -m pip install cryptography
@@ -21,6 +23,7 @@ conecta a nada: todo ocurre en este equipo.
 """
 
 import argparse
+import base64
 import csv
 import getpass
 import gzip
@@ -122,11 +125,32 @@ def escribir_csv(contenido, carpeta):
     return len(tablas)
 
 
+def extraer_archivos(contenido, carpeta):
+    """Escribe los archivos de la copia y los quita del JSON. Devuelve cuántos."""
+    archivos = contenido.get("archivos") or []
+    base = os.path.abspath(carpeta)
+    escritos = 0
+    for a in archivos:
+        ruta = os.path.normpath(a.get("ruta") or "")
+        destino = os.path.abspath(os.path.join(base, ruta))
+        # Una ruta que se salga de la carpeta no se escribe.
+        if os.path.isabs(ruta) or not destino.startswith(base + os.sep):
+            continue
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        with open(destino, "wb") as f:
+            f.write(base64.b64decode(a.get("contenido") or ""))
+        escritos += 1
+    contenido["archivos"] = [{"ruta": a.get("ruta"), "bytes": a.get("bytes")} for a in archivos]
+    return escritos
+
+
 def main():
     p = argparse.ArgumentParser(description="Descifra una copia de seguridad de la clínica.")
     p.add_argument("archivo", help="el .clinicabk (o el .zip que lo trae)")
     p.add_argument("--csv", metavar="CARPETA", help="además, un CSV por tabla en esta carpeta")
     p.add_argument("--salida", metavar="ARCHIVO", help="dónde escribir el JSON")
+    p.add_argument("--archivos", metavar="CARPETA",
+                   help="dónde dejar los archivos, si la copia los trae (por omisión, al lado)")
     args = p.parse_args()
 
     if not os.path.exists(args.archivo):
@@ -137,6 +161,10 @@ def main():
 
     m = contenido.get("manifest", {})
     salida = args.salida or os.path.splitext(args.archivo)[0] + ".json"
+    carpeta = None
+    if contenido.get("archivos"):
+        carpeta = args.archivos or os.path.splitext(args.archivo)[0] + "-archivos"
+        n_archivos = extraer_archivos(contenido, carpeta)
     with open(salida, "w", encoding="utf-8") as f:
         json.dump(contenido, f, ensure_ascii=False, indent=1)
 
@@ -145,6 +173,11 @@ def main():
     if alcance.get("tipo") == "profesional":
         print(f"Pacientes de {alcance.get('full_name') or alcance.get('email')}: {alcance.get('pacientes')}")
     print(f"{m.get('total_records', 0)} registros → {salida}")
+    if carpeta:
+        print(f"{n_archivos} archivos → {carpeta}/")
+    omitidos = (m.get("archivos") or {}).get("omitidos") or []
+    if omitidos:
+        print(f"{len(omitidos)} archivos no entraron en esta copia: ver manifest.archivos.omitidos en el JSON.")
     if args.csv:
         print(f"{escribir_csv(contenido, args.csv)} tablas en CSV → {args.csv}/")
     print("El resultado está SIN CIFRAR y contiene datos de salud: bórralo al terminar.")

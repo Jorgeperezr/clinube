@@ -29,8 +29,17 @@ justamente el objetivo del cifrado y hay que decírselo en pantalla.
 El contenido, ya descifrado, es JSON con un manifiesto y los registros
 en formato de fixture de Django, para que un técnico pueda releerlos con
 `loaddata` sin herramientas propias.
+
+LOS ARCHIVOS (radiografías, documentos escaneados, consentimientos
+firmados, fotos, logotipo) van dentro solo si se piden: pueden pesar
+cientos de megas y la copia se arma en memoria. Van en la clave
+«archivos», cada uno con su ruta original y el contenido en base64; el
+formato sigue siendo el v1, y un kit antiguo abre la copia sin ver los
+archivos en lugar de fallar. Hay un tope (LIMITE_ARCHIVOS): lo que no
+cabe se lista en el manifiesto como omitido, nunca se pierde en silencio.
 """
 
+import base64
 import gzip
 import json
 import os
@@ -75,6 +84,12 @@ REDACTED_FIELDS = {
     # de Meta: no tiene nada que hacer en un archivo que sale de él.
     "whatsapp.ConfiguracionWhatsApp": ("access_token_cifrado",),
 }
+
+
+# Tope de lo que suman los archivos dentro de UNA copia. La copia se
+# arma en memoria (base64, JSON, gzip y cifrado, cada paso con su copia)
+# y tiene que terminar antes del tiempo máximo de una petición.
+LIMITE_ARCHIVOS = 150 * 1024 * 1024
 
 
 class BackupError(Exception):
@@ -220,6 +235,49 @@ def _manifiesto(tenant, requested_by, records, counts, alcance):
     }
 
 
+def recoger_archivos(records, limite=None):
+    """
+    Los archivos a los que apuntan los registros de la copia.
+
+    Devuelve (archivos, omitidos). Se recorren los campos de archivo de
+    cada modelo en vez de una lista fija, para que un modelo nuevo con
+    adjuntos entre solo. Cada archivo se lee con el almacenamiento de su
+    propio campo: en local es el disco, en la nube, el bucket.
+    """
+    from django.db.models import FileField
+
+    limite = LIMITE_ARCHIVOS if limite is None else limite
+    campos = {}
+    for r in records:
+        label = r["model"]
+        if label not in campos:
+            model = apps.get_model(label)
+            campos[label] = [f for f in model._meta.fields if isinstance(f, FileField)]
+
+    pendientes = {}
+    for r in records:
+        for campo in campos[r["model"]]:
+            ruta = r["fields"].get(campo.name)
+            if ruta:
+                pendientes.setdefault(ruta, campo.storage)
+
+    archivos, omitidos, total = [], [], 0
+    for ruta in sorted(pendientes):
+        try:
+            with pendientes[ruta].open(ruta, "rb") as f:
+                datos = f.read()
+        except (FileNotFoundError, OSError):
+            omitidos.append({"ruta": ruta, "motivo": "no está en el servidor"})
+            continue
+        if total + len(datos) > limite:
+            omitidos.append({"ruta": ruta, "motivo": "no cupo en esta copia", "bytes": len(datos)})
+            continue
+        total += len(datos)
+        archivos.append({"ruta": ruta, "bytes": len(datos),
+                         "contenido": base64.b64encode(datos).decode("ascii")})
+    return archivos, omitidos
+
+
 def collect(tenant, requested_by=None):
     """
     Reúne los datos de la clínica en una estructura JSON-serializable.
@@ -339,14 +397,27 @@ def collect_profesional(tenant, usuario):
     return {"manifest": manifest, "records": records}
 
 
-def build_encrypted(tenant, passphrase, requested_by=None, profesional=None):
+def build_encrypted(tenant, passphrase, requested_by=None, profesional=None, con_archivos=False):
     """
     Copia comprimida y cifrada. Devuelve (bytes, manifiesto).
 
-    Sin `profesional`, la de toda la clínica; con él, solo lo suyo.
+    Sin `profesional`, la de toda la clínica; con él, solo lo suyo. Con
+    `con_archivos`, también los archivos a los que apuntan esos registros.
     """
     payload = (collect_profesional(tenant, profesional) if profesional is not None
                else collect(tenant, requested_by=requested_by))
+    if con_archivos:
+        archivos, omitidos = recoger_archivos(payload["records"])
+        payload["archivos"] = archivos
+        payload["manifest"]["archivos"] = {
+            "incluidos": len(archivos),
+            "bytes": sum(a["bytes"] for a in archivos),
+            "omitidos": omitidos,
+        }
+        payload["manifest"]["notes"] = (
+            "Los archivos adjuntos van en «archivos»: cada uno con su ruta original "
+            "y el contenido en base64. Los que no entraron están en manifest.archivos.omitidos."
+        )
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return encrypt(gzip.compress(raw, compresslevel=6), passphrase), payload["manifest"]
 

@@ -213,16 +213,19 @@ cosas diferentes y las hace gente diferente:
 
 | | Copia de la plataforma | Copia de la clínica |
 |---|---|---|
-| Qué contiene | La base entera: **todas** las clínicas | Los datos de **una** clínica (o los pacientes de un profesional) |
+| Qué contiene | La base entera de **todas** las clínicas y sus archivos | Los datos de **una** clínica (o los pacientes de un profesional), con sus archivos si se piden |
 | Quién la hace | Quien administra el servidor | La administradora de la clínica; cada doctor o auxiliar, la suya |
 | Desde dónde | `scripts/backup.sh` en el servidor | Panel → Configuración → Copia de seguridad, o «Mi respaldo» |
 | Clave | `BACKUP_PASSPHRASE` del `.env` | La frase que escribe en pantalla |
 | Sirve para | Recuperar el servicio ante un desastre | Que la clínica conserve y consulte sus datos |
 | Restaura | Sí, con `scripts/restore.sh` | No: solo descifra y muestra el contenido |
 
-La copia de la clínica **no sustituye** a la de la plataforma: no incluye
-los archivos adjuntos ni permite levantar el servicio de nuevo. La de la
-plataforma sigue siendo obligatoria.
+La copia de la clínica **no sustituye** a la de la plataforma: no permite
+levantar el servicio de nuevo. Puede llevar los archivos adjuntos
+(radiografías, documentos, consentimientos firmados) si se marca «Incluir
+los archivos», hasta 150 MB por copia; lo que no cabe queda listado en
+el manifiesto. Es la exportación completa que la clínica se lleva si
+deja la plataforma. La de la plataforma sigue siendo obligatoria.
 
 ### Copia de la plataforma (servidor)
 

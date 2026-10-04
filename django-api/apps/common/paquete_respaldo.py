@@ -56,6 +56,16 @@ def _resumen(manifest):
     else:
         lineas.append("  Contenido:     todos los datos de la clínica")
     lineas.append(f"  Registros:     {manifest.get('total_records', 0)}")
+    archivos = manifest.get("archivos")
+    if archivos:
+        b = archivos.get("bytes", 0)
+        tam = f"{b / 1048576:.1f} MB" if b >= 1048576 else f"{max(1, round(b / 1024))} KB"
+        linea = f"  Archivos:      {archivos.get('incluidos', 0)} ({tam})"
+        if archivos.get("omitidos"):
+            linea += f"; {len(archivos['omitidos'])} no entraron (ver el manifiesto)"
+        lineas.append(linea)
+    else:
+        lineas.append("  Archivos:      no incluidos (solo su referencia)")
     return "\n".join(lineas) + "\n"
 
 

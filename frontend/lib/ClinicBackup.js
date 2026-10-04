@@ -162,7 +162,7 @@ function ComoAbrir() {
           <strong>Sin la plataforma y sin internet:</strong> descomprime el .zip y abre{" "}
           <code>descifrar.html</code> con Chrome, Edge, Firefox o Safari. Todo ocurre en tu equipo:
           el archivo y la frase no se envían a ningún sitio. Muestra cada tabla y permite descargarla en
-          CSV (Excel, Numbers, LibreOffice) o en JSON.
+          CSV (Excel, Numbers, LibreOffice) o en JSON, y los archivos si la copia los lleva.
         </li>
         <li style={paso}>
           <strong>Desde la terminal</strong> (personal técnico): <code>descifrar.py</code>, con Python
@@ -188,6 +188,7 @@ function CreateCard({ propia }) {
   const [phrase, setPhrase] = useState("");
   const [confirm, setConfirm] = useState("");
   const [understood, setUnderstood] = useState(false);
+  const [conArchivos, setConArchivos] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -201,7 +202,7 @@ function CreateCard({ propia }) {
     try {
       const resp = await api("/config/backup/", {
         method: "POST",
-        body: JSON.stringify({ passphrase: phrase, passphrase_confirm: confirm }),
+        body: JSON.stringify({ passphrase: phrase, passphrase_confirm: confirm, incluir_archivos: conArchivos }),
       });
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
@@ -210,8 +211,13 @@ function CreateCard({ propia }) {
       const disposition = resp.headers.get("Content-Disposition") || "";
       const named = /filename="([^"]+)"/.exec(disposition);
       const records = resp.headers.get("X-Backup-Records");
+      const archivos = resp.headers.get("X-Backup-Archivos");
+      const omitidos = Number(resp.headers.get("X-Backup-Archivos-Omitidos") || 0);
       download(await resp.blob(), named ? named[1] : `respaldo-${stamp()}.zip`);
-      setOkMsg(`Copia generada${records ? ` con ${nf.format(Number(records))} registros` : ""}. `
+      setOkMsg(`Copia generada${records ? ` con ${nf.format(Number(records))} registros` : ""}`
+        + (archivos ? ` y ${nf.format(Number(archivos))} ${archivos === "1" ? "archivo" : "archivos"}` : "") + ". "
+        + (omitidos ? `${nf.format(omitidos)} archivos no entraron por tamaño o porque faltan en el servidor; `
+                      + "la lista está en el manifiesto de la copia. " : "")
         + "El .zip trae también las instrucciones y las herramientas para abrirla. "
         + "Guárdalo fuera de este equipo y la frase en otro sitio.");
       setPhrase(""); setConfirm(""); setUnderstood(false);
@@ -223,9 +229,7 @@ function CreateCard({ propia }) {
     <div className="card">
       <h3 style={{ marginBottom: 6 }}>{propia ? "Generar la copia de mis pacientes" : "Generar una copia cifrada"}</h3>
       <p style={{ fontSize: 13, color: "var(--ink-soft)", marginTop: 0, marginBottom: 12 }}>
-        El archivo se cifra con AES-256 a partir de la frase que escribas. Los archivos
-        adjuntos (radiografías, documentos escaneados) no van dentro: la copia guarda su
-        referencia, no su contenido.
+        El archivo se cifra con AES-256 a partir de la frase que escribas.
       </p>
 
       <div style={{ padding: "10px 14px", borderRadius: 10, background: "var(--petrol-soft)",
@@ -264,6 +268,16 @@ function CreateCard({ propia }) {
         <input type="checkbox" checked={understood}
                onChange={(e) => setUnderstood(e.target.checked)} />
         He guardado la frase en un lugar seguro.
+      </label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13,
+                      margin: "0 0 14px", cursor: "pointer" }}>
+        <input type="checkbox" checked={conArchivos} style={{ marginTop: 2 }}
+               onChange={(e) => setConArchivos(e.target.checked)} />
+        <span>
+          Incluir los archivos: radiografías, documentos escaneados, consentimientos firmados
+          y fotos. La copia pesa más y tarda algo más en generarse; sin ellos, guarda solo su
+          referencia.
+        </span>
       </label>
 
       <button className="btn btn-primary" disabled={!ready} onClick={create}>
@@ -342,6 +356,8 @@ function OpenCard({ propia }) {
                         margin: "12px 0 8px", flexWrap: "wrap", gap: 10 }}>
             <strong style={{ fontSize: 14 }}>
               {nf.format(manifest.total_records || 0)} registros en {counts.length} tablas
+              {manifest.archivos && ` y ${nf.format(manifest.archivos.incluidos || 0)} `
+                + (manifest.archivos.incluidos === 1 ? "archivo" : "archivos")}
             </strong>
             <button className="btn btn-ghost"
                     onClick={() => download(
@@ -365,6 +381,12 @@ function OpenCard({ propia }) {
             </table>
           </div>
 
+          {manifest.archivos?.incluidos > 0 && (
+            <p style={{ fontSize: 12.5, color: "var(--ink-soft)", marginTop: 10 }}>
+              Los archivos no se descargan desde aquí: ábrela con <strong>descifrar.html</strong>,
+              que viene en el .zip de la copia, y aparecen en «Archivos».
+            </p>
+          )}
           <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 10 }}>
             El archivo JSON que descargas está <strong>sin cifrar</strong>: contiene datos de
             salud. Bórralo del equipo cuando termines de usarlo.

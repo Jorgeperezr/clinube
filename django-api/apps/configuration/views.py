@@ -398,8 +398,9 @@ class TenantBackupView(APIView):
         from apps.common.tenant_backup import build_encrypted, suggested_filename
 
         profesional = None if _es_admin_de_clinica(request) else request.user
+        con_archivos = str(request.data.get("incluir_archivos", "")).lower() in ("1", "true")
         blob, manifest = build_encrypted(request.tenant, passphrase, requested_by=request.user,
-                                         profesional=profesional)
+                                         profesional=profesional, con_archivos=con_archivos)
         nombre = suggested_filename(request.tenant, profesional)
         paquete = empaquetar(blob, nombre, manifest)
 
@@ -409,11 +410,15 @@ class TenantBackupView(APIView):
             "alcance": manifest["alcance"]["tipo"],
             "total_records": manifest["total_records"],
             "bytes": len(blob),
+            "archivos": (manifest.get("archivos") or {}).get("incluidos", 0),
         })
 
         response = HttpResponse(paquete, content_type="application/zip")
         response["Content-Disposition"] = f'attachment; filename="{nombre[:-len(".clinicabk")]}.zip"'
         response["X-Backup-Records"] = str(manifest["total_records"])
+        if con_archivos:
+            response["X-Backup-Archivos"] = str(manifest["archivos"]["incluidos"])
+            response["X-Backup-Archivos-Omitidos"] = str(len(manifest["archivos"]["omitidos"]))
         return response
 
 
@@ -470,7 +475,8 @@ class TenantBackupDecryptView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         if upload.size > MAX_BACKUP_UPLOAD:
             return Response(
-                {"error": {"message": "El archivo supera el tamaño máximo admitido (60 MB)."}},
+                {"error": {"message": "El archivo pasa de 60 MB, el máximo que se abre desde el panel. "
+                                      "Ábrelo con descifrar.html, que viene en el .zip de la copia."}},
                 status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             )
 
@@ -508,6 +514,12 @@ class TenantBackupDecryptView(APIView):
             "total_records": manifest.get("total_records", 0),
             "generated_at": manifest.get("generated_at", ""),
         })
+        # Los archivos no se devuelven al navegador: serían megas de base64
+        # para una pantalla que solo enseña cuántos hay. Se sacan con el
+        # kit (descifrar.html o descifrar.py), que no pasa por el servidor.
+        if "archivos" in payload:
+            payload["archivos"] = [{"ruta": a.get("ruta"), "bytes": a.get("bytes")}
+                                   for a in payload["archivos"]]
         return Response(payload)
 
 

@@ -59,7 +59,8 @@ Sirve aunque la plataforma ya no exista o no tenga cuenta.
   3. Elija el archivo .clinicabk y escriba la frase.
   4. Pulse «Descifrar». Verá el resumen y cada tabla, y podrá
      descargarlas en CSV (se abren con Excel, Numbers o
-     LibreOffice) o todo junto en JSON.
+     LibreOffice) o todo junto en JSON. Si la copia lleva los
+     archivos (radiografías, documentos), aparecen en «Archivos».
 
 Todo ocurre dentro del navegador: el archivo y la frase no salen del
 equipo. Puede desconectar internet antes de abrirlo para comprobarlo.
@@ -81,7 +82,8 @@ En Windows (PowerShell o símbolo del sistema):
     py descifrar.py $archivo
 
 Pide la frase sin mostrarla y deja al lado un .json con todo el
-contenido. Para tener además un CSV por tabla:
+contenido y, si la copia lleva archivos, una carpeta con ellos. Para
+tener además un CSV por tabla:
 
     python3 descifrar.py $archivo --csv datos
 
@@ -107,7 +109,9 @@ criptografía estándar:
 
 El JSON tiene dos claves: «manifest» (clínica, fecha, quién la generó,
 alcance y cuántos registros hay de cada tabla) y «records», en el
-formato de fixture de Django: {"model", "pk", "fields"}.
+formato de fixture de Django: {"model", "pk", "fields"}. Si al generar
+la copia se pidieron los archivos, hay una tercera, «archivos»: una
+lista de {"ruta", "bytes", "contenido"}, con el contenido en base64.
 
 Si la frase no es la correcta o el archivo se alteró, el descifrado
 falla: AES-GCM está autenticado y no devuelve datos a medias.
@@ -118,8 +122,9 @@ falla: AES-GCM está autenticado y no devuelve datos a medias.
 
   - Lo que descargue descifrado (CSV, JSON) está EN CLARO y contiene
     datos de salud. Bórrelo cuando termine y no lo envíe por correo.
-  - Las radiografías y documentos escaneados no van dentro: la copia
-    guarda su referencia, no el archivo.
+  - Las radiografías y documentos escaneados solo van dentro si se
+    marcó «Incluir los archivos» al generarla; si no, la copia guarda su
+    referencia, no el archivo. En la opción 2 aparecen en «Archivos».
   - Las contraseñas del personal no van en la copia.
   - Esta copia sirve para consultar y conservar la información. Para
     restaurar la base de datos de la plataforma se usa otro
