@@ -1,5 +1,6 @@
 from datetime import datetime, time, timedelta
 
+from django.test import SimpleTestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -252,3 +253,14 @@ class ReminderNoDuplicatesTest(APITestCase):
         # Segunda corrida (Beat una hora después): NO vuelve a enviar
         r2 = send_appointment_reminders()
         self.assertEqual(r2["reminders_sent"], 0)
+
+
+class AvisoDeLlegadaSeEncolaTests(SimpleTestCase):
+    def test_las_tareas_usan_la_configuracion_de_django(self):
+        # Si la app de Celery no se carga con Django, `.delay()` desde una
+        # vista usa otra sin configurar y el aviso nunca sale.
+        from apps.whatsapp.tasks import notify_doctor_patient_arrived
+        from config import celery_app
+
+        self.assertIs(notify_doctor_patient_arrived.app, celery_app)
+        self.assertTrue(celery_app.conf.task_always_eager)
