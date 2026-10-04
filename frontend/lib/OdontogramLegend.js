@@ -76,7 +76,7 @@ export default function OdontogramLegend({ states, onSelect, selectedTooth }) {
         <p style={{ fontSize: 12.5, color: selectedTooth ? "var(--petrol)" : "var(--ink-soft)",
                     marginBottom: 10, fontWeight: selectedTooth ? 600 : 400 }}>
           {selectedTooth
-            ? `Pieza ${selectedTooth} seleccionada — haz clic en un símbolo para registrar el estado.`
+            ? `Pieza ${selectedTooth} seleccionada. Haz clic en un símbolo para registrar su estado.`
             : "Selecciona una pieza o superficie en el odontograma y luego el símbolo del estado."}
         </p>
       )}

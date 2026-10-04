@@ -20,7 +20,7 @@ const FUNCIONALIDADES = [
   ["whatsapp", "Recordatorios por WhatsApp", "Necesita conectar la cuenta de la clínica."],
   ["convenios", "Convenios y tarifarios", "Precios pactados con aseguradoras."],
   ["app_paciente", "App del paciente", "Sus citas y su saldo en el teléfono."],
-  ["odontograma_3d", "Odontograma 3D", "El clásico no se apaga nunca."],
+  ["odontograma_3d", "Odontograma 3D", "El odontograma clásico sigue disponible."],
   ["formulario_033", "Formulario MSP 033", "Historia clínica única del Ministerio."],
   ["reportes", "Reportes", "Informes financieros y de producción."],
 ];
@@ -42,7 +42,7 @@ export default function PlataformaPage() {
     <div>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Plataforma</h1>
       <p style={{ color: "var(--ink-soft)", marginBottom: 16 }}>
-        Administración del SaaS. Sin acceso a la información operativa de las clínicas.
+        Administración de Clinube. Desde aquí no se accede a los datos de las clínicas.
       </p>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: "1px solid var(--line)", flexWrap: "wrap" }}>
@@ -152,12 +152,12 @@ function PanelDeCredenciales({ cred, clinica, onClose }) {
     <div className="card" style={{ marginBottom: 18, borderColor: "var(--amber)",
                                    background: "var(--amber-soft)" }}>
       <h3 style={{ marginBottom: 4 }}>
-        Credenciales de {clinica ? <>«{clinica}»</> : "la clínica"} — entrégalas ahora
+        Credenciales de {clinica || "la clínica"}
       </h3>
       <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-        Esta contraseña <strong>no se puede volver a consultar</strong>: no queda
-        guardada en ningún sitio. Solo sirve para el primer ingreso; al entrar,
-        la clínica elige la suya y tú dejas de tener acceso a la cuenta.
+        Entrégalas ahora: esta contraseña <strong>no se puede volver a consultar</strong>.
+        Solo sirve para el primer ingreso; al entrar, la clínica elige la suya y tú dejas de
+        tener acceso a la cuenta.
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 14px",
@@ -303,7 +303,7 @@ function ClinicsTab() {
 
       <form onSubmit={editing ? saveEdit : createClinic} className="card"
             style={{ marginBottom: 18, ...(editing ? { borderColor: "var(--petrol)" } : {}) }}>
-        <h3 style={{ marginBottom: 2 }}>{editing ? `Editar — ${editing.name}` : "Registrar nueva clínica"}</h3>
+        <h3 style={{ marginBottom: 2 }}>{editing ? `Editar ${editing.name}` : "Registrar nueva clínica"}</h3>
         {!editing && (
           <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 14 }}>
             La clínica queda activa y con el catálogo base. Si indicas su
@@ -332,9 +332,8 @@ function ClinicsTab() {
         <div style={{ borderTop: "1px solid var(--line)", margin: "16px 0 14px" }} />
         <h4 style={{ marginBottom: 2, fontSize: 14 }}>Funcionalidades</h4>
         <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-          Pacientes, agenda, historia clínica y pagos van siempre: sin eso no
-          es una versión reducida, es algo que no sirve. Lo de aquí es lo que
-          se puede contratar aparte.
+          Pacientes, agenda, historia clínica y pagos están siempre incluidos.
+          Aquí se eligen los módulos adicionales.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 18px",
                       marginBottom: 4 }}>
@@ -447,7 +446,7 @@ function AdminsTab() {
 
   async function resetPassword(clinic) {
     const ok = await confirm({
-      title: `Restablecer contraseña — ${clinic.name}`,
+      title: `Restablecer la contraseña de ${clinic.name}`,
       message: `Se generará una contraseña temporal para ${clinic.admin.email}. La actual dejará de funcionar.`,
       confirmLabel: "Restablecer", danger: true,
     });
@@ -464,7 +463,7 @@ function AdminsTab() {
   async function toggleAdmin(clinic) {
     const active = clinic.admin.is_active;
     const ok = await confirm({
-      title: `${active ? "Desactivar" : "Activar"} cuenta — ${clinic.admin.email}`,
+      title: `${active ? "Desactivar" : "Activar"} la cuenta de ${clinic.admin.email}`,
       message: active
         ? "El administrador no podrá iniciar sesión hasta reactivarlo."
         : "El administrador recupera el acceso.",

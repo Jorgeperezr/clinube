@@ -131,9 +131,9 @@ function AgreementsPanel({ onChanged }) {
     <div style={{ marginBottom: 26 }}>
       <h3 style={{ marginBottom: 4 }}>Convenios</h3>
       <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12, maxWidth: 640 }}>
-        Aseguradoras y empresas con tarifas especiales. El descuento es opcional:
-        sirve para el convenio de «un % a todo» y evita cargar una fila por
-        tratamiento. Si además cargas un precio en la rejilla, ese precio manda.
+        Aseguradoras y empresas con tarifas especiales. El descuento es opcional y se
+        aplica a todos los tratamientos. Si además fijas un precio en la tabla, se usa
+        ese precio.
       </p>
 
       {error && <div className="error-box">{error}</div>}

@@ -196,7 +196,7 @@ class _PedirCitaState extends State<_PedirCita> {
                 : 'Pedir cita para el ${fechaLarga(_dia)}'),
           ),
           const SizedBox(height: 8),
-          Text('No es una cita todavía: la recepción te propone la hora.',
+          Text('La clínica revisará tu solicitud y te propondrá una hora.',
               style: estilo.bodySmall),
           const Divider(height: 32),
           Text('Tus solicitudes', style: estilo.titleMedium),

@@ -149,7 +149,7 @@ function Solicitud({ s, doctores, puedeAgendar, onHecho }) {
 
       {moroso && (
         <div className="error-box" style={{ marginTop: 10 }}>
-          Este paciente tiene cuotas vencidas: la agenda no le da cita sin más.
+          Este paciente tiene cuotas vencidas: para darle cita hay que autorizar una excepción.
           <button type="button" className="btn btn-ghost" style={{ marginLeft: 10, fontSize: 12.5 }}
                   onClick={() => agendar(true)}>Agendar de todas formas</button>
         </div>
@@ -266,7 +266,7 @@ export default function BandejaPage() {
         </label>
       </div>
       <p style={{ color: "var(--ink-soft)", marginBottom: 16, fontSize: 14 }}>
-        Lo que los pacientes piden desde la aplicación. Lo más antiguo, primero.
+        Solicitudes y mensajes que llegan desde la app de los pacientes, de los más antiguos a los más recientes.
       </p>
       {err && <div className="error-box">{err}</div>}
       {ok && <div className="success-box">✓ {ok}</div>}

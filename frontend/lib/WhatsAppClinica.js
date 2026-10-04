@@ -125,7 +125,7 @@ export default function WhatsAppClinica() {
             {estado.puede_enviar
               ? `Salen desde ${estado.numero_visible || "el número configurado"}.`
               : estado.esta_configurada
-                ? "Está todo puesto. Enciéndelo cuando quieras que empiecen a salir."
+                ? "Todo está configurado. Actívalo cuando quieras empezar a enviar recordatorios."
                 : "Pega abajo los datos de tu cuenta de WhatsApp Business."}
           </p>
           {estado.esta_configurada && (

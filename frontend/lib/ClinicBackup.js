@@ -111,14 +111,14 @@ export default function ClinicBackup({ alcance = "clinica" }) {
       <p style={{ fontSize: 13, color: "var(--ink-soft)", margin: 0 }}>
         {propia ? (
           <>Descarga una copia cifrada con la información de <strong>los pacientes que atiendes</strong>
-          —sus datos, su historia clínica completa, odontogramas, evoluciones y recetas— y tu
-          agenda. No lleva cobros, inventario ni pacientes de otros profesionales. Solo tú puedes
-          abrirla en el panel, además de la administración de la clínica.</>
+          (datos, historia clínica, odontogramas, evoluciones y recetas) y tu agenda. No incluye
+          cobros, inventario ni pacientes de otros profesionales. En el panel solo pueden abrirla
+          tú y la administración de la clínica.</>
         ) : (
-          <>Descarga una copia cifrada con los datos de esta clínica —pacientes, historias,
-          citas, pagos e inventario— y ábrela cuando la necesites escribiendo la frase con
-          la que la cifraste. Cada doctor o auxiliar puede sacar, desde «Mi respaldo», la de
-          sus propios pacientes; se le quita desmarcando su función en Usuarios.</>
+          <>Descarga una copia cifrada con los datos de esta clínica (pacientes, historias,
+          citas, pagos e inventario). Para abrirla necesitarás la frase con la que la cifraste.
+          Cada doctor o auxiliar puede descargar la de sus propios pacientes desde Mi respaldo;
+          ese permiso se gestiona en Configuración → Usuarios.</>
         )}
       </p>
       <CreateCard propia={propia} />
@@ -161,7 +161,7 @@ function ComoAbrir() {
         <li style={paso}>
           <strong>Sin la plataforma y sin internet:</strong> descomprime el .zip y abre{" "}
           <code>descifrar.html</code> con Chrome, Edge, Firefox o Safari. Todo ocurre en tu equipo:
-          el archivo y la frase no se envían a ningún sitio. Enseña cada tabla y la descarga en
+          el archivo y la frase no se envían a ningún sitio. Muestra cada tabla y permite descargarla en
           CSV (Excel, Numbers, LibreOffice) o en JSON.
         </li>
         <li style={paso}>

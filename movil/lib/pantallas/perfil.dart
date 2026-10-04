@@ -204,7 +204,7 @@ class _Contenido extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   'Todavía no tienes logros.\nAcude a tus controles y sigue '
-                  'las indicaciones de tu odontólogo.',
+                  'las indicaciones de tu doctor.',
                   textAlign: TextAlign.center,
                   style: tema.textTheme.bodyMedium,
                 ),
@@ -248,8 +248,7 @@ class _Contenido extends StatelessWidget {
           title: const Text('Sin color'),
           subtitle: Text(marca.esEnGrises
               ? 'Tu clínica ya usa la versión sin color.'
-              : 'La app en blanco, negro y grises. El logotipo y todo lo '
-                  'demás no cambian.'),
+              : 'Muestra la app en escala de grises.'),
           value: sinColor || marca.esEnGrises,
           onChanged: marca.esEnGrises ? null : alCambiarSinColor,
         ),

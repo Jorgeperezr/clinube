@@ -839,10 +839,9 @@ function BrandingTab() {
       <div className="card">
         <h3 style={{ marginBottom: 6 }}>Tema de colores</h3>
         <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-          Toda clínica empieza con la paleta de Clinube. «Sin color» pasa a grises el panel, la app
-          de los pacientes y el color principal de los documentos —como un logotipo impreso en blanco
-          y negro— sin tocar nada más; las alertas y el odontograma conservan sus colores. El color
-          elegido se ajusta automáticamente para garantizar buen contraste y legibilidad.
+          Toda clínica empieza con la paleta de Clinube. Con «Sin color», el panel, la app de los
+          pacientes y los documentos se ven en escala de grises; las alertas y el odontograma
+          mantienen sus colores. Los colores se ajustan solos para que el texto se lea bien.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
           {PRESETS.map((p) => (

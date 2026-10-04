@@ -117,15 +117,13 @@ export default function RachasYLogros() {
                                      borderColor: "var(--amber)" }}>
         <strong>El beneficio es informativo.</strong>{" "}
         El paciente lo ve en su app, pero el descuento <strong>no se aplica solo</strong>
-        {" "}al presupuestar: lo aplica quien atiende. Se hizo así para no tocar la
-        precedencia de precios (tarifario pactado → convenio → general → catálogo)
-        con una regla que nadie ha visto funcionar todavía.
+        {" "}al presupuestar: lo aplica quien atiende.
       </div>
 
       <form onSubmit={guardar} className="card"
             style={{ marginBottom: 18, ...(editando ? { borderColor: "var(--petrol)" } : {}) }}>
         <h3 style={{ marginBottom: 12 }}>
-          {editando ? `Editar — ${editando.nombre}` : "Nuevo logro"}
+          {editando ? `Editar ${editando.nombre}` : "Nuevo logro"}
         </h3>
         <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1.4fr", gap: "12px 14px" }}>
           <div className="field" style={{ marginBottom: 0 }}><label>Nombre *</label>

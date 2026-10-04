@@ -40,7 +40,7 @@ CATALOGO = {
     },
     "odontograma_3d": {
         "nombre": "Odontograma 3D",
-        "descripcion": "La vista tridimensional. El odontograma clásico no se apaga.",
+        "descripcion": "Vista 3D de las piezas. El odontograma clásico sigue disponible.",
     },
     "formulario_033": {
         "nombre": "Formulario MSP 033",

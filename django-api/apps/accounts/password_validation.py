@@ -81,9 +81,9 @@ class ContrasenaComunEnEspanolValidator:
     def validate(self, password, user=None):
         if normalizar(password) in COMUNES_EN_ESPANOL:
             raise ValidationError(
-                "Esta contraseña es demasiado fácil de adivinar: es una "
-                "palabra común o del ámbito de la clínica. Combina varias "
-                "palabras que solo tengan sentido para usted.",
+                "Esta contraseña es demasiado fácil de adivinar. Combina varias "
+                "palabras que solo tengan sentido para ti y evita las comunes o "
+                "las relacionadas con la clínica.",
                 code="password_too_common_es",
             )
 

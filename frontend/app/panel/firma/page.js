@@ -41,10 +41,8 @@ export default function FirmaPage() {
     <div style={{ maxWidth: 640 }}>
       <h1 style={{ fontSize: 24, marginBottom: 4 }}>Mi firma</h1>
       <p style={{ color: "var(--ink-soft)", marginBottom: 18, fontSize: 14 }}>
-        Dibuja tu firma con el dedo (pantalla táctil) o el mouse. Se estampa
-        automáticamente en tus recetas en PDF, junto a tu registro profesional.
-        La firma electrónica legal (firmaEC) llegará como fase 2 con tu
-        certificado .p12.
+        Dibuja tu firma con el dedo o con el mouse. Se añade a tus recetas en PDF,
+        junto a tu registro profesional.
       </p>
 
       {error && <div className="error-box">{error}</div>}

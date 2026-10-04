@@ -155,7 +155,7 @@ class _SinLogrosTodavia extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   'Acude a tus controles y sigue las indicaciones de tu '
-                  'odontólogo para ganar el primero.',
+                  'doctor para ganar el primero.',
                   style: tema.textTheme.bodySmall,
                 ),
               ],

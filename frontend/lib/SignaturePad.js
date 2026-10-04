@@ -71,7 +71,7 @@ export default function SignaturePad({ onConfirm, onCancel }) {
       <div style={box}>
         <h3 style={{ marginBottom: 4 }}>Firma del paciente</h3>
         <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 10 }}>
-          Firme dentro del recuadro con el dedo (pantalla táctil) o el mouse.
+          Firma dentro del recuadro con el dedo o con el mouse.
         </p>
         <canvas
           ref={canvasRef}

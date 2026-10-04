@@ -625,13 +625,13 @@ export function ConsentsTab({ patientId }) {
           <div className="field">
             <label>Partir de una plantilla (opcional)</label>
             <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ""; }}>
-              <option value="">— Seleccionar plantilla —</option>
+              <option value="">Elegir plantilla…</option>
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>{t.procedure_display} · {t.title}</option>
               ))}
             </select>
             <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 4 }}>
-              La plantilla rellena el texto; puedes editarlo antes de guardar. Las plantillas se administran en Configuración.
+              La plantilla completa el texto; puedes editarlo antes de guardar. Las plantillas se administran en Configuración.
             </p>
           </div>
         )}

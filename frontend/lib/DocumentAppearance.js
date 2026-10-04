@@ -325,8 +325,7 @@ export default function DocumentAppearance() {
             <DocumentPreviewPage settings={settings} brand={brand} zoom={zoom} />
           </div>
           <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 8 }}>
-            Representación del documento con los ajustes actuales. El contenido es de
-            ejemplo; lo que se reproduce es la maqueta que comparten todos los documentos.
+            Vista previa con datos de ejemplo y los ajustes actuales.
           </p>
         </div>
       </div>

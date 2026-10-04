@@ -178,7 +178,7 @@ function BatchForm({ product, onClose, onSaved }) {
   return (
     <form onSubmit={submit} className="card" style={{ marginBottom: 18, borderColor: "var(--petrol)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <h3>Nuevo lote — {product.name}</h3>
+        <h3>Nuevo lote de {product.name}</h3>
         <button type="button" className="btn btn-ghost" style={{ padding: "4px 12px", fontSize: 12 }} onClick={onClose}>✕</button>
       </div>
       {error && <div className="error-box">{error}</div>}

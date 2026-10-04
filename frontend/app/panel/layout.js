@@ -304,9 +304,10 @@ export default function PanelLayout({ children }) {
   );
 }
 
-/** «Valeria Núñez» → «VN»; sin nombre, la primera letra del correo. */
+/** «Valeria Núñez» → «VN»; sin nombre, la primera letra del correo. Solo letras y cifras: «Administración (demo)» → «AD». */
 function iniciales(texto) {
-  const partes = String(texto || "?").replace(/^(dra?\.|dr\.)\s*/i, "").split(/[\s@]+/).filter(Boolean);
+  const partes = String(texto || "?").replace(/^(dra?\.|dr\.)\s*/i, "").split(/[\s@]+/)
+    .map((p) => p.replace(/[^\p{L}\p{N}]/gu, "")).filter(Boolean);
   return ((partes[0]?.[0] || "?") + (partes[1]?.[0] || "")).toUpperCase();
 }
 
