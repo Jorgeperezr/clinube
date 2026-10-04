@@ -289,6 +289,12 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 EMAIL_TIMEOUT = 15
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default=f"{MARCA} <no-responder@localhost>")
+# Dirección pública del panel, para los enlaces que salen por correo
+# (recuperar la contraseña). Vacía = la misma dirección por la que llegó
+# la petición, que en producción es la buena: Nginx sirve panel y API en
+# el mismo nombre. En desarrollo el panel va en otro puerto:
+# PANEL_URL=http://localhost:3000.
+PANEL_URL = config("PANEL_URL", default="").rstrip("/")
 
 # Producción: negarse a arrancar con valores de ejemplo (ver config/produccion.py).
 ENTORNO = config("DJANGO_ENTORNO", default="desarrollo")

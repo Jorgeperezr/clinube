@@ -571,3 +571,21 @@ main > * { animation: rise var(--dur-slow) var(--ease) both; }
    que dice «esto se abre». */
 .tarjeta-cifra { transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease); }
 .tarjeta-cifra:hover { transform: translateY(-1px); box-shadow: var(--shadow); text-decoration: none; }
+
+/* ═══════════ Pantallas sin sesión (lib/PantallaAcceso.js) ═══════════ */
+.acceso { display: flex; min-height: 100vh; }
+.acceso-marca {
+  flex: 0 0 42%; background: var(--nav-bg); color: #fff;
+  display: flex; align-items: center; justify-content: center; padding: 40px;
+}
+.acceso-marca > div { max-width: 320px; }
+.acceso-marca p { margin-top: 12px; color: var(--mint); font-size: 15px; }
+.acceso-form { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.acceso-form form, .acceso-form > div { width: 100%; max-width: 380px; }
+@media (max-width: 760px) {
+  .acceso { flex-direction: column; min-height: 100dvh; }
+  .acceso-marca { flex: none; justify-content: flex-start; padding: 26px 22px; }
+  .acceso-marca svg { height: 38px; width: auto; }
+  .acceso-marca p { margin-top: 8px; font-size: 14px; }
+  .acceso-form { align-items: flex-start; padding: 28px 20px 40px; }
+}

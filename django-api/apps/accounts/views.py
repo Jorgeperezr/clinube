@@ -4,6 +4,8 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -83,10 +85,11 @@ class OTPRequestView(APIView):
             purpose=purpose,
             expires_at=timezone.now() + timedelta(minutes=OTP_TTL_MINUTES),
         )
-        template = "otp_login" if purpose == OTPCode.Purpose.LOGIN else "otp_recovery"
+        # Una sola plantilla: el paciente entra siempre con un código nuevo,
+        # así que «recuperar el acceso» es lo mismo que volver a entrar.
         send_whatsapp_template(
             to_phone=phone,
-            template_name=template,
+            template_name="otp_login",
             language="es",
             variables={"1": code},
             patient_id=str(user.id),
@@ -145,31 +148,14 @@ class OTPVerifyView(APIView):
         )
 
 
-class PatientRecoveryView(OTPRequestView):
-    """
-    POST /api/v1/auth/patient-recovery/ — RF-USR-04 (paciente).
-    La recuperación de acceso de un paciente es simplemente reenviar un
-    OTP; reutiliza toda la lógica de OTPRequestView pero solo para un
-    paciente que ya existe (no crea usuarios nuevos).
-    """
-
-    def post(self, request):
-        serializer = OTPRequestSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        phone = serializer.validated_data["phone"]
-        try:
-            user = User.objects.get(phone=phone, role=User.Role.PATIENT)
-        except User.DoesNotExist:
-            # No revelamos si el teléfono existe o no (buena práctica de seguridad).
-            return Response({"detail": "Si el número está registrado, recibirás un código."})
-        self._issue_and_send_otp(user, phone, OTPCode.Purpose.RECOVERY)
-        return Response({"detail": "Si el número está registrado, recibirás un código."})
-
-
 class StaffRecoveryRequestView(APIView):
     """POST /api/v1/auth/recovery/request/ — RF-USR-04 (staff, por correo)."""
 
     permission_classes = [permissions.AllowAny]
+    # Mismo cupo que los códigos por WhatsApp: sin él, cualquiera podía
+    # llenarle el buzón a una persona del personal pidiendo enlaces.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "otp"
 
     def post(self, request):
         serializer = StaffRecoveryRequestSerializer(data=request.data)
@@ -190,16 +176,24 @@ class StaffRecoveryRequestView(APIView):
             token_hash=_hash_value(raw_token),
             expires_at=timezone.now() + timedelta(minutes=RESET_TTL_MINUTES),
         )
-        # En producción, el enlace apunta al panel Next.js; por ahora se
-        # envía el token para que el frontend arme la URL de reseteo.
+        # El correo lleva un enlace a la pantalla «Recuperar acceso» del
+        # panel. Antes llevaba el código suelto —43 caracteres— y no había
+        # ninguna pantalla donde escribirlo.
         # La respuesta es la misma pase lo que pase (no se revela si el
-        # correo existe), pero un fallo de envío deja rastro: antes era
-        # `fail_silently=True` y sin SMTP configurado nadie recibía nada
-        # y nadie lo sabía.
+        # correo existe), pero un fallo de envío deja rastro.
+        base = settings.PANEL_URL or request.build_absolute_uri("/").rstrip("/")
+        enlace = f"{base}/recuperar/?token={raw_token}"
+        saludo = f"Hola, {user.full_name}:" if user.full_name else "Hola:"
         try:
             send_mail(
-                subject=f"Recuperación de acceso — {settings.MARCA}",
-                message=f"Usa este código para restablecer tu contraseña: {raw_token}",
+                subject=f"Restablecer tu contraseña de {settings.MARCA}",
+                message=(
+                    f"{saludo}\n\n"
+                    "Para elegir una contraseña nueva, abre este enlace:\n\n"
+                    f"{enlace}\n\n"
+                    f"El enlace es válido durante {RESET_TTL_MINUTES} minutos y se puede usar una sola vez.\n"
+                    "Si no lo pediste tú, ignora este correo: tu contraseña no cambia.\n"
+                ),
                 from_email=None,
                 recipient_list=[email],
             )
@@ -236,11 +230,20 @@ class StaffRecoveryConfirmView(APIView):
             )
 
         user = reset.user
+        # Las mismas reglas que al cambiarla desde el panel: sin esto, por
+        # aquí se podía poner «clinica2026» o el propio correo.
+        try:
+            validate_password(new_password, user)
+        except ValidationError as e:
+            return Response({"detail": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
         user.set_password(new_password)
-        user.save(update_fields=["password"])
-        reset.used_at = timezone.now()
-        reset.save(update_fields=["used_at"])
-        return Response({"detail": "Contraseña actualizada correctamente."})
+        # Elegida por la persona: si tenía una temporal, deja de tenerla.
+        user.must_change_password = False
+        user.save(update_fields=["password", "must_change_password"])
+        # Todos sus enlaces pendientes dejan de valer, no solo este.
+        PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
+        return Response({"detail": "Contraseña actualizada."})
 
 
 class UserListCreateView(generics.ListCreateAPIView):

@@ -508,9 +508,8 @@ pip install pip-audit && pip-audit -r django-api/requirements.txt -r whatsapp-ga
 - [ ] Cambiar TODAS las contraseñas de desarrollo (Jorge2025 no va a producción).
 - [ ] **Ingreso a la app del paciente:** llega por WhatsApp con la cuenta de
       la PLATAFORMA (`META_ACCESS_TOKEN` y `META_PHONE_NUMBER_ID` en el
-      `.env`) y dos plantillas aprobadas por Meta en la categoría
-      «Autenticación»: `otp_login` y `otp_recovery`, con el código como
-      variable `{{1}}`. Sin eso el envío queda simulado y **nadie puede
+      `.env`) y una plantilla aprobada por Meta en la categoría
+      «Autenticación»: `otp_login`, con el código como variable `{{1}}`. Sin eso el envío queda simulado y **nadie puede
       entrar a la app**.
 - [ ] **Correo** (`EMAIL_HOST` y compañía): sin él, la recuperación de
       contraseña del personal no sale.

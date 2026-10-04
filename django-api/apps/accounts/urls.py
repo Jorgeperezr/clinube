@@ -13,7 +13,6 @@ urlpatterns = [
          name="auth-change-password"),
     path("auth/otp/request/", views.OTPRequestView.as_view(), name="otp-request"),
     path("auth/otp/verify/", views.OTPVerifyView.as_view(), name="otp-verify"),
-    path("auth/patient-recovery/", views.PatientRecoveryView.as_view(), name="patient-recovery"),
     path("auth/recovery/request/", views.StaffRecoveryRequestView.as_view(), name="recovery-request"),
     path("auth/recovery/confirm/", views.StaffRecoveryConfirmView.as_view(), name="recovery-confirm"),
     # Gestión de usuarios — RF-USR-03, 06
