@@ -67,7 +67,8 @@ sistema sea crítico para la operación. El código es idéntico en ambas.
 
 1. Crear VM e2-medium (2 vCPU, 4 GB) en `southamerica-west1`, Ubuntu 22.04,
    disco 30 GB. Reservar IP estática.
-2. Firewall: permitir 80 y 443.
+2. Firewall: permitir 80 y 443, y en el `.env` `NGINX_PUERTO=80`
+   (por omisión Nginx solo escucha en `127.0.0.1`, pensado para el túnel).
 3. Apuntar el dominio (registro A) a la IP.
 4. TLS con certbot en el host + Nginx del host como proxy, o Cloudflare
    proxied DNS (más simple: activar el proxy naranja de Cloudflare y usar
@@ -129,21 +130,57 @@ Comparativa hecha en septiembre de 2026:
 - Todo lo del proyecto funciona en Arm: las imágenes de Python,
   PostgreSQL, Redis y Nginx son multiarquitectura.
 
+**Lo que dicen las condiciones de Oracle y cómo se cumple aquí:**
+
+| Condición | Cómo se cumple |
+|---|---|
+| La seguridad del sistema operativo, de los datos y de las copias es del cliente | Parches automáticos (`preparar-servidor.sh`), copias cifradas y una copia fuera de Oracle |
+| Al terminar o suspenderse el servicio, los datos se pueden borrar sin más | La copia fuera de Oracle (ver «Copia fuera del servidor») |
+| Prohibido escanear o probar la infraestructura de Oracle | No se pasan escáneres de vulnerabilidades contra la IP pública, la red ni los servicios de Oracle. Lo que se pruebe, contra el propio sistema en local |
+| Las cuentas gratuitas pueden suspenderse o cambiar de condiciones | Pay As You Go con alerta de presupuesto, y la copia fuera |
+| Los datos personales de terceros (los pacientes) son responsabilidad del cliente | Aviso de privacidad público (`/privacidad`), registro de su entrega en la ficha y condiciones aceptadas por cada clínica |
+
 **Pasos:**
 
-1. Cuenta en <https://www.oracle.com/cloud/free/>. Región de inicio: la
-   más cercana con capacidad (p. ej. *Brazil East (São Paulo)* o *Chile
-   Central (Santiago)*). La región de inicio no se puede cambiar después.
-2. Crear instancia: *Ubuntu 24.04*, forma **VM.Standard.A1.Flex** con
+1. Cuenta en <https://www.oracle.com/cloud/free/>. Región de inicio:
+   **Chile Central (Santiago)**, la más cercana a Ecuador (si no hay
+   capacidad, *Brazil East (São Paulo)*). La región de inicio no se
+   puede cambiar después.
+2. **Antes de crear nada**, en *Billing & Cost Management*:
+   - *Upgrade and Manage Payment* → **Pay As You Go**. Sigue costando 0
+     US$ mientras todo sea «Always Free», y evita que Oracle recupere la
+     VM por ociosa.
+   - *Budgets* → *Create Budget*: importe **1 US$** al mes, alerta al
+     **1 %** del presupuesto *real* (no el previsto), con tu correo. Si
+     algo empieza a cobrar, llega un aviso en el día.
+   - Al crear recursos, fijarse en que lleven la etiqueta
+     **«Always Free-eligible»**.
+3. Crear instancia: *Ubuntu 24.04*, forma **VM.Standard.A1.Flex** con
    2 OCPU y 12 GB, disco de arranque de 100 GB. Guardar la clave SSH.
-3. En la VM: instalar Docker y seguir los **Pasos comunes** de arriba.
-4. Publicarla con **Cloudflare Tunnel** (igual que la Opción B, pasos
-   2 a 6): no hace falta abrir puertos ni IP pública, y el certificado
-   HTTPS lo pone Cloudflare gratis. El binario para esta VM es el de Arm:
-   `cloudflared-linux-arm64.deb`.
-5. Copias: `scripts/backup.sh` a diario con cron, y la copia fuera de la
-   VM en el Object Storage gratuito de Oracle (20 GB) o en Cloudflare R2
-   (10 GB gratis), con `rclone`.
+   **No añadir reglas de entrada** en la *Security List* ni en un
+   *Network Security Group*: la que trae (SSH, puerto 22) es la única
+   que hace falta. Los puertos 80 y 443 se quedan cerrados.
+4. En la VM, preparar el sistema (parches, actualizaciones de seguridad
+   automáticas, Docker y rclone):
+   ```bash
+   git clone https://github.com/Jorgeperezr/clinube.git
+   cd clinube
+   sudo bash scripts/preparar-servidor.sh
+   ```
+   Salir y volver a entrar por SSH, y seguir los **Pasos comunes** de
+   arriba desde el 3.
+5. Publicarla con **Cloudflare Tunnel** (igual que la Opción B, pasos
+   2 a 6): el túnel sale desde la VM hacia Cloudflare, así que no hace
+   falta abrir puertos, y el certificado HTTPS lo pone Cloudflare gratis.
+   El binario para esta VM es el de Arm: `cloudflared-linux-arm64.deb`.
+6. Comprobar que no quedó nada abierto hacia fuera:
+   ```bash
+   sudo bash scripts/preparar-servidor.sh --comprobar
+   ```
+7. Copias: `scripts/backup.sh` a diario con cron y la copia **fuera de
+   Oracle**, en Cloudflare R2 (ver «Copia fuera del servidor»). No en el
+   Object Storage de Oracle: si la cuenta se suspende, la copia se va
+   con el servidor.
 
 **Lo único que se compra: el dominio, `clinube.com`.** Cómo se reparte:
 
@@ -208,11 +245,49 @@ Los guiones funcionan **con Docker y sin él**: si no hay demonio usan el
 `pg_dump` / `psql` de la máquina. Eso permite hacer y comprobar copias
 desde un portátil sin Docker Desktop.
 
-Cron diario:
+Cada copia son **dos archivos**: `clinica-….sql.gz.enc` (la base) y
+`archivos-….tar.gz.enc` (radiografías, documentos escaneados, firmas,
+logotipos). Sin el segundo, una restauración devolvería las fichas con
+los adjuntos rotos.
+
+Cron diario (sale con código distinto de 0 si algo falla, también si no
+se pudo subir la copia fuera, y entonces avisa por correo):
 ```bash
-# /etc/cron.d/backup-clinica  (02:00 todos los días)
-0 2 * * * root cd /ruta/al/repo && COMPOSE_FILE=docker-compose.prod.yml ./scripts/backup.sh >> /var/log/backup-clinica.log 2>&1
+# /etc/cron.d/backup-clinica  (07:00 UTC = 02:00 en Ecuador)
+0 7 * * * root cd /ruta/al/repo && COMPOSE_FILE=docker-compose.prod.yml ./scripts/backup.sh >> /var/log/backup-clinica.log 2>&1 || mail -s "FALLO: copia de la clinica" tu@correo.ec < /var/log/backup-clinica.log
 ```
+(`mail` viene en el paquete `mailutils`; sin correo configurado en la
+VM, al menos queda en el registro.)
+
+Las copias viejas se borran solas: a los `BACKUP_LOCAL_DIAS` (14) en el
+servidor y a los `BACKUP_REMOTO_DIAS` (30) fuera.
+
+### Copia fuera del servidor
+
+Una copia que vive en la misma máquina —o en la misma cuenta de nube—
+no es una copia: si la VM se pierde o la cuenta se suspende, se va con
+ella. `backup.sh` sube las dos piezas con **rclone** al destino de
+`BACKUP_REMOTO` y comprueba que llegaron enteras. Sin `BACKUP_REMOTO`
+avisa en cada ejecución.
+
+Con **Cloudflare R2** (10 GB gratis, sin coste de salida):
+
+1. Panel de Cloudflare → *R2* → *Create bucket*: `clinube-copias`.
+2. *R2* → *Manage API Tokens* → *Create API Token*, permiso
+   **Object Read & Write**, limitado a ese bucket. Anotar el *Access Key
+   ID*, el *Secret Access Key* y el *endpoint*
+   (`https://<id-de-cuenta>.r2.cloudflarestorage.com`).
+3. En la VM, como root (el cron corre como root):
+   ```bash
+   sudo rclone config create r2 s3 provider=Cloudflare access_key_id=EL_ID secret_access_key=EL_SECRETO endpoint=https://ID.r2.cloudflarestorage.com no_check_bucket=true
+   ```
+4. En el `.env`: `BACKUP_REMOTO=r2:clinube-copias`
+5. Probar: `COMPOSE_FILE=docker-compose.prod.yml sudo -E ./scripts/backup.sh`
+   debe terminar con «✓ Copias guardadas fuera del servidor», y
+   `sudo rclone ls r2:clinube-copias` listar los dos archivos.
+
+Las copias van cifradas antes de salir: Cloudflare guarda bytes que no
+puede leer. La clave (`BACKUP_PASSPHRASE`) no se sube nunca con ellas.
 
 ### Verificación: una copia sin restaurar no es una copia
 
@@ -273,9 +348,17 @@ Comprueba que la copia esté completa **antes** de tocar la base: descubrir
 que estaba truncada después de haberla borrado es la peor secuencia
 posible, y era la que permitía el guion anterior.
 
-Copiar `backups/` a un destino EXTERNO (rclone a Google Drive, disco USB
-rotado). Un backup que vive en la misma máquina no es backup. Y probar la
-restauración al menos una vez antes de tener pacientes reales.
+Los adjuntos se restauran aparte, con el mismo guion y su propio
+archivo:
+```bash
+COMPOSE_FILE=docker-compose.prod.yml ./scripts/restore.sh backups/archivos-2026-07-09_0200.tar.gz.enc
+```
+
+Para restaurar desde fuera, bajar antes las dos piezas:
+`rclone copy r2:clinube-copias/clinica-2026-07-09_0200.sql.gz.enc backups/`
+(y la de `archivos-` con la misma fecha).
+
+Probar la restauración al menos una vez antes de tener pacientes reales.
 
 ### Copia de la clínica (panel)
 

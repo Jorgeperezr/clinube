@@ -39,7 +39,8 @@ cargar_entorno() {
         while IFS= read -r linea; do
             case "$linea" in
                 POSTGRES_DB=*|POSTGRES_USER=*|POSTGRES_PASSWORD=*|\
-                POSTGRES_HOST=*|POSTGRES_PORT=*|BACKUP_PASSPHRASE=*) ;;
+                POSTGRES_HOST=*|POSTGRES_PORT=*|BACKUP_PASSPHRASE=*|\
+                BACKUP_REMOTO=*|BACKUP_REMOTO_DIAS=*|BACKUP_LOCAL_DIAS=*) ;;
                 *) continue ;;
             esac
             clave="${linea%%=*}"
@@ -176,4 +177,81 @@ MARCA_FIN="PostgreSQL database dump complete"
 
 dump_completo() {
     descifrar "$1" | gunzip 2>/dev/null | tail -5 | grep -q "$MARCA_FIN"
+}
+
+# ── Archivos subidos (radiografías, documentos, firmas, logotipos) ────
+#
+# No están en la base: viven en el volumen `media_data`. Sin esta parte,
+# perder el servidor con la base a salvo seguía siendo perder todas las
+# radiografías y documentos escaneados de todas las clínicas.
+
+# Escribe por stdout un .tar.gz con el contenido de la carpeta de archivos.
+volcar_archivos() {
+    if hay_docker; then
+        docker compose -f "$RAIZ/${COMPOSE_FILE:-docker-compose.yml}" exec -T django-api \
+            tar -czf - -C /app/media .
+    elif [ -d "$RAIZ/django-api/media" ]; then
+        tar -czf - -C "$RAIZ/django-api/media" .
+    else
+        # Sin archivos todavía: un tar vacío, para que la copia exista igual.
+        tar -czf - -T /dev/null
+    fi
+}
+
+# Lee por stdin un .tar.gz y lo extrae en la carpeta de archivos.
+restaurar_archivos() {
+    if hay_docker; then
+        docker compose -f "$RAIZ/${COMPOSE_FILE:-docker-compose.yml}" exec -T django-api \
+            tar -xzf - -C /app/media
+    else
+        mkdir -p "$RAIZ/django-api/media"
+        tar -xzf - -C "$RAIZ/django-api/media"
+    fi
+}
+
+# ── Copia fuera del servidor ─────────────────────────────────────────
+#
+# Con rclone, que sabe hablar con casi cualquier almacenamiento:
+# Cloudflare R2, Google Drive, Backblaze, otro servidor por SFTP…
+# BACKUP_REMOTO es el destino tal como lo entiende rclone, p. ej.
+# `r2:clinube-copias` (ver DEPLOY.md, «Copia fuera del servidor»).
+#
+# Tiene que ser OTRO proveedor. El contrato de Oracle no le hace
+# responder por datos perdidos: una copia guardada dentro de la misma
+# cuenta se pierde con ella.
+
+exigir_rclone() {
+    if ! command -v rclone >/dev/null 2>&1; then
+        cat >&2 <<FIN
+ERROR: BACKUP_REMOTO está configurado pero rclone no está instalado.
+Instálalo con:   sudo apt-get install -y rclone
+y configura el destino con:   rclone config
+FIN
+        exit 1
+    fi
+}
+
+# Sube un archivo al destino y comprueba que llegó con el mismo tamaño.
+subir_copia() {
+    local archivo="$1" nombre local_bytes remoto_bytes
+    nombre="$(basename "$archivo")"
+    rclone copy --no-traverse "$archivo" "$BACKUP_REMOTO" || return 1
+    local_bytes=$(wc -c < "$archivo" | tr -d ' ')
+    remoto_bytes=$(rclone lsf --format s --files-only --include "$nombre" "$BACKUP_REMOTO" 2>/dev/null | head -n 1)
+    [ -n "$remoto_bytes" ] && [ "$remoto_bytes" = "$local_bytes" ]
+}
+
+# Borra del destino las copias más antiguas que BACKUP_REMOTO_DIAS.
+podar_remoto() {
+    rclone delete "$BACKUP_REMOTO" --min-age "${BACKUP_REMOTO_DIAS:-30}d" \
+        --include "clinica-*.sql.gz.enc" --include "archivos-*.tar.gz.enc"
+}
+
+# Borra del servidor las copias más antiguas que BACKUP_LOCAL_DIAS: el
+# disco gratuito es de 100 GB y una copia diaria lo llenaría con el tiempo.
+podar_local() {
+    local dir="$1" dias="${BACKUP_LOCAL_DIAS:-14}"
+    find "$dir" -maxdepth 1 -type f \
+        \( -name 'clinica-*.sql.gz.enc' -o -name 'archivos-*.tar.gz.enc' \) \
+        -mtime +"$dias" -delete
 }

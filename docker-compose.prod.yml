@@ -116,8 +116,13 @@ services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
+    # Por omisión solo escucha en la propia máquina: el tráfico de fuera
+    # entra por Cloudflare Tunnel, que se conecta a localhost. Así no hay
+    # que abrir puertos en la nube (en Oracle, ni en la lista de
+    # seguridad ni en el cortafuegos de la VM). Para servir con IP
+    # pública y certificado propio (Opción A), NGINX_PUERTO=80 en el .env.
     ports:
-      - "80:80"
+      - "${NGINX_PUERTO:-127.0.0.1:80}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - frontend_static:/usr/share/nginx/html:ro

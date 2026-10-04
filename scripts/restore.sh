@@ -9,7 +9,12 @@
 #
 # Uso:
 #   ./scripts/restore.sh backups/clinica-2026-07-09_0200.sql.gz.enc
+#   ./scripts/restore.sh backups/archivos-2026-07-09_0200.tar.gz.enc
 #   COMPOSE_FILE=docker-compose.prod.yml ./scripts/restore.sh <archivo>
+#
+# El primero devuelve la base de datos; el segundo, los archivos subidos
+# (radiografías, documentos, firmas). Tras perder el servidor hacen
+# falta los dos, del mismo día.
 #
 # Funciona con Docker y sin él.
 # ─────────────────────────────────────────────────────────────────────
