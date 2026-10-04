@@ -155,6 +155,16 @@ Comparativa hecha en septiembre de 2026:
      algo empieza a cobrar, llega un aviso en el día.
    - Al crear recursos, fijarse en que lleven la etiqueta
      **«Always Free-eligible»**.
+
+   Si la cuenta todavía está en la **prueba de 30 días** o «en
+   aprovisionamiento» (la página de cambio de versión no deja hacer
+   nada), Pay As You Go se puede dejar para después y crear ya la VM,
+   con dos condiciones: que sea **una sola A1 de 2 OCPU y 12 GB** —si al
+   terminar la prueba hay más Ampere A1 que las gratuitas, Oracle
+   desactiva **todas** y las borra a los 30 días— y pasar a Pay As You
+   Go **antes de cargar pacientes reales**, que es cuando importa que no
+   la recupere por ociosa. Durante la prueba lo que no es gratuito se
+   paga con los créditos, no con la tarjeta.
 3. Crear instancia: *Ubuntu 24.04*, forma **VM.Standard.A1.Flex** con
    2 OCPU y 12 GB, disco de arranque de 100 GB. Guardar la clave SSH.
    **No añadir reglas de entrada** en la *Security List* ni en un
