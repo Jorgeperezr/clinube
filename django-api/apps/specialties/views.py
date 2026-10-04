@@ -21,7 +21,7 @@ CAN_FILL_FORM = HasRole.for_roles("admin", "doctor")
 
 
 class SpecialtyListCreateView(generics.ListCreateAPIView):
-    """GET/POST /api/v1/specialties/ y /config/specialties/ — RF-CFG-01, RF-ESP."""
+    """GET/POST /api/v1/specialties/ — RF-CFG-01, RF-ESP."""
 
     serializer_class = SpecialtySerializer
 

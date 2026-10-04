@@ -73,18 +73,6 @@ def cumple(logro, paciente, mes):
     return bool(fn and fn(paciente, mes))
 
 
-def meses_hacia_atras(desde, cuantos):
-    """`cuantos` primeros-de-mes, terminando en el de `desde`."""
-    meses = []
-    anio, mes = desde.year, desde.month
-    for _ in range(cuantos):
-        meses.append(date(anio, mes, 1))
-        mes -= 1
-        if mes == 0:
-            anio, mes = anio - 1, 12
-    return list(reversed(meses))
-
-
 def racha_de(paciente, logro, hasta):
     """
     Cuántos meses seguidos lleva cumpliéndolo, contando hacia atrás.

@@ -327,21 +327,6 @@ export function applyBrandingChrome(branding) {
 }
 
 
-/**
- * Resuelve una ruta relativa del backend contra el host de la API, en
- * https, evitando el bloqueo por contenido mixto. Si ya es absoluta —el
- * caso del bucket— se respeta tal cual.
- *
- * Sirve para archivos PÚBLICOS. Los documentos clínicos ya no se
- * resuelven así: los entrega un endpoint autenticado y se cargan con
- * `AuthImage` o con `DocumentPreview` (Sprint 66).
- */
-export function fileSrc(url) {
-  if (!url) return null;
-  if (/^https?:\/\//i.test(url)) return url;
-  return `${apiBase()}${url.startsWith("/") ? "" : "/"}${url}`;
-}
-
 export function logoSrc(url, version) {
   if (!url) return null;
   const abs = /^https?:\/\//i.test(url)

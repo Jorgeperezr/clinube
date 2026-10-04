@@ -34,13 +34,3 @@ def is_patient_delinquent(patient, tenant):
         tenant=tenant,
         due_date__lt=threshold_date,
     ).exclude(status=Installment.Status.PAID).exists()
-
-
-def get_overdue_installments(patient, tenant):
-    """Devuelve las cuotas vencidas (no pagadas y ya pasada la fecha)."""
-    from apps.billing.models import Installment
-
-    today = timezone.localdate()
-    return Installment.objects.filter(
-        patient=patient, tenant=tenant, due_date__lt=today,
-    ).exclude(status=Installment.Status.PAID)

@@ -17,7 +17,6 @@ library;
 import 'package:flutter/material.dart';
 
 // La paleta de Clinube. La misma que `frontend/lib/marca.js`.
-const tinta = Color(0xFF0B1220);
 const cian = Color(0xFF0E7490);
 const cianLuz = Color(0xFF67E8F9);
 const ambar = Color(0xFFE0922F);
