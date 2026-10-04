@@ -98,6 +98,7 @@ function PatientDetail() {
       <PatientAgreement patient={patient} canEdit={role === "admin" || role === "reception"}
                         onChanged={(p) => setPatient(p)} />
       {(role === "admin" || role === "reception") && <AutorizacionWhatsApp patient={patient} />}
+      {(role === "admin" || role === "reception") && <AvisoPrivacidad patient={patient} />}
 
       {/* Las siete pestañas no caben a lo ancho de una tableta: medido,
           a 1024 px la última llegaba a 1189 y arrastraba a TODA la página
@@ -815,6 +816,65 @@ function PatientAgreement({ patient, canEdit, onChanged }) {
  * registrarla salvo el administrador técnico de Django, así que en la
  * práctica los recordatorios no llegaban a nadie.
  */
+/**
+ * Constancia de que se informó al paciente del aviso de privacidad
+ * (LOPDP). Se le enseña o se le imprime desde «Ver aviso» y se registra
+ * aquí; si el aviso cambia de versión, vuelve a aparecer como pendiente.
+ */
+function AvisoPrivacidad({ patient }) {
+  const [confirmar, ConfirmUI] = useConfirm();
+  const [estado, setEstado] = useState(undefined);   // undefined = cargando
+  const [error, setError] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const url = `/patients/${patient.id}/aviso-privacidad/`;
+
+  useEffect(() => {
+    api(url).then(readObject).then(setEstado).catch(() => setEstado(null));
+  }, [url]);
+
+  async function registrar() {
+    const ok = await confirmar({
+      title: "Aviso de privacidad",
+      message: `¿Se le entregó o se le mostró a ${patient.first_name || patient.full_name} el aviso de privacidad vigente?`,
+      confirmLabel: "Sí, registrar",
+    });
+    if (!ok) return;
+    setOcupado(true); setError("");
+    try {
+      setEstado(await readObject(await api(url, { method: "POST", body: JSON.stringify({ medio: "en_persona" }) })));
+    } catch (err) { setError(err.message); }
+    finally { setOcupado(false); }
+  }
+
+  if (!estado) return null;
+  const vigente = estado.entregas.find((e) => e.version === estado.version_vigente);
+  const anterior = !vigente && estado.entregas[0];
+  const enlace = { background: "transparent", border: "none", padding: 0, color: "var(--petrol)",
+                   fontSize: 13, cursor: "pointer" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                  fontSize: 13, color: "var(--ink-soft)", marginBottom: 4 }}>
+      <span>Aviso de privacidad:</span>
+      {vigente ? (
+        <strong style={{ color: "var(--ink)" }}>
+          Entregado el {new Date(vigente.fecha).toLocaleDateString("es-EC")}
+          {vigente.registrado_por && <span style={{ fontWeight: 400 }}> · lo registró {vigente.registrado_por}</span>}
+        </strong>
+      ) : (
+        <>
+          <strong style={{ color: "var(--amber)" }}>
+            {anterior ? `Se entregó una versión anterior (${anterior.version})` : "No consta que se haya entregado"}
+          </strong>
+          <button type="button" style={enlace} disabled={ocupado} onClick={registrar}>Registrar entrega</button>
+        </>
+      )}
+      <a href="/privacidad/" target="_blank" rel="noopener" style={{ fontSize: 13 }}>Ver aviso</a>
+      {error && <span style={{ color: "var(--red)" }}>{error}</span>}
+      {ConfirmUI}
+    </div>
+  );
+}
+
 function AutorizacionWhatsApp({ patient }) {
   const [confirmar, ConfirmUI] = useConfirm();
   const [activa, setActiva] = useState(undefined);   // undefined = cargando

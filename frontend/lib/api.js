@@ -137,6 +137,7 @@ export async function api(path, options = {}) {
 }
 
 export const RUTA_CAMBIO = "/cambiar-contrasena/";
+export const RUTA_CONDICIONES = "/condiciones/";
 
 /**
  * ¿Este 403 es «cambia la contraseña» y no «no tienes permiso»?

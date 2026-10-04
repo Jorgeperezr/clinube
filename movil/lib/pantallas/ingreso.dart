@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import '../api/cliente.dart';
 import '../api/modelos.dart';
 import '../logo.dart';
+import 'aviso_privacidad.dart';
 
 class PantallaIngreso extends StatefulWidget {
   const PantallaIngreso({
@@ -148,6 +149,14 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
                               }),
                       child: const Text('Usar otro número'),
                     ),
+                  const SizedBox(height: 18),
+                  // Antes de dar el número, que se pueda saber qué se
+                  // hace con él.
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) => PantallaAvisoPrivacidad(api: widget.api))),
+                    child: const Text('Aviso de privacidad'),
+                  ),
                 ],
               ),
             ),

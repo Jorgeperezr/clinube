@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { login, RUTA_CAMBIO } from "../../lib/api";
+import { currentUser, login, RUTA_CAMBIO, RUTA_CONDICIONES } from "../../lib/api";
 import PantallaAcceso from "../../lib/PantallaAcceso";
 
 export default function LoginPage() {
@@ -20,7 +20,11 @@ export default function LoginPage() {
       // forma de cambiarla—, pero el panel entero está bloqueado hasta
       // que se elija la propia, así que se va derecho allí en vez de a
       // un escritorio donde todo fallaría.
-      window.location.href = sesion?.must_change_password ? RUTA_CAMBIO : "/panel/";
+      //
+      // Después, la administración de una clínica que no ha aceptado la
+      // versión vigente de las condiciones pasa antes por ellas.
+      window.location.href = sesion?.must_change_password ? RUTA_CAMBIO
+        : currentUser()?.condiciones_pendientes ? RUTA_CONDICIONES : "/panel/";
     } catch (err) {
       setError(err.message);
     } finally {

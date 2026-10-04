@@ -116,3 +116,30 @@ class PatientDocument(models.Model):
     class Meta:
         verbose_name = "Documento de paciente"
         verbose_name_plural = "Documentos de paciente"
+
+
+class AvisoPrivacidadEntregado(TenantAwareModel):
+    """
+    Constancia de que se informó al paciente del aviso de privacidad
+    (LOPDP): qué versión, cuándo y quién lo registró. Cuando el aviso
+    cambia de versión, la ficha lo muestra como pendiente otra vez.
+    """
+
+    class Medio(models.TextChoices):
+        EN_PERSONA = "en_persona", "En persona (impreso o en pantalla)"
+        ENLACE = "enlace", "Enlace enviado al paciente"
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="avisos_privacidad")
+    version = models.CharField(max_length=20)
+    medio = models.CharField(max_length=20, choices=Medio.choices, default=Medio.EN_PERSONA)
+    registrado_por = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    class Meta:
+        verbose_name = "Aviso de privacidad entregado"
+        verbose_name_plural = "Avisos de privacidad entregados"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.patient} · {self.version}"

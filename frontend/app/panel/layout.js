@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, currentUser, logout, tieneFuncion } from "../../lib/api";
+import { api, currentUser, logout, RUTA_CONDICIONES, tieneFuncion } from "../../lib/api";
 import { IconoClinube, LogoClinube, MARCA } from "../../lib/marca";
 import { applyBrandingChrome, applyTheme, initColorMode, logoSrc, onBrandingUpdated, readBrandingCache, saveBrandingCache } from "../../lib/theme";
 import NavIcon from "../../lib/NavIcons";
@@ -45,8 +45,26 @@ export default function PanelLayout({ children }) {
   useEffect(() => {
     const u = currentUser();
     if (!u) { window.location.href = "/login/"; return; }
+    if (u.condiciones_pendientes) { window.location.href = RUTA_CONDICIONES; return; }
     setUser(u);
     setReady(true);
+    // Recordar la preferencia de menú colapsado
+    try {
+      if (localStorage.getItem("sidebarCollapsed") === "1") setCollapsed(true);
+    } catch { /* SSR / sin storage */ }
+    // La administración puede tener una sesión de antes de que cambiaran
+    // las condiciones: el perfil guardado no lo sabe, el servidor sí.
+    if (u.role === "admin") {
+      api("/auth/me/")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((me) => {
+          if (!me) return;
+          localStorage.setItem("user", JSON.stringify(me));
+          if (me.condiciones_pendientes) window.location.href = RUTA_CONDICIONES;
+          else setUser(me);
+        })
+        .catch(() => {});
+    }
     // Módulos o preferencias cambiados en esta sesión: el menú se
     // actualiza sin tener que volver a entrar.
     const alCambiarPerfil = () => setUser(currentUser());
@@ -87,11 +105,6 @@ export default function PanelLayout({ children }) {
       unsubscribe(); stopColorMode();
       window.removeEventListener("perfil-actualizado", alCambiarPerfil);
     };
-    // Recordar la preferencia de menú colapsado
-    try {
-      const saved = localStorage.getItem("sidebarCollapsed");
-      if (saved === "1") setCollapsed(true);
-    } catch { /* SSR / sin storage */ }
   }, []);
 
   function toggleCollapsed() {

@@ -6,6 +6,11 @@ urlpatterns = [
     path("patients/", views.PatientListCreateView.as_view(), name="patient-list"),
     path("patients/<uuid:pk>/", views.PatientDetailView.as_view(), name="patient-detail"),
     path(
+        "patients/<uuid:pk>/aviso-privacidad/",
+        views.AvisoPrivacidadView.as_view(),
+        name="patient-aviso-privacidad",
+    ),
+    path(
         "patients/<uuid:pk>/medical-background/",
         views.MedicalBackgroundView.as_view(),
         name="patient-medical-background",

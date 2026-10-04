@@ -35,6 +35,7 @@ from apps.accounts.serializers import (
     StaffRecoveryRequestSerializer,
     UserSerializer,
 )
+from apps.common.legal_views import condiciones_pendientes
 from apps.common.permissions import HasRole
 from apps.whatsapp.gateway_client import send_whatsapp_template
 
@@ -345,6 +346,9 @@ class MeView(APIView):
             "full_name": u.full_name,
             "role": u.role,
             "must_change_password": u.must_change_password,
+            # La administración de una clínica que no ha aceptado la
+            # versión vigente de las condiciones va primero a aceptarlas.
+            "condiciones_pendientes": condiciones_pendientes(u),
             # Funciones de gestión de esta persona. Las dos claves antiguas
             # se siguen dando, derivadas, para un panel en caché de antes.
             "funciones": funciones,

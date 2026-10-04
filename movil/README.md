@@ -90,6 +90,12 @@ for r in me citas saldo indicaciones solicitudes-cita mensajes; do
 done
 ```
 
+El aviso de privacidad es público, sin token:
+
+```sh
+curl -s http://localhost/api/v1/legal/privacidad/ -o test/fixtures/legal-privacidad.json
+```
+
 `solicitudes-cita` y `mensajes` necesitan algo dentro para valer:
 antes de capturar, pide desde la app (o con `curl -X POST` a esas mismas
 rutas) al menos tres citas y dos mensajes, y desde la «Bandeja de la

@@ -12,6 +12,7 @@ import '../api/cliente.dart';
 import '../api/modelos.dart';
 import '../logo.dart';
 import '../tema.dart';
+import 'aviso_privacidad.dart';
 import 'logros.dart';
 
 class PantallaPerfil extends StatefulWidget {
@@ -94,6 +95,7 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
         return RefreshIndicator(
           onRefresh: () async => setState(() => _futuro = _cargar()),
           child: _Contenido(
+            api: widget.api,
             perfil: p,
             logros: logros,
             marca: widget.marca,
@@ -112,6 +114,7 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
 
 class _Contenido extends StatelessWidget {
   const _Contenido({
+    required this.api,
     required this.perfil,
     required this.logros,
     required this.marca,
@@ -120,6 +123,7 @@ class _Contenido extends StatelessWidget {
     this.alCambiarSinColor,
   });
 
+  final ClienteApi api;
   final Perfil perfil;
   final List<Logro> logros;
   final Marca marca;
@@ -251,6 +255,14 @@ class _Contenido extends StatelessWidget {
               : 'Muestra la app en escala de grises.'),
           value: sinColor || marca.esEnGrises,
           onChanged: marca.esEnGrises ? null : alCambiarSinColor,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text('Aviso de privacidad'),
+          subtitle: const Text('Qué datos guarda tu clínica y cuáles son tus derechos.'),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => PantallaAvisoPrivacidad(api: api))),
         ),
         const SizedBox(height: 14),
         OutlinedButton.icon(

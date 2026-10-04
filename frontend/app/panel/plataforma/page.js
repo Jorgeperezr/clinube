@@ -552,7 +552,15 @@ function AdminsTab() {
                             Pendiente de ingreso
                           </span>
                         : <span className="badge badge-ok">Activa</span>)
-                  : "—"}</td>
+                  : "—"}
+                  {c.admin?.is_active && (
+                    <div style={{ fontSize: 11.5, color: "var(--ink-soft)", marginTop: 4 }}
+                         title={c.condiciones ? `Aceptadas por ${c.condiciones.por}` : ""}>
+                      {c.condiciones
+                        ? `Condiciones aceptadas el ${new Date(c.condiciones.fecha).toLocaleDateString("es-EC")}`
+                        : "Condiciones sin aceptar"}
+                    </div>
+                  )}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   {c.admin ? (
                     <>
@@ -721,6 +729,22 @@ function ConfigTab() {
           {fld("logo_url", "URL del logo")}
           {fld("timezone", "Zona horaria")}
           {fld("currency", "Moneda")}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginBottom: 4 }}>Titular de la plataforma</h3>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
+          Quien opera {config.platform_name || "la plataforma"}. Sale en el{" "}
+          <a href="/privacidad/" target="_blank" rel="noopener">aviso de privacidad</a> y en las{" "}
+          <a href="/condiciones/" target="_blank" rel="noopener">condiciones de uso</a>; mientras
+          falte algo, esos textos lo muestran como pendiente.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 14px" }}>
+          {fld("titular_nombre", "Razón social o nombre")}
+          {fld("titular_ruc", "RUC")}
+          {fld("titular_correo", "Correo para temas de privacidad", "email")}
+          {fld("proveedor_correo", "Proveedor de correo (p. ej. Brevo)")}
         </div>
       </div>
 

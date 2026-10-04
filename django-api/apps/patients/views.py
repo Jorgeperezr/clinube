@@ -1,9 +1,11 @@
 from django.db.models import Count, Min, Q
 from rest_framework import generics
+from rest_framework.response import Response
 
 from apps.accounts.models import AuditLog
+from apps.common import legal
 from apps.common.permissions import HasRole
-from apps.patients.models import MedicalBackground, Patient, PatientDocument
+from apps.patients.models import AvisoPrivacidadEntregado, MedicalBackground, Patient, PatientDocument
 from apps.patients.serializers import (
     MedicalBackgroundSerializer,
     PatientDocumentSerializer,
@@ -189,7 +191,6 @@ class PatientDocumentDeleteView(generics.GenericAPIView):
 
     def delete(self, request, pk, doc_id):
         from django.http import Http404
-        from rest_framework.response import Response
 
         doc = PatientDocument.objects.filter(
             id=doc_id, patient_id=pk, patient__tenant=request.tenant, is_active=True
@@ -227,3 +228,51 @@ class PatientTreatmentHistoryView(generics.GenericAPIView):
                 "timeline": [],  # se poblará con evoluciones/planes/pagos en sprints posteriores
             }
         )
+
+
+class AvisoPrivacidadView(generics.GenericAPIView):
+    """
+    GET/POST /api/v1/patients/{id}/aviso-privacidad/
+
+    La constancia de que se informó al paciente del aviso de privacidad
+    (LOPDP). GET dice si está al día con la versión vigente y el
+    historial; POST registra la entrega de la versión vigente, con quién
+    la registra. Registrarla dos veces no duplica nada.
+    """
+
+    permission_classes = [CAN_EDIT_PATIENT]
+
+    def _paciente(self):
+        return generics.get_object_or_404(
+            Patient, pk=self.kwargs["pk"], tenant=self.request.tenant, is_active=True
+        )
+
+    def _respuesta(self, paciente, codigo=200):
+        entregas = AvisoPrivacidadEntregado.objects.filter(
+            tenant=self.request.tenant, patient=paciente
+        ).select_related("registrado_por")
+        return Response({
+            "version_vigente": legal.AVISO_VERSION,
+            "al_dia": any(e.version == legal.AVISO_VERSION for e in entregas),
+            "entregas": [{
+                "version": e.version,
+                "medio": e.medio,
+                "medio_texto": e.get_medio_display(),
+                "fecha": e.created_at,
+                "registrado_por": e.registrado_por.full_name if e.registrado_por else "",
+            } for e in entregas],
+        }, status=codigo)
+
+    def get(self, request, pk):
+        return self._respuesta(self._paciente())
+
+    def post(self, request, pk):
+        paciente = self._paciente()
+        medio = request.data.get("medio", AvisoPrivacidadEntregado.Medio.EN_PERSONA)
+        if medio not in AvisoPrivacidadEntregado.Medio.values:
+            return Response({"detail": "Medio de entrega no válido."}, status=400)
+        _, creada = AvisoPrivacidadEntregado.objects.get_or_create(
+            tenant=request.tenant, patient=paciente, version=legal.AVISO_VERSION,
+            defaults={"medio": medio, "registrado_por": request.user},
+        )
+        return self._respuesta(paciente, 201 if creada else 200)

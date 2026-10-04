@@ -100,6 +100,16 @@ class PlatformConfiguration(models.Model):
     smtp_password = models.CharField(max_length=255, blank=True)  # nunca se expone en la API
     timezone = models.CharField(max_length=64, default="America/Guayaquil")
     currency = models.CharField(max_length=8, default="USD")
+    # Quién opera la plataforma, para el aviso de privacidad y las
+    # condiciones (apps/common/legal.py). Sin ellos los textos legales
+    # salen con un marcador de «pendiente».
+    titular_nombre = models.CharField("Razón social del titular", max_length=200, blank=True)
+    titular_ruc = models.CharField("RUC del titular", max_length=20, blank=True)
+    titular_correo = models.EmailField("Correo de contacto para privacidad", blank=True)
+    proveedor_correo = models.CharField(
+        "Proveedor de correo", max_length=120, blank=True,
+        help_text="El servicio que envía los correos (p. ej. «Brevo»). Sale en el aviso de privacidad.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -113,3 +123,31 @@ class PlatformConfiguration(models.Model):
 
     def __str__(self):
         return self.platform_name
+
+
+class AceptacionCondiciones(TenantAwareModel):
+    """
+    Constancia de que la clínica aceptó una versión concreta de las
+    condiciones de uso y del acuerdo de tratamiento de datos
+    (apps/common/legal.py). La acepta una persona con rol de
+    administración, y queda quién, cuándo y desde qué dirección.
+
+    El nombre y el correo se copian al aceptar: si la cuenta se borra
+    algún día, la constancia tiene que seguir diciendo quién fue.
+    """
+
+    version = models.CharField(max_length=20)
+    aceptada_por = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    nombre = models.CharField(max_length=255)
+    correo = models.EmailField()
+    ip = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Aceptación de condiciones"
+        verbose_name_plural = "Aceptaciones de condiciones"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.version} · {self.correo}"

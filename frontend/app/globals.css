@@ -582,10 +582,33 @@ main > * { animation: rise var(--dur-slow) var(--ease) both; }
 .acceso-marca p { margin-top: 12px; color: var(--mint); font-size: 15px; }
 .acceso-form { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .acceso-form form, .acceso-form > div { width: 100%; max-width: 380px; }
+.acceso-legal { margin-top: 28px; text-align: center; font-size: 12.5px; color: var(--ink-faint); }
+.acceso-legal a { color: var(--ink-soft); }
 @media (max-width: 760px) {
   .acceso { flex-direction: column; min-height: 100dvh; }
   .acceso-marca { flex: none; justify-content: flex-start; padding: 26px 22px; }
   .acceso-marca svg { height: 38px; width: auto; }
   .acceso-marca p { margin-top: 8px; font-size: 14px; }
   .acceso-form { align-items: flex-start; padding: 28px 20px 40px; }
+}
+
+/* ═══════════ Textos legales (lib/TextoLegal.js) ═══════════ */
+.legal { min-height: 100vh; background: var(--paper); }
+.legal-cabecera { background: var(--nav-bg); padding: 18px 16px; }
+.legal-cabecera > a { display: inline-block; max-width: 760px; }
+.legal-cuerpo { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; color: var(--ink); }
+.legal-cuerpo h1 { font-size: 26px; margin-bottom: 6px; }
+.legal-cuerpo h2 { font-size: 17px; margin: 28px 0 8px; }
+.legal-cuerpo p { font-size: 15px; line-height: 1.6; margin-bottom: 10px; }
+.legal-version { color: var(--ink-soft); font-size: 13.5px !important; }
+.legal-pie { margin-top: 28px; }
+.legal-aceptar { margin-top: 28px; }
+.aviso-legal {
+  background: var(--amber-soft); color: var(--ink); border-radius: 10px;
+  padding: 12px 14px; font-size: 14px; margin-bottom: 22px;
+}
+@media print {
+  .legal-cabecera { background: none; padding: 0 0 8px; }
+  .legal-cabecera svg path:first-child { fill: #111; }
+  .legal-cuerpo { padding: 0; }
 }

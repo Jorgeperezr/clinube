@@ -184,6 +184,15 @@ class ClienteApi {
 
   Future<void> salir() => sesion.borrar();
 
+  /// El aviso de privacidad. Es público: se puede leer antes de entrar.
+  Future<DocumentoLegal> avisoPrivacidad() async {
+    final r = await _http.get(_uri('/legal/privacidad/'));
+    if (r.statusCode >= 400) {
+      throw ErrorDeApi(mensajeDeError(r.statusCode, r.body), codigo: r.statusCode);
+    }
+    return DocumentoLegal.desdeJson(jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>);
+  }
+
   /// La marca de la clínica del paciente, guardada de paso.
   Future<Marca> marcaDeLaClinica() async {
     final marca = Marca.desdeJson(await objeto('/app/clinica/'));

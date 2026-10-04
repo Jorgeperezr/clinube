@@ -61,12 +61,13 @@ def _principal_admin(tenant):
 
 class ClinicSerializer(serializers.ModelSerializer):
     admin = serializers.SerializerMethodField()
+    condiciones = serializers.SerializerMethodField()
     funcionalidades = serializers.JSONField(required=False)
 
     class Meta:
         model = Tenant
         fields = ["id", "name", "ruc", "address", "phone", "email",
-                  "is_active", "admin", "funcionalidades", "created_at"]
+                  "is_active", "admin", "condiciones", "funcionalidades", "created_at"]
         read_only_fields = ["id", "created_at"]
 
     def get_admin(self, obj):
@@ -82,6 +83,16 @@ class ClinicSerializer(serializers.ModelSerializer):
             # lleva meses trabajando.
             "must_change_password": admin.must_change_password,
         }
+
+    def get_condiciones(self, obj):
+        """La aceptación de la versión vigente de las condiciones, o None."""
+        from apps.common.legal import CONDICIONES_VERSION
+        from apps.common.models import AceptacionCondiciones
+
+        a = AceptacionCondiciones.objects.filter(tenant=obj, version=CONDICIONES_VERSION).first()
+        if not a:
+            return None
+        return {"version": a.version, "fecha": a.created_at, "por": a.correo}
 
     def validate_funcionalidades(self, value):
         """
@@ -385,7 +396,9 @@ class PlatformConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = PlatformConfiguration
         fields = ["platform_name", "logo_url", "smtp_host", "smtp_port", "smtp_user",
-                  "smtp_password", "smtp_password_set", "timezone", "currency", "updated_at"]
+                  "smtp_password", "smtp_password_set", "timezone", "currency",
+                  "titular_nombre", "titular_ruc", "titular_correo", "proveedor_correo",
+                  "updated_at"]
         read_only_fields = ["updated_at"]
 
     def get_smtp_password_set(self, obj):

@@ -27,7 +27,14 @@ export default function PantallaAcceso({ children }) {
           <p>{LEMA}</p>
         </div>
       </div>
-      <div className="acceso-form">{children}</div>
+      <div className="acceso-form">
+        <div>
+          {children}
+          <p className="acceso-legal">
+            <a href="/privacidad/">Aviso de privacidad</a> · <a href="/condiciones/">Condiciones de uso</a>
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

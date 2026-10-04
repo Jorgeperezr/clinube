@@ -604,5 +604,13 @@ pip install pip-audit && pip-audit -r django-api/requirements.txt -r whatsapp-ga
 - [ ] Credenciales de Meta en `.env` cuando la verificación esté aprobada
       (sin esto, los recordatorios WhatsApp quedan en modo simulado).
 - [ ] Validar catálogo del odontograma y formularios por especialidad con el doctor.
-- [ ] Revisión LOPDP con un abogado (aviso de privacidad, consentimiento de datos).
+- [ ] **Datos del titular** en Plataforma → Configuración (razón social, RUC,
+      correo de privacidad, proveedor de correo): sin ellos el aviso de
+      privacidad (`/privacidad`) y las condiciones (`/condiciones`) salen
+      con «[pendiente de completar]».
+- [ ] Revisión LOPDP con un abogado de los textos de `django-api/apps/common/legal.py`
+      (aviso de privacidad y condiciones con el acuerdo de tratamiento de
+      datos). Cambiar un texto obliga a subir su versión: las clínicas
+      vuelven a aceptar las condiciones y las fichas marcan el aviso como
+      pendiente.
 - [ ] Probar la restauración de un backup (un backup no probado no existe).

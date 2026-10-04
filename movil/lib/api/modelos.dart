@@ -425,3 +425,35 @@ class MensajeConsultorio {
         respondido: j['respondido'] == null ? null : DateTime.parse(j['respondido'] as String).toLocal(),
       );
 }
+
+/// Un texto legal (el aviso de privacidad) tal como lo da el servidor.
+///
+/// El texto no vive en la app: lo que se registra es que el paciente
+/// recibió una versión concreta, y tiene que ser la misma que ve en el
+/// panel de la clínica.
+class DocumentoLegal {
+  const DocumentoLegal({
+    required this.titulo,
+    required this.version,
+    required this.vigenteDesde,
+    required this.secciones,
+  });
+
+  final String titulo;
+  final String version;
+  final String vigenteDesde;
+  final List<(String, List<String>)> secciones;
+
+  factory DocumentoLegal.desdeJson(Map<String, dynamic> j) => DocumentoLegal(
+        titulo: j['titulo'] as String? ?? '',
+        version: j['version'] as String? ?? '',
+        vigenteDesde: j['vigente_desde'] as String? ?? '',
+        secciones: [
+          for (final s in (j['secciones'] as List<dynamic>? ?? const []))
+            (
+              (s as Map<String, dynamic>)['titulo'] as String? ?? '',
+              [for (final p in (s['parrafos'] as List<dynamic>? ?? const [])) p as String],
+            ),
+        ],
+      );
+}
