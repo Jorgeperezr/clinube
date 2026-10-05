@@ -206,18 +206,21 @@ cuenta de la clínica.
 ## Compilar para entregar
 
 ```sh
-cd movil
-flutter build apk --dart-define=API_URL=https://tu-dominio.ec
+bash scripts/movil.sh --compilar android https://tu-dominio.ec
 ```
 
 ```sh
-cd movil
-flutter build ipa --dart-define=API_URL=https://tu-dominio.ec
+bash scripts/movil.sh --compilar ios https://tu-dominio.ec
 ```
 
 `API_URL` se pasa **al compilar**: no está escrita en el código, así que
 el mismo repositorio sirve para desarrollo y para producción sin tocar
-nada.
+nada. El guion no compila sin una dirección `https://`: una versión con
+`http` se instala bien pero no conecta nunca, porque iOS y Android
+bloquean el tráfico sin cifrar.
+
+Publicar en las tiendas sin avisos de «desarrollador no fiable»:
+[PUBLICAR.md](PUBLICAR.md).
 
 ---
 

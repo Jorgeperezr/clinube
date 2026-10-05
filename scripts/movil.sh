@@ -11,6 +11,9 @@
 #   bash scripts/movil.sh --comprobar         solo diagnostica
 #   bash scripts/movil.sh --web               en Chrome, sin Xcode
 #   bash scripts/movil.sh --ip 192.168.1.40   teléfono real por wifi
+#   bash scripts/movil.sh --compilar android https://app.clinube.com
+#   bash scripts/movil.sh --compilar ios     https://app.clinube.com
+#                                             versión para las tiendas
 #
 # Las variables van SIEMPRE entre llaves —${VAR}— porque en macOS una
 # variable pegada a un carácter no ASCII se traga esos bytes dentro del
@@ -28,6 +31,8 @@ aviso()  { printf '\033[0;33m!\033[0m %s\n' "$1"; }
 titulo() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 SOLO_COMPROBAR=0
+COMPILAR=""
+URL_TIENDA=""
 IP_MANUAL=""
 WEB=0
 PUERTO_WEB=5000
@@ -36,6 +41,7 @@ while [ $# -gt 0 ]; do
     --comprobar) SOLO_COMPROBAR=1; shift ;;
     --web) WEB=1; shift ;;
     --ip) IP_MANUAL="${2:-}"; shift 2 ;;
+    --compilar) COMPILAR="${2:-}"; URL_TIENDA="${3:-}"; shift 3 2>/dev/null || shift $# ;;
     *) rojo "Opción desconocida: $1"; exit 2 ;;
   esac
 done
@@ -66,6 +72,52 @@ else
   echo "    brew install --cask flutter"
   echo "    …o https://docs.flutter.dev/get-started/install/macos"
   FALLOS=$((FALLOS+1))
+fi
+
+# ── Versión para las tiendas ─────────────────────────────────────────
+# Va aparte porque no necesita simulador ni API local, y porque es donde
+# un descuido sale caro: una versión compilada sin la URL https se
+# instala bien pero no conecta nunca (iOS y Android bloquean http).
+if [ -n "${COMPILAR}" ]; then
+  titulo "3. Versión para la tienda (${COMPILAR})"
+  case "${URL_TIENDA}" in
+    https://*) verde "API: ${URL_TIENDA}" ;;
+    *) rojo "Hace falta la dirección https de la API, p. ej.:"
+       echo "    bash scripts/movil.sh --compilar ${COMPILAR:-android} https://app.clinube.com"
+       exit 2 ;;
+  esac
+  cd "${APP}" || exit 1
+  flutter pub get >/dev/null 2>&1 || { rojo "Falló 'flutter pub get'."; exit 1; }
+  flutter analyze 2>&1 | tail -1 | grep -q "No issues found" \
+    || { rojo "El análisis tiene avisos: corrígelos antes de publicar."; exit 1; }
+  flutter test 2>&1 | tail -1 | grep -q "All tests passed" \
+    || { rojo "Hay pruebas en rojo."; exit 1; }
+  verde "Análisis y pruebas en verde."
+  case "${COMPILAR}" in
+    android)
+      if [ -f android/key.properties ]; then
+        verde "Firma de la tienda: android/key.properties"
+      else
+        aviso "Sin android/key.properties: se firma con la clave de depuración."
+        echo "    Sirve para probar en un teléfono, pero Google Play la rechaza."
+        echo "    Cómo crear la firma: movil/PUBLICAR.md"
+      fi
+      flutter build appbundle --release --dart-define=API_URL="${URL_TIENDA}" || exit 1
+      flutter build apk --release --dart-define=API_URL="${URL_TIENDA}" || exit 1
+      verde "Para Google Play: build/app/outputs/bundle/release/app-release.aab"
+      verde "Para instalar a mano: build/app/outputs/flutter-apk/app-release.apk"
+      ;;
+    ios)
+      if [ "$(uname)" != "Darwin" ] || ! xcodebuild -version >/dev/null 2>&1; then
+        rojo "Compilar para iOS necesita un Mac con Xcode completo."
+        exit 1
+      fi
+      flutter build ipa --release --dart-define=API_URL="${URL_TIENDA}" || exit 1
+      verde "Listo para subir: build/ios/ipa/ (con Transporter o Xcode → Organizer)"
+      ;;
+    *) rojo "Destino desconocido: ${COMPILAR}. Usa android o ios."; exit 2 ;;
+  esac
+  exit 0
 fi
 
 titulo "3. Destinos disponibles"

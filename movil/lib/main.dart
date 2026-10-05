@@ -7,6 +7,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -31,6 +32,16 @@ const urlApi = String.fromEnvironment(
   'API_URL',
   defaultValue: 'http://10.0.2.2:8000',
 );
+
+/// Una versión para tiendas solo habla con la API por https.
+///
+/// Compilar en modo release sin `--dart-define=API_URL=https://…` dejaba
+/// una app que intentaba conectarse a la dirección del emulador: en
+/// iOS, App Transport Security la bloquea, y en Android también (sin
+/// https no hay tráfico en claro). El paciente veía «sin conexión» para
+/// siempre. Ahora la app lo dice al abrirse, y `scripts/movil.sh
+/// --compilar` no deja compilar sin la URL.
+bool get urlApiValida => !kReleaseMode || urlApi.startsWith('https://');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -61,6 +72,10 @@ class _AppPacienteState extends State<AppPaciente> {
   @override
   void initState() {
     super.initState();
+    // Si la sesión caduca en cualquier pantalla, de vuelta al ingreso.
+    _api.alCaducarSesion = () {
+      if (mounted) _refrescarSesion();
+    };
     _arranque = _preparar();
   }
 
@@ -108,31 +123,32 @@ class _AppPacienteState extends State<AppPaciente> {
       theme: temaClaro(_marca.colorPrincipal, _sinColor || _marca.esEnGrises),
       darkTheme:
           temaOscuro(_marca.colorPrincipal, _sinColor || _marca.esEnGrises),
-      home: FutureBuilder<_Arranque>(
-        future: _arranque,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          if (snap.data?.haySesion ?? false) {
-            return PantallaPrincipal(
-              api: _api,
-              marca: _marca,
-              alSalir: _refrescarSesion,
-              sinColor: _sinColor,
-              alCambiarSinColor: _cambiarSinColor,
-            );
-          }
-          return PantallaIngreso(
-            api: _api, marca: _marca, alEntrar: _refrescarSesion);
-        },
-      ),
+      home: !urlApiValida
+          ? const _SinServidor()
+          : FutureBuilder<_Arranque>(
+              future: _arranque,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (snap.data?.haySesion ?? false) {
+                  return PantallaPrincipal(
+                    api: _api,
+                    marca: _marca,
+                    alSalir: _refrescarSesion,
+                    sinColor: _sinColor,
+                    alCambiarSinColor: _cambiarSinColor,
+                  );
+                }
+                return PantallaIngreso(
+                    api: _api, marca: _marca, alEntrar: _refrescarSesion);
+              },
+            ),
     );
   }
 }
-
 
 /// Lo que hay que saber antes de pintar la primera pantalla.
 class _Arranque {
@@ -140,4 +156,26 @@ class _Arranque {
 
   final bool haySesion;
   final Marca marca;
+}
+
+/// La app se compiló sin la dirección https de la API (ver [urlApiValida]).
+class _SinServidor extends StatelessWidget {
+  const _SinServidor();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(28),
+          child: Text(
+            'Esta versión de la app no tiene configurada la dirección segura '
+            'de la clínica. Descarga la versión oficial desde la App Store o '
+            'Google Play.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Manifiesto de privacidad de la app (lo exige Apple desde 2024).
+
+  Lo que la app ENVÍA a la clínica, y para qué. No hay rastreo ni
+  publicidad: ningún dato sale hacia terceros, solo hacia el servidor de
+  la clínica del paciente.
+
+    · Teléfono: para entrar con el código de WhatsApp.
+    · Contenido del usuario: las solicitudes de cita y los mensajes que
+      el paciente escribe a su clínica.
+
+  Lo que la app MUESTRA (citas, saldo, indicaciones) ya está en la
+  clínica: la app no lo recoge, lo lee.
+
+  APIs con «motivo obligatorio»: el código de la app no usa ninguna. Las
+  que usan Flutter y flutter_secure_storage van declaradas en sus propios
+  manifiestos, que Xcode junta con este al compilar.
+
+  Si se añade una función que envíe otro dato (una foto, la ubicación…),
+  hay que declararlo aquí Y en la ficha de la App Store.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypePhoneNumber</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array/>
+</dict>
+</plist>

@@ -71,12 +71,36 @@ class OTPRequestView(APIView):
         serializer.is_valid(raise_exception=True)
         phone = serializer.validated_data["phone"]
 
+        revisor = self._paciente_de_revision(phone)
+        if revisor is not None:
+            OTPCode.objects.create(
+                user=revisor,
+                code_hash=_hash_value(settings.APP_REVISION_CODIGO),
+                purpose=OTPCode.Purpose.LOGIN,
+                expires_at=timezone.now() + timedelta(minutes=OTP_TTL_MINUTES),
+            )
+            logging.getLogger(__name__).info("Acceso de revisión de tienda usado (paciente %s).", revisor.id)
+            return Response({"detail": "Código enviado por WhatsApp."}, status=status.HTTP_202_ACCEPTED)
+
         user, _ = User.objects.get_or_create(
             phone=phone,
             defaults={"role": User.Role.PATIENT, "tenant_id": self._default_tenant_id()},
         )
         self._issue_and_send_otp(user, phone, OTPCode.Purpose.LOGIN)
         return Response({"detail": "Código enviado por WhatsApp."}, status=status.HTTP_202_ACCEPTED)
+
+    @staticmethod
+    def _paciente_de_revision(phone):
+        """
+        El paciente de prueba para la revisión de las tiendas, si este es
+        su teléfono y el acceso está configurado (APP_REVISION_* en
+        settings). Solo una cuenta que ya existe: nunca crea ninguna.
+        """
+        telefono = (settings.APP_REVISION_TELEFONO or "").strip()
+        codigo = settings.APP_REVISION_CODIGO or ""
+        if not telefono or not (len(codigo) == 6 and codigo.isdigit()) or phone.strip() != telefono:
+            return None
+        return User.objects.filter(phone=telefono, role=User.Role.PATIENT, is_active=True).first()
 
     @staticmethod
     def _issue_and_send_otp(user, phone, purpose):

@@ -273,6 +273,16 @@ CELERY_TIMEZONE = TIME_ZONE
 WHATSAPP_GATEWAY_URL = config("WHATSAPP_GATEWAY_URL", default="http://whatsapp-gateway:8001")
 INTERNAL_SERVICE_TOKEN = config("INTERNAL_SERVICE_TOKEN", default="dev-only-shared-secret-change-me")
 
+# ── Acceso para la revisión de App Store y Google Play ───────────────
+# Los revisores de Apple y Google tienen que poder entrar en la app del
+# paciente, y el código llega por WhatsApp a un teléfono que no tienen.
+# Con estas dos variables, ESE teléfono entra con ESE código fijo, sin
+# WhatsApp. Debe ser un paciente de prueba de una clínica de
+# demostración, sin datos reales (ver movil/PUBLICAR.md). Vacías —lo
+# normal—, no hay acceso de revisión. El código ha de tener 6 cifras.
+APP_REVISION_TELEFONO = config("APP_REVISION_TELEFONO", default="")
+APP_REVISION_CODIGO = config("APP_REVISION_CODIGO", default="")
+
 # ── Correo (recuperación de contraseña del personal) ─────────────────
 # No había ninguna configuración: Django intentaba un SMTP en localhost,
 # que en el contenedor no existe, y como el envío era silencioso el

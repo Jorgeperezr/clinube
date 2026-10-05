@@ -3,9 +3,14 @@
 /// No hay contraseña a propósito. Un paciente entra en su app dos veces
 /// al año, y una contraseña que se usa dos veces al año es una
 /// contraseña olvidada o apuntada en un papel.
+///
+/// En el iPhone el teclado numérico no tiene tecla «Intro»: el código
+/// se envía solo al completar los 6 dígitos, y tocar fuera de los campos
+/// cierra el teclado, que si no tapaba el botón de entrar.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api/cliente.dart';
 import '../api/modelos.dart';
@@ -70,8 +75,18 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
         if (mounted) setState(() => _codigoPedido = true);
       });
 
+  /// Al llegar al sexto dígito se envía solo: es lo que espera quien
+  /// copia el código de WhatsApp y lo pega.
+  void _alCambiarCodigo(String valor) {
+    if (valor.length == 6 && !_ocupado) {
+      FocusScope.of(context).unfocus();
+      _verificar();
+    }
+  }
+
   Future<void> _verificar() => _ejecutar(() async {
-        await widget.api.verificarCodigo(_telefono.text.trim(), _codigo.text.trim());
+        await widget.api
+            .verificarCodigo(_telefono.text.trim(), _codigo.text.trim());
         widget.alEntrar();
       });
 
@@ -79,85 +94,110 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _Emblema(marca: widget.marca),
-                  const SizedBox(height: 20),
-                  Text(widget.marca.nombre, style: tema.textTheme.headlineMedium),
-                  const SizedBox(height: 6),
-                  Text(
-                    _codigoPedido
-                        ? 'Te enviamos un código por WhatsApp al $_telefonoVisible.'
-                        : 'Ingresa con tu número de teléfono. Te enviaremos un '
-                            'código por WhatsApp.',
-                    style: tema.textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 22),
-                  if (_error != null) ...[
-                    _Aviso(texto: _error!),
-                    const SizedBox(height: 14),
-                  ],
-                  TextField(
-                    controller: _telefono,
-                    enabled: !_codigoPedido && !_ocupado,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      labelText: 'Teléfono',
-                      hintText: '+593 99 911 1222',
-                      border: OutlineInputBorder(),
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Emblema(marca: widget.marca),
+                    const SizedBox(height: 20),
+                    Text(widget.marca.nombre,
+                        style: tema.textTheme.headlineMedium),
+                    const SizedBox(height: 6),
+                    Text(
+                      _codigoPedido
+                          ? 'Te enviamos un código por WhatsApp al $_telefonoVisible.'
+                          : 'Ingresa con tu número de teléfono. Te enviaremos un '
+                              'código por WhatsApp.',
+                      style: tema.textTheme.bodyMedium,
                     ),
-                  ),
-                  if (_codigoPedido) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 22),
+                    if (_error != null) ...[
+                      _Aviso(texto: _error!),
+                      const SizedBox(height: 14),
+                    ],
                     TextField(
-                      controller: _codigo,
-                      enabled: !_ocupado,
-                      keyboardType: TextInputType.number,
-                      autofocus: true,
+                      controller: _telefono,
+                      enabled: !_codigoPedido && !_ocupado,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.send,
+                      autofillHints: const [AutofillHints.telephoneNumber],
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),
+                        LengthLimitingTextInputFormatter(20),
+                      ],
+                      onSubmitted: (_) => _ocupado ? null : _pedir(),
                       decoration: const InputDecoration(
-                        labelText: 'Código de 6 dígitos',
+                        labelText: 'Teléfono',
+                        hintText: '+593 99 911 1222',
                         border: OutlineInputBorder(),
                       ),
-                      onSubmitted: (_) => _verificar(),
                     ),
-                  ],
-                  const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed: _ocupado ? null : (_codigoPedido ? _verificar : _pedir),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text(_ocupado
-                          ? 'Un momento…'
-                          : (_codigoPedido ? 'Entrar' : 'Enviarme el código')),
-                    ),
-                  ),
-                  if (_codigoPedido)
-                    TextButton(
+                    if (_codigoPedido) ...[
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _codigo,
+                        enabled: !_ocupado,
+                        keyboardType: TextInputType.number,
+                        autofocus: true,
+                        // iOS ofrece el código desde Mensajes si llega por SMS.
+                        autofillHints: const [AutofillHints.oneTimeCode],
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(6),
+                        ],
+                        onChanged: _alCambiarCodigo,
+                        decoration: const InputDecoration(
+                          labelText: 'Código de 6 dígitos',
+                          border: OutlineInputBorder(),
+                        ),
+                        onSubmitted: (_) => _verificar(),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    FilledButton(
                       onPressed: _ocupado
                           ? null
-                          : () => setState(() {
-                                _codigoPedido = false;
-                                _codigo.clear();
-                              }),
-                      child: const Text('Usar otro número'),
+                          : (_codigoPedido ? _verificar : _pedir),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(_ocupado
+                            ? 'Un momento…'
+                            : (_codigoPedido
+                                ? 'Entrar'
+                                : 'Enviarme el código')),
+                      ),
                     ),
-                  const SizedBox(height: 18),
-                  // Antes de dar el número, que se pueda saber qué se
-                  // hace con él.
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                        builder: (_) => PantallaAvisoPrivacidad(api: widget.api))),
-                    child: const Text('Aviso de privacidad'),
-                  ),
-                ],
+                    if (_codigoPedido)
+                      TextButton(
+                        onPressed: _ocupado
+                            ? null
+                            : () => setState(() {
+                                  _codigoPedido = false;
+                                  _codigo.clear();
+                                }),
+                        child: const Text('Usar otro número'),
+                      ),
+                    const SizedBox(height: 18),
+                    // Antes de dar el número, que se pueda saber qué se
+                    // hace con él.
+                    TextButton(
+                      onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  PantallaAvisoPrivacidad(api: widget.api))),
+                      child: const Text('Aviso de privacidad'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -188,11 +228,11 @@ class _Aviso extends StatelessWidget {
         color: tema.colorScheme.errorContainer,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(texto, style: TextStyle(color: tema.colorScheme.onErrorContainer)),
+      child: Text(texto,
+          style: TextStyle(color: tema.colorScheme.onErrorContainer)),
     );
   }
 }
-
 
 /// El logotipo de la clínica, o el de Clinube si no tiene.
 ///

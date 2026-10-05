@@ -598,7 +598,17 @@ main > * { animation: rise var(--dur-slow) var(--ease) both; }
   input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
   .enlace-accion { display: inline-block; padding: 10px 4px !important; margin: -10px -4px; }
   aside button, .btn { min-height: 38px; }
+  /* Safari en iPhone y iPad amplía la página al tocar un campo con letra
+     de menos de 16 px, y no vuelve: el panel daba un salto en cada
+     formulario. Con 16 px no amplía. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select, textarea { font-size: 16px !important; }
 }
+
+/* iOS: sin el recuadro gris al tocar y sin que gire el tamaño del texto
+   al pasar a horizontal. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+a, button, label, summary { -webkit-tap-highlight-color: transparent; }
 
 .acceso-legal { margin-top: 28px; text-align: center; font-size: 12.5px; color: var(--ink-faint); }
 .acceso-legal a { color: var(--ink-soft); }
@@ -738,10 +748,12 @@ main > * { animation: rise var(--dur-slow) var(--ease) both; }
   --nav-hover: var(--lat-hover);
 }
 
-.panel-armazon { display: flex; min-height: 100vh; background: var(--paper); }
+/* 100dvh detrás de 100vh: en Safari, 100vh incluye la barra de
+   direcciones y el final del panel quedaba debajo de ella. */
+.panel-armazon { display: flex; min-height: 100vh; min-height: 100dvh; background: var(--paper); }
 .lateral {
   flex-grow: 0; flex-shrink: 0; position: sticky; top: 10px; align-self: flex-start;
-  height: calc(100vh - 20px); margin: 10px 0 10px 10px; padding: 14px 10px 10px;
+  height: calc(100vh - 20px); height: calc(100dvh - 20px); margin: 10px 0 10px 10px; padding: 14px 10px 10px;
   display: flex; flex-direction: column; border-radius: 18px;
   background: var(--lat-bg); color: var(--lat-ink);
   border: 1px solid var(--lat-borde); box-shadow: var(--lat-sombra);

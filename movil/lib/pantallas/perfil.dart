@@ -171,13 +171,17 @@ class _Contenido extends StatelessWidget {
                   if (marca.conLogros) ...[
                     _Contador(valor: '${logros.length}', etiqueta: 'logros'),
                     _Contador(
-                      valor: '${logros.fold<int>(0, (a, l) => a > l.racha ? a : l.racha)}',
+                      valor:
+                          '${logros.fold<int>(0, (a, l) => a > l.racha ? a : l.racha)}',
                       etiqueta: 'mejor racha',
                     ),
                   ],
                   _Contador(
-                    valor: perfil.cuotasPendientes == 0 ? '✓' : '${perfil.cuotasPendientes}',
-                    etiqueta: perfil.cuotasPendientes == 0 ? 'al día' : 'cuotas',
+                    valor: perfil.cuotasPendientes == 0
+                        ? '✓'
+                        : '${perfil.cuotasPendientes}',
+                    etiqueta:
+                        perfil.cuotasPendientes == 0 ? 'al día' : 'cuotas',
                   ),
                 ],
               ),
@@ -267,7 +271,8 @@ class _Contenido extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.privacy_tip_outlined),
           title: const Text('Aviso de privacidad'),
-          subtitle: const Text('Qué datos guarda tu clínica y cuáles son tus derechos.'),
+          subtitle: const Text(
+              'Qué datos guarda tu clínica y cuáles son tus derechos.'),
           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
               builder: (_) => PantallaAvisoPrivacidad(api: api))),
         ),
@@ -277,7 +282,12 @@ class _Contenido extends StatelessWidget {
           icon: const Icon(Icons.logout),
           label: const Text('Cerrar sesión'),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 6),
+        TextButton(
+          onPressed: () => pedirEliminarCuenta(context, api),
+          child: const Text('Eliminar mi cuenta'),
+        ),
+        const SizedBox(height: 22),
         Center(
           child: LogoClinube(
             alto: 14,
@@ -329,10 +339,12 @@ class _Celda extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ShaderMask(
-              shaderCallback: (r) =>
-                  (logro.esRacha ? anillos(context).racha : anillos(context).logro)
-                      .createShader(r),
-              child: Icon(iconoDeLogro(logro.icono), size: 32, color: Colors.white),
+              shaderCallback: (r) => (logro.esRacha
+                      ? anillos(context).racha
+                      : anillos(context).logro)
+                  .createShader(r),
+              child: Icon(iconoDeLogro(logro.icono),
+                  size: 32, color: Colors.white),
             ),
             const SizedBox(height: 8),
             Text(
@@ -348,5 +360,53 @@ class _Celda extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// «Eliminar mi cuenta».
+///
+/// Apple lo exige a toda app en la que se usa una cuenta (guía 5.1.1). En
+/// salud no puede ser un borrado inmediato: la historia clínica se
+/// conserva el tiempo que manda la ley, y eso lo gestiona la clínica. Lo
+/// que hace la app es enviarle la solicitud por el mismo canal que los
+/// mensajes, para que la tramite y responda, que es lo que Apple admite
+/// en sectores regulados.
+Future<void> pedirEliminarCuenta(BuildContext context, ClienteApi api) async {
+  final confirmado = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('¿Eliminar tu cuenta?'),
+      content: const Text(
+        'Enviaremos a tu clínica la solicitud para eliminar tu cuenta de la '
+        'app. Dejarás de poder entrar y tus mensajes y solicitudes se '
+        'borrarán.\n\n'
+        'Tu historia clínica no se borra: la clínica debe conservarla el '
+        'tiempo que exige la ley. Tu clínica te confirmará la eliminación.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Enviar solicitud'),
+        ),
+      ],
+    ),
+  );
+  if (confirmado != true || !context.mounted) return;
+  final avisos = ScaffoldMessenger.of(context);
+  try {
+    await api.enviar('/app/mensajes/', {
+      'texto': 'Solicito la eliminación de mi cuenta de la app Clinube. '
+          '(Enviado desde «Eliminar mi cuenta».)',
+    });
+    avisos.showSnackBar(const SnackBar(
+      content:
+          Text('Solicitud enviada. Tu clínica te confirmará la eliminación.'),
+    ));
+  } on ErrorDeApi catch (e) {
+    avisos.showSnackBar(SnackBar(content: Text(e.mensaje)));
   }
 }

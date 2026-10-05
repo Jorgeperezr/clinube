@@ -16,11 +16,29 @@
 ///      (`ROTATE_REFRESH_TOKENS`), la primera invalidaría el token de las
 ///      otras tres y la sesión se caería sola. Por eso hay un único
 ///      `Future` de refresco compartido.
+///
+/// Y tres que se aprendieron con la app instalada en un teléfono:
+///
+///   3. **Las respuestas se leen como UTF-8.** La API dice
+///      `Content-Type: application/json` sin `charset`, y en ese caso
+///      `http` decodifica en latin1: «Pérez» salía «PÃ©rez». Las pruebas
+///      no lo veían porque sus respuestas falsas sí traían el charset.
+///
+///   4. **Ninguna petición espera para siempre.** En un ascensor o con
+///      una wifi que no da salida, la petición se quedaba colgada y la
+///      pantalla girando sin fin. Tras [tiempoMaximo] se rinde con un
+///      mensaje y un «Reintentar».
+///
+///   5. **Los fallos de red se dicen en castellano.** Un
+///      `SocketException: Failed host lookup` no le dice nada a un
+///      paciente.
 library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HandshakeException, SocketException;
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -40,20 +58,61 @@ class ErrorDeApi implements Exception {
   String toString() => mensaje;
 }
 
+/// Cuánto se espera a la API antes de dar la petición por perdida.
+const tiempoMaximo = Duration(seconds: 20);
+
+const _sinConexion =
+    'No se pudo contactar con la clínica. Revisa tu conexión e inténtalo otra vez.';
+
+/// El almacén seguro, configurado para que no dé guerra al instalar:
+///
+///   · Android: `encryptedSharedPreferences`, con su clave en el
+///     Keystore. El modo antiguo fallaba al restaurar una copia de otro
+///     teléfono (la clave del Keystore no viaja) y la app no arrancaba.
+///     Además, AndroidManifest.xml excluye estos datos de las copias.
+///   · iOS: `first_unlock_this_device`. Se puede leer tras el primer
+///     desbloqueo (la app no falla si se abre desde una notificación con
+///     el teléfono bloqueado) y no viaja a otro iPhone en una copia: la
+///     sesión de un paciente no debe aparecer en el teléfono nuevo de
+///     otra persona.
+const almacenSeguro = FlutterSecureStorage(
+  aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  iOptions:
+      IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+);
+
 /// Guarda y recupera los tokens del almacén seguro del sistema.
 class Sesion {
-  Sesion({FlutterSecureStorage? almacen})
-      : _almacen = almacen ?? const FlutterSecureStorage();
+  Sesion({FlutterSecureStorage? almacen}) : _almacen = almacen ?? almacenSeguro;
 
   final FlutterSecureStorage _almacen;
+
+  /// Lee una clave sin dejar que un almacén estropeado tumbe la app.
+  ///
+  /// Si el sistema no puede descifrar lo guardado (clave del Keystore
+  /// perdida, Keychain de una instalación anterior), lo único sensato es
+  /// empezar de cero: el paciente vuelve a entrar con su código. Antes
+  /// la excepción salía en el arranque y la app se quedaba en blanco.
+  Future<String?> _leer(String clave) async {
+    try {
+      return await _almacen.read(key: clave);
+    } on PlatformException {
+      try {
+        await _almacen.deleteAll();
+      } on PlatformException {
+        // Ni borrar se puede: se sigue sin sesión.
+      }
+      return null;
+    }
+  }
 
   static const _claveAcceso = 'acceso';
   static const _claveRefresco = 'refresco';
   static const _claveMarca = 'marca';
   static const _claveSinColor = 'sin_color';
 
-  Future<String?> get acceso => _almacen.read(key: _claveAcceso);
-  Future<String?> get refresco => _almacen.read(key: _claveRefresco);
+  Future<String?> get acceso => _leer(_claveAcceso);
+  Future<String?> get refresco => _leer(_claveRefresco);
 
   Future<void> guardar(String acceso, String? refresco) async {
     await _almacen.write(key: _claveAcceso, value: acceso);
@@ -80,7 +139,7 @@ class Sesion {
   /// colores neutros y luego salta a los de la clínica. El parpadeo se
   /// ve, y se ve mal.
   Future<Marca?> get marca async {
-    final crudo = await _almacen.read(key: _claveMarca);
+    final crudo = await _leer(_claveMarca);
     if (crudo == null) return null;
     try {
       return Marca.desdeJson(jsonDecode(crudo) as Map<String, dynamic>);
@@ -96,8 +155,7 @@ class Sesion {
       _almacen.write(key: _claveMarca, value: jsonEncode(marca.aJson()));
 
   /// «Sin color»: la app en grises, elegido en el perfil.
-  Future<bool> get sinColor async =>
-      (await _almacen.read(key: _claveSinColor)) == '1';
+  Future<bool> get sinColor async => (await _leer(_claveSinColor)) == '1';
 
   Future<void> guardarSinColor(bool activo) => activo
       ? _almacen.write(key: _claveSinColor, value: '1')
@@ -142,55 +200,102 @@ class ClienteApi {
     required this.urlBase,
     Sesion? sesion,
     http.Client? http_,
+    this.espera = tiempoMaximo,
   })  : sesion = sesion ?? Sesion(),
         _http = http_ ?? http.Client();
 
   final String urlBase;
   final Sesion sesion;
+
+  /// Lo que se espera a cada petición (ver [tiempoMaximo]).
+  final Duration espera;
   final http.Client _http;
 
   /// El refresco en vuelo, si lo hay. Ver la nota de arriba.
   Future<bool>? _refrescoEnVuelo;
 
+  /// Se llama cuando la sesión deja de valer (el refresco caducó o se
+  /// revocó). La app vuelve a la pantalla de ingreso: antes el paciente
+  /// se quedaba en un «Reintentar» que nunca iba a funcionar.
+  void Function()? alCaducarSesion;
+
   Uri _uri(String ruta) => Uri.parse('$urlBase/api/v1$ruta');
+
+  /// Hace la petición con tiempo máximo y traduce los fallos de red.
+  Future<http.Response> _red(Future<http.Response> Function() peticion) async {
+    try {
+      return await peticion().timeout(espera);
+    } on TimeoutException {
+      throw ErrorDeApi(
+          'La clínica tarda demasiado en responder. Revisa tu conexión e inténtalo otra vez.');
+    } on HandshakeException {
+      // Certificado no válido: NO se acepta nunca. Una app de salud que
+      // se salta la verificación es justo lo que un sistema operativo (y
+      // una revisión de tienda) marca como peligroso.
+      throw ErrorDeApi(
+          'No se pudo establecer una conexión segura con la clínica.');
+    } on SocketException {
+      throw ErrorDeApi(_sinConexion);
+    } on http.ClientException {
+      throw ErrorDeApi(_sinConexion);
+    }
+  }
+
+  /// El cuerpo como texto (ver la nota 3 de arriba): con el charset que
+  /// diga la respuesta y, si no dice ninguno, UTF-8, que es lo que manda
+  /// el estándar de JSON; latin1 solo si los bytes no son UTF-8 válido.
+  static String texto(http.Response r) {
+    final tipo = (r.headers['content-type'] ?? '').toLowerCase();
+    if (tipo.contains('charset=')) return r.body;
+    try {
+      return utf8.decode(r.bodyBytes);
+    } on FormatException {
+      return latin1.decode(r.bodyBytes);
+    }
+  }
+
+  static Object? _json(http.Response r) => jsonDecode(texto(r));
+
+  static ErrorDeApi _error(http.Response r) =>
+      ErrorDeApi(mensajeDeError(r.statusCode, texto(r)), codigo: r.statusCode);
+
+  Future<void> _caducar() async {
+    await sesion.borrar();
+    alCaducarSesion?.call();
+  }
 
   // ── Entrada por OTP ──────────────────────────────────────────────
 
   /// Pide el código que llega por WhatsApp.
   Future<void> pedirCodigo(String telefono) async {
-    final r = await _http.post(
-      _uri('/auth/otp/request/'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'phone': telefono}),
-    );
-    if (r.statusCode >= 400) {
-      throw ErrorDeApi(mensajeDeError(r.statusCode, r.body), codigo: r.statusCode);
-    }
+    final r = await _red(() => _http.post(
+          _uri('/auth/otp/request/'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'phone': telefono}),
+        ));
+    if (r.statusCode >= 400) throw _error(r);
   }
 
   /// Canjea el código por los tokens y los deja guardados.
   Future<void> verificarCodigo(String telefono, String codigo) async {
-    final r = await _http.post(
-      _uri('/auth/otp/verify/'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'phone': telefono, 'code': codigo}),
-    );
-    if (r.statusCode >= 400) {
-      throw ErrorDeApi(mensajeDeError(r.statusCode, r.body), codigo: r.statusCode);
-    }
-    final datos = jsonDecode(r.body) as Map<String, dynamic>;
-    await sesion.guardar(datos['access'] as String, datos['refresh'] as String?);
+    final r = await _red(() => _http.post(
+          _uri('/auth/otp/verify/'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'phone': telefono, 'code': codigo}),
+        ));
+    if (r.statusCode >= 400) throw _error(r);
+    final datos = _json(r) as Map<String, dynamic>;
+    await sesion.guardar(
+        datos['access'] as String, datos['refresh'] as String?);
   }
 
   Future<void> salir() => sesion.borrar();
 
   /// El aviso de privacidad. Es público: se puede leer antes de entrar.
   Future<DocumentoLegal> avisoPrivacidad() async {
-    final r = await _http.get(_uri('/legal/privacidad/'));
-    if (r.statusCode >= 400) {
-      throw ErrorDeApi(mensajeDeError(r.statusCode, r.body), codigo: r.statusCode);
-    }
-    return DocumentoLegal.desdeJson(jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>);
+    final r = await _red(() => _http.get(_uri('/legal/privacidad/')));
+    if (r.statusCode >= 400) throw _error(r);
+    return DocumentoLegal.desdeJson(_json(r) as Map<String, dynamic>);
   }
 
   /// La marca de la clínica del paciente, guardada de paso.
@@ -215,38 +320,40 @@ class ClienteApi {
   /// Envía datos (POST) con la misma renovación de sesión que las
   /// lecturas: pedir cita o escribir a la clínica con el token caducado
   /// no debe dar un error, sino renovarlo y reintentar una vez.
-  Future<Map<String, dynamic>> enviar(String ruta, Map<String, dynamic> cuerpo) async =>
+  Future<Map<String, dynamic>> enviar(
+          String ruta, Map<String, dynamic> cuerpo) async =>
       await _pedir(ruta, cuerpo: cuerpo) as Map<String, dynamic>;
 
   Future<Object?> _pedir(String ruta, {Map<String, dynamic>? cuerpo}) async {
-    Future<http.Response> hacer() => cuerpo == null ? _get(ruta) : _post(ruta, cuerpo);
+    Future<http.Response> hacer() =>
+        cuerpo == null ? _get(ruta) : _post(ruta, cuerpo);
     var r = await hacer();
     if (r.statusCode == 401 && await _refrescar()) {
       r = await hacer();
     }
     if (r.statusCode >= 400) {
-      if (r.statusCode == 401) await sesion.borrar();
-      throw ErrorDeApi(mensajeDeError(r.statusCode, r.body), codigo: r.statusCode);
+      if (r.statusCode == 401) await _caducar();
+      throw _error(r);
     }
-    return jsonDecode(r.body);
+    return _json(r);
   }
 
   Future<http.Response> _get(String ruta) async {
     final token = await sesion.acceso;
-    return _http.get(_uri(ruta), headers: {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    });
+    return _red(() => _http.get(_uri(ruta), headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        }));
   }
 
   Future<http.Response> _post(String ruta, Map<String, dynamic> cuerpo) async {
     final token = await sesion.acceso;
-    return _http.post(_uri(ruta),
+    return _red(() => _http.post(_uri(ruta),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
         },
-        body: jsonEncode(cuerpo));
+        body: jsonEncode(cuerpo)));
   }
 
   /// Un solo refresco a la vez, compartido por todas las peticiones que
@@ -260,17 +367,20 @@ class ClienteApi {
   Future<bool> _refrescarDeVerdad() async {
     final token = await sesion.refresco;
     if (token == null) return false;
-    final r = await _http.post(
-      _uri('/auth/token/refresh/'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({'refresh': token}),
-    );
-    if (r.statusCode >= 400) {
-      await sesion.borrar();
-      return false;
-    }
-    final datos = jsonDecode(r.body) as Map<String, dynamic>;
-    await sesion.guardar(datos['access'] as String, datos['refresh'] as String?);
+    final r = await _red(() => _http.post(
+          _uri('/auth/token/refresh/'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({'refresh': token}),
+        ));
+    // Solo un «no» del servidor (token caducado o revocado) cierra la
+    // sesión. Un fallo de red ya salió arriba como ErrorDeApi, y un error
+    // del servidor se dice como tal: sin cobertura, o con el servidor
+    // reiniciándose, no se echa a nadie.
+    if (r.statusCode == 400 || r.statusCode == 401) return false;
+    if (r.statusCode >= 400) throw _error(r);
+    final datos = _json(r) as Map<String, dynamic>;
+    await sesion.guardar(
+        datos['access'] as String, datos['refresh'] as String?);
     return true;
   }
 }

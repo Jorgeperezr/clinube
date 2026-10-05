@@ -103,3 +103,55 @@ class StaffUserCreationTests(APITestCase):
             "email": "x@x.ec", "role": "doctor", "password": "ClaveSegura2026",
         })
         self.assertEqual(resp.status_code, 403)
+
+
+class AccesoDeRevisionTests(APITestCase):
+    """El paciente de prueba que usan los revisores de App Store y Google Play."""
+
+    def setUp(self):
+        # El cupo de códigos (throttle «otp») vive en la caché y es común a
+        # todas las pruebas: sin limpiarla, estas lo agotan para las demás.
+        from django.core.cache import cache
+
+        from apps.common.models import Tenant
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.tenant = Tenant.objects.create(name="Clínica Demostración")
+        self.revisor = User.objects.create_user(phone="+593900000001", role="patient", tenant=self.tenant)
+
+    def _entrar(self, telefono, codigo):
+        from unittest import mock
+        with mock.patch("apps.accounts.views.send_whatsapp_template") as whatsapp:
+            pedido = self.client.post(reverse("otp-request"), {"phone": telefono})
+            entrada = self.client.post(reverse("otp-verify"), {"phone": telefono, "code": codigo})
+        return pedido, entrada, whatsapp
+
+    def test_entra_con_el_codigo_fijo_y_sin_whatsapp(self):
+        with self.settings(APP_REVISION_TELEFONO="+593900000001", APP_REVISION_CODIGO="246810"):
+            pedido, entrada, whatsapp = self._entrar("+593900000001", "246810")
+        self.assertEqual(pedido.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(entrada.status_code, status.HTTP_200_OK)
+        self.assertIn("access", entrada.data)
+        whatsapp.assert_not_called()
+
+    def test_sin_configurar_no_hay_acceso_de_revision(self):
+        pedido, entrada, whatsapp = self._entrar("+593900000001", "246810")
+        self.assertEqual(entrada.status_code, status.HTTP_400_BAD_REQUEST)
+        whatsapp.assert_called_once()
+
+    def test_el_codigo_fijo_no_sirve_para_otro_telefono(self):
+        User.objects.create_user(phone="+593900000002", role="patient", tenant=self.tenant)
+        with self.settings(APP_REVISION_TELEFONO="+593900000001", APP_REVISION_CODIGO="246810"):
+            _, entrada, whatsapp = self._entrar("+593900000002", "246810")
+        self.assertEqual(entrada.status_code, status.HTTP_400_BAD_REQUEST)
+        whatsapp.assert_called_once()
+
+    def test_un_codigo_corto_desactiva_el_acceso(self):
+        with self.settings(APP_REVISION_TELEFONO="+593900000001", APP_REVISION_CODIGO="12"):
+            _, entrada, _ = self._entrar("+593900000001", "12")
+        self.assertEqual(entrada.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_no_crea_la_cuenta_si_no_existe(self):
+        with self.settings(APP_REVISION_TELEFONO="+593900000009", APP_REVISION_CODIGO="246810"):
+            _, entrada, _ = self._entrar("+593900000009", "246810")
+        self.assertEqual(entrada.status_code, status.HTTP_400_BAD_REQUEST)

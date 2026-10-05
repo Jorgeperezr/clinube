@@ -1,8 +1,23 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- La app solo habla con la API: internet y nada más. Faltaba aquí
+         (Flutter lo pone solo en los manifiestos de depuración) y una
+         versión de producción no podía conectarse a nada. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Sin copias de seguridad de los datos de la app: la sesión va
+         cifrada con una clave del Keystore que no viaja a otro teléfono,
+         y restaurarla en uno nuevo dejaba la app sin poder arrancar.
+         Tampoco debe viajar la sesión de un paciente a otro aparato.
+         usesCleartextTraffic="false": solo https (en depuración se
+         permite http, ver src/debug/AndroidManifest.xml). -->
     <application
         android:label="Clinube"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/reglas_de_copia"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
