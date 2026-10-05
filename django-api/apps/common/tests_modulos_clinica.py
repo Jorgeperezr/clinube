@@ -20,7 +20,9 @@ URL = "/api/v1/config/modulos/"
 class ModulosDeLaClinica(APITestCase):
     def setUp(self):
         self.tenant = Tenant.objects.create(
-            name="Clínica Módulos", funcionalidades=normalizar({"inventario": False}))
+            name="Clínica Módulos",
+            # El 3D y los logros son adicionales: esta clínica los tiene contratados.
+            funcionalidades=normalizar({"inventario": False, "odontograma_3d": True, "logros": True}))
         self.admin = User.objects.create_user(email="admin@mod.ec", password="superseguro123",
                                               role="admin", tenant=self.tenant)
         self.doctor = User.objects.create_user(email="doc@mod.ec", password="superseguro123",

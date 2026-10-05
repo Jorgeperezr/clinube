@@ -29,12 +29,16 @@ class PreferenciasTests(APITestCase):
             email="otro@pref.ec", password="clave-larga-8gatos", role="doctor", tenant=self.tenant)
         self.client.force_authenticate(user=self.doctor)
 
-    def test_por_defecto_el_3d_esta_encendido_y_disponible(self):
+    def test_por_defecto_el_3d_esta_encendido_si_la_clinica_lo_tiene(self):
+        # El 3D es adicional: hasta que Plataforma lo active no está disponible.
         r = self.client.get(RUTA)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["preferencias"],
                          {"odontograma_3d": True, "acento": "", "barra_oculta": []})
-        self.assertEqual(r.data["disponibles"], {"odontograma_3d": True})
+        self.assertEqual(r.data["disponibles"], {"odontograma_3d": False})
+        self.tenant.funcionalidades = normalizar({"odontograma_3d": True})
+        self.tenant.save(update_fields=["funcionalidades"])
+        self.assertEqual(self.client.get(RUTA).data["disponibles"], {"odontograma_3d": True})
 
     def test_apagarlo_se_guarda_y_lo_ve_auth_me(self):
         r = self.client.patch(RUTA, {"odontograma_3d": False}, format="json")

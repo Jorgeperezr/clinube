@@ -301,6 +301,25 @@ void _pruebasDeMarca() {
       expect(ida.colorSecundario, original.colorSecundario);
       expect(ida.telefono, '099');
     });
+
+    test('los logros son una función adicional de la clínica', () {
+      // `/app/clinica/` dice en `funciones` lo que la clínica contrató.
+      final sin = Marca.desdeJson({
+        'nombre': 'X', 'color_principal': '#14639e', 'color_secundario': '#bcdcf2',
+        'funciones': {'logros': false},
+      });
+      expect(sin.conLogros, isFalse);
+      // Y se conserva al guardarla, o el arranque los volvería a enseñar.
+      expect(Marca.desdeJson(sin.aJson()).conLogros, isFalse);
+    });
+
+    test('una marca guardada antes de `funciones` sigue con logros', () {
+      // Era el comportamiento de entonces; la próxima petición lo corrige.
+      final vieja = Marca.desdeJson({
+        'nombre': 'X', 'color_principal': '#14639e', 'color_secundario': '#bcdcf2',
+      });
+      expect(vieja.conLogros, isTrue);
+    });
   });
 
   group('Solicitudes de cita, tal como las devuelve /app/solicitudes-cita/', () {

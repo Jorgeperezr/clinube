@@ -8,6 +8,10 @@
  * odontograma 3D o las rachas y logros los quita del panel, de la ficha
  * y de la app del paciente para todo el equipo. No borra nada: al
  * encenderlo de nuevo, todo sigue ahí.
+ *
+ * Las funciones adicionales (las que pidió alguna clínica y luego se
+ * ofrecen a las demás, ver apps/common/funcionalidades.py) no vienen con
+ * el plan: si la clínica no las tiene, aquí se le enseña qué son.
  */
 
 import { useEffect, useState } from "react";
@@ -54,7 +58,10 @@ export default function ModulosClinica() {
 
   if (!modulos) return error ? <div className="error-box">{error}</div> : <div className="empty">Cargando…</div>;
   const contratados = modulos.filter((m) => m.contratado);
-  const otros = modulos.filter((m) => !m.contratado);
+  // Lo que no tiene contratado: las funciones adicionales se ofrecen con
+  // su descripción; lo demás del plan, solo se nombra.
+  const adicionales = modulos.filter((m) => !m.contratado && m.tipo === "adicional");
+  const otros = modulos.filter((m) => !m.contratado && m.tipo !== "adicional");
 
   return (
     <div style={{ maxWidth: 820 }}>
@@ -70,6 +77,7 @@ export default function ModulosClinica() {
                           borderTop: i ? "1px solid var(--line)" : "none", cursor: "pointer" }}>
             <span style={{ flex: 1 }}>
               <strong style={{ fontSize: 14.5 }}>{m.nombre}</strong>
+              {m.tipo === "adicional" && <span className="etiqueta-adicional">Adicional</span>}
               <span style={{ display: "block", fontSize: 12.5, color: "var(--ink-soft)" }}>{m.descripcion}</span>
             </span>
             <span style={{ fontSize: 12, fontWeight: 600, minWidth: 64, textAlign: "right",
@@ -81,6 +89,23 @@ export default function ModulosClinica() {
           </label>
         ))}
       </div>
+      {adicionales.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14, margin: "22px 0 4px" }}>Funciones adicionales</h3>
+          <p style={{ fontSize: 12.5, color: "var(--ink-soft)", margin: "0 0 10px" }}>
+            No vienen con el plan: se añaden a pedido. Si te interesa alguna, pídesela al
+            administrador de la plataforma.
+          </p>
+          <div className="card" style={{ padding: 0 }}>
+            {adicionales.map((m, i) => (
+              <div key={m.clave} style={{ padding: "12px 18px", borderTop: i ? "1px solid var(--line)" : "none" }}>
+                <strong style={{ fontSize: 14 }}>{m.nombre}</strong>
+                <span style={{ display: "block", fontSize: 12.5, color: "var(--ink-soft)" }}>{m.descripcion}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {otros.length > 0 && (
         <p style={{ fontSize: 12.5, color: "var(--ink-faint)", marginTop: 12 }}>
           No incluidos en tu plan: {otros.map((m) => m.nombre).join(", ")}. Para añadirlos, habla con

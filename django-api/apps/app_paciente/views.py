@@ -25,6 +25,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.app_paciente.permissions import EsPaciente, ficha_del_paciente
+from apps.common.funcionalidades import activa
 from apps.common.permisos_funcionalidad import RequiereFuncionalidad
 
 
@@ -166,6 +167,10 @@ class MisLogrosView(BaseVistaPaciente):
         from apps.logros.models import LogroDePaciente
 
         ficha = ficha_del_paciente(request)
+        # Sin la función, lista vacía y no 403: una app instalada antes de
+        # que la clínica la apagara no tiene que romper el perfil entero.
+        if not activa(request.tenant, "logros"):
+            return Response([])
         concesiones = LogroDePaciente.objects.filter(
             patient=ficha, tenant=request.tenant,
         ).select_related("logro").order_by("-otorgado_en")[:60]
@@ -244,6 +249,11 @@ class MiClinicaView(BaseVistaPaciente):
             "telefono": (marca.phone or "").strip() if marca else "",
             "direccion": (marca.address or "").strip() if marca else "",
             "email": (marca.email or "").strip() if marca else "",
+            # Las funciones de la clínica que cambian lo que enseña la app.
+            # Las «adicionales» (apps/common/funcionalidades.py) no las
+            # tiene toda clínica: sin esto, la app pintaría una sección de
+            # logros vacía en la mayoría.
+            "funciones": {"logros": activa(request.tenant, "logros")},
         })
 
 

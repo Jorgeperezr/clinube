@@ -16,6 +16,7 @@ import 'package:clinube/api/cliente.dart';
 import 'package:clinube/api/modelos.dart';
 import 'package:clinube/pantallas/consultorio.dart';
 import 'package:clinube/pantallas/ingreso.dart';
+import 'package:clinube/pantallas/perfil.dart';
 import 'package:clinube/pantallas/principal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -278,6 +279,62 @@ void main() {
     // El nombre largo no cabe en una barra de teléfono; por eso existe
     // el corto y por eso la barra lo prefiere.
     expect(find.text('Sonrisa'), findsOneWidget);
+  });
+
+  group('Clínica sin «Rachas y logros»', () {
+    // Es una función adicional: la clínica que no la tiene no debe ver
+    // ni rastro de ella, ni la app pedir algo que no va a usar.
+    const marca = Marca(
+      nombre: 'Sonrisa Feliz',
+      colorPrincipal: 0xFF0E5C63,
+      colorSecundario: 0xFF9FE1CB,
+      conLogros: false,
+    );
+    final pedidas = <String>[];
+
+    Future<ClienteApi> api() async {
+      pedidas.clear();
+      final sesion = SesionFalsa();
+      await sesion.guardar('t', 'r');
+      return ClienteApi(
+        urlBase: 'http://x',
+        sesion: sesion,
+        http_: MockClient((req) async {
+          pedidas.add(req.url.path);
+          return http.Response(
+              jsonEncode({
+                'nombre': 'Ana Probe', 'clinica': 'Sonrisa Feliz',
+                'cuotas_pendientes': 0, 'cuotas_vencidas': 0,
+                'saldo': '0', 'proxima_cita': null,
+              }),
+              200);
+        }),
+      );
+    }
+
+    testWidgets('el inicio no lleva la fila de logros', (tester) async {
+      await tester.pumpWidget(_envoltorio(
+        PantallaPrincipal(api: await api(), marca: marca, alSalir: () {}),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Hola, Ana'), findsOneWidget);
+      expect(find.text('Todavía sin logros'), findsNothing);
+      expect(pedidas.where((r) => r.endsWith('/app/logros/')), isEmpty);
+    });
+
+    testWidgets('el perfil no lleva la rejilla ni los contadores', (tester) async {
+      await tester.pumpWidget(_envoltorio(Scaffold(
+        body: PantallaPerfil(api: await api(), marca: marca, alSalir: () {}),
+      )));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ana Probe'), findsOneWidget);
+      expect(find.text('Tus logros'), findsNothing);
+      expect(find.text('mejor racha'), findsNothing);
+      expect(find.text('al día'), findsOneWidget);
+      expect(pedidas.where((r) => r.endsWith('/app/logros/')), isEmpty);
+    });
   });
 
   group('Tu clínica: pedir cita y mensajes', () {

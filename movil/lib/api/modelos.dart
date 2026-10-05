@@ -265,6 +265,7 @@ class Marca {
     this.telefono = '',
     this.direccion = '',
     this.email = '',
+    this.conLogros = true,
   });
 
   final String nombre;
@@ -282,6 +283,14 @@ class Marca {
   final String telefono;
   final String direccion;
   final String email;
+
+  /// La clínica tiene contratada la función adicional «Rachas y logros»
+  /// (`funciones.logros` de `/app/clinica/`). Sin ella, la app no enseña
+  /// ni la fila de logros del inicio ni la rejilla del perfil. Si la
+  /// clave no viene —una marca guardada antes de que existiera— se da
+  /// por encendida, que es como funcionaba entonces; la siguiente
+  /// petición la corrige.
+  final bool conLogros;
 
   bool get tieneLogo => (logo ?? '').isNotEmpty;
   bool get sePuedeLlamar => telefono.trim().isNotEmpty;
@@ -319,6 +328,7 @@ class Marca {
         telefono: j['telefono'] as String? ?? '',
         direccion: j['direccion'] as String? ?? '',
         email: j['email'] as String? ?? '',
+        conLogros: (j['funciones'] as Map<String, dynamic>?)?['logros'] as bool? ?? true,
       );
 
   Map<String, dynamic> aJson() => {
@@ -330,6 +340,7 @@ class Marca {
         'telefono': telefono,
         'direccion': direccion,
         'email': email,
+        'funciones': {'logros': conLogros},
       };
 }
 

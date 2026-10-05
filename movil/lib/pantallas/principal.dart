@@ -43,7 +43,7 @@ class _PantallaPrincipalState extends State<PantallaPrincipal> {
   @override
   Widget build(BuildContext context) {
     final paginas = [
-      _Inicio(api: widget.api),
+      _Inicio(api: widget.api, conLogros: widget.marca.conLogros),
       _Citas(api: widget.api),
       _Cuenta(api: widget.api),
       _Indicaciones(api: widget.api),
@@ -224,17 +224,21 @@ class _Vacio extends StatelessWidget {
 /* ── Inicio ────────────────────────────────────────────────────────── */
 
 class _Inicio extends StatelessWidget {
-  const _Inicio({required this.api});
+  const _Inicio({required this.api, this.conLogros = true});
 
   final ClienteApi api;
 
+  /// Si la clínica tiene la función adicional «Rachas y logros».
+  final bool conLogros;
+
   /// El inicio necesita DOS cosas —el resumen y los logros— y las pide
   /// a la vez. En serie, la fila de logros aparecería medio segundo
-  /// después que el resto y la pantalla daría un salto al cargar.
+  /// después que el resto y la pantalla daría un salto al cargar. Sin
+  /// la función de logros, la segunda ni se pide.
   Future<(Perfil, List<Logro>)> _todo() async {
     final resultados = await Future.wait([
       api.objeto('/app/me/'),
-      api.lista('/app/logros/'),
+      conLogros ? api.lista('/app/logros/') : Future.value(<dynamic>[]),
     ]);
     return (
       Perfil.desdeJson(resultados[0] as Map<String, dynamic>),
@@ -264,11 +268,13 @@ class _Inicio extends StatelessWidget {
               ],
             ),
           ),
-          FilaDeLogros(logros: logros),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Divider(),
-          ),
+          if (conLogros) ...[
+            FilaDeLogros(logros: logros),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Divider(),
+            ),
+          ],
           if (p.proximaCita != null)
             _Tarjeta(
               icono: Icons.event_available_outlined,

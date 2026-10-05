@@ -405,6 +405,22 @@ class PlatformConfigSerializer(serializers.ModelSerializer):
         return bool(obj.smtp_password)
 
 
+class FuncionalidadesView(APIView):
+    """
+    GET /api/v1/platform/funcionalidades/ — el catálogo de funciones, con
+    su tipo (incluida o adicional), si viene encendida en una clínica nueva
+    y de dónde salió. Plataforma lo pinta tal cual: una función nueva
+    aparece sola al desplegarla.
+    """
+
+    permission_classes = [IS_SUPERADMIN]
+
+    def get(self, request):
+        from apps.common.funcionalidades import TIPOS, catalogo_publico
+
+        return Response({"tipos": TIPOS, "funcionalidades": catalogo_publico()})
+
+
 class PlatformConfigView(APIView):
     permission_classes = [IS_SUPERADMIN]
 

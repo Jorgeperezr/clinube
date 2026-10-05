@@ -975,3 +975,11 @@ body.con-proxima-cita .panel-contenido { padding-bottom: 84px; }
   .cita-fila-hora { font-size: 14px; }
   .cita-fila-hora small::before { content: "– "; }
 }
+
+/* Marca de una función adicional (apps/common/funcionalidades.py):
+   no viene con el plan, se añadió a pedido. */
+.etiqueta-adicional {
+  display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; vertical-align: 2px;
+  color: var(--petrol); background: color-mix(in srgb, var(--petrol) 12%, transparent);
+}

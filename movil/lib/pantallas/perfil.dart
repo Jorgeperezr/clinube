@@ -47,7 +47,9 @@ class _PantallaPerfilState extends State<PantallaPerfil> {
   Future<(Perfil, List<Logro>)> _cargar() async {
     final r = await Future.wait([
       widget.api.objeto('/app/me/'),
-      widget.api.lista('/app/logros/'),
+      widget.marca.conLogros
+          ? widget.api.lista('/app/logros/')
+          : Future.value(<dynamic>[]),
     ]);
     return (
       Perfil.desdeJson(r[0] as Map<String, dynamic>),
@@ -166,11 +168,13 @@ class _Contenido extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _Contador(valor: '${logros.length}', etiqueta: 'logros'),
-                  _Contador(
-                    valor: '${logros.fold<int>(0, (a, l) => a > l.racha ? a : l.racha)}',
-                    etiqueta: 'mejor racha',
-                  ),
+                  if (marca.conLogros) ...[
+                    _Contador(valor: '${logros.length}', etiqueta: 'logros'),
+                    _Contador(
+                      valor: '${logros.fold<int>(0, (a, l) => a > l.racha ? a : l.racha)}',
+                      etiqueta: 'mejor racha',
+                    ),
+                  ],
                   _Contador(
                     valor: perfil.cuotasPendientes == 0 ? '✓' : '${perfil.cuotasPendientes}',
                     etiqueta: perfil.cuotasPendientes == 0 ? 'al día' : 'cuotas',
@@ -193,42 +197,45 @@ class _Contenido extends StatelessWidget {
             visualDensity: VisualDensity.compact,
           ),
         ],
-        const SizedBox(height: 22),
-        const Divider(),
-        const SizedBox(height: 14),
-        Text('Tus logros', style: tema.textTheme.titleMedium),
-        const SizedBox(height: 12),
-        if (logros.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 28),
-            child: Column(
-              children: [
-                Icon(Icons.emoji_events_outlined,
-                    size: 48, color: tema.disabledColor),
-                const SizedBox(height: 12),
-                Text(
-                  'Todavía no tienes logros.\nAcude a tus controles y sigue '
-                  'las indicaciones de tu doctor.',
-                  textAlign: TextAlign.center,
-                  style: tema.textTheme.bodyMedium,
-                ),
-              ],
+        if (marca.conLogros) ...[
+          const SizedBox(height: 22),
+          const Divider(),
+          const SizedBox(height: 14),
+          Text('Tus logros', style: tema.textTheme.titleMedium),
+          const SizedBox(height: 12),
+          if (logros.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Column(
+                children: [
+                  Icon(Icons.emoji_events_outlined,
+                      size: 48, color: tema.disabledColor),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Todavía no tienes logros.\nAcude a tus controles y sigue '
+                    'las indicaciones de tu doctor.',
+                    textAlign: TextAlign.center,
+                    style: tema.textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.85,
+              ),
+              itemCount: logros.length,
+              itemBuilder: (context, i) => _Celda(logro: logros[i]),
             ),
-          )
-        else
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: 0.85,
-            ),
-            itemCount: logros.length,
-            itemBuilder: (context, i) => _Celda(logro: logros[i]),
-          ),
-        const SizedBox(height: 28),
+          const SizedBox(height: 28),
+        ] else
+          const SizedBox(height: 22),
         // Los datos de contacto de la clínica: hasta ahora la app decía
         // «llama a tu clínica» sin dar el número, que es un consejo
         // vacío si el paciente no lo tiene a mano.

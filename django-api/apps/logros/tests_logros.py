@@ -29,7 +29,9 @@ MES = date(2026, 5, 1)
 class Base(APITestCase):
     def setUp(self):
         cache.clear()
-        self.tenant = Tenant.objects.create(name="Clínica Logros", ruc="1790000093001")
+        # Los logros son una función adicional: esta clínica la tiene contratada.
+        self.tenant = Tenant.objects.create(name="Clínica Logros", ruc="1790000093001",
+                                            funcionalidades={"logros": True})
         self.esp = Specialty.objects.create(tenant=self.tenant, name="General")
         self.tr = Treatment.objects.create(
             tenant=self.tenant, name="Profilaxis", specialty=self.esp,
@@ -208,7 +210,8 @@ class QuienPuedeOtorgarTests(Base):
         self.assertEqual(r.status_code, 201, r.data)
 
     def test_no_se_puede_premiar_a_un_paciente_de_otra_clinica(self):
-        otra = Tenant.objects.create(name="Otra Clínica", ruc="1790000093099")
+        otra = Tenant.objects.create(name="Otra Clínica", ruc="1790000093099",
+                                     funcionalidades={"logros": True})
         ajeno = Patient.objects.create(
             tenant=otra, first_name="Ajeno", last_name="X", national_id="1700000099")
         self.entrar(self.admin)

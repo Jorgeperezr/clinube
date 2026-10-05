@@ -1,33 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, apiErrorMessage, readList } from "../../../lib/api";
+import { api, apiErrorMessage, readList, readObject } from "../../../lib/api";
 import { useConfirm } from "../../../lib/ConfirmDialog";
 import { MARCA } from "../../../lib/marca";
 
-/**
- * Las funcionalidades que se pueden contratar por clínica.
- *
- * El catálogo de verdad vive en `apps/common/funcionalidades.py`, que es
- * el que la API usa para rechazar un módulo apagado. Esta lista solo
- * pone los textos; si alguien añade una clave allí y se olvida aquí, la
- * clínica la recibe encendida por defecto y no se ve para editarla —se
- * nota, pero no rompe nada—.
+/*
+ * El catálogo de funciones NO se repite aquí: lo da la API
+ * (GET /platform/funcionalidades/, desde apps/common/funcionalidades.py),
+ * con su tipo —incluida o adicional—, si viene encendida en una clínica
+ * nueva y de qué cliente salió. Una función nueva aparece sola al
+ * desplegarla, sin tocar esta pantalla.
  */
-const FUNCIONALIDADES = [
-  ["logros", "Rachas y logros", "Premiar al paciente que acude a sus controles."],
-  ["inventario", "Inventario", "Control de stock e insumos."],
-  ["whatsapp", "Recordatorios por WhatsApp", "Necesita conectar la cuenta de la clínica."],
-  ["convenios", "Convenios y tarifarios", "Precios pactados con aseguradoras."],
-  ["app_paciente", "App del paciente", "Sus citas y su saldo en el teléfono."],
-  ["odontograma_3d", "Odontograma 3D", "El odontograma clásico sigue disponible."],
-  ["formulario_033", "Formulario MSP 033", "Historia clínica única del Ministerio."],
-  ["reportes", "Reportes", "Informes financieros y de producción."],
-];
-
-const FUNCIONALIDADES_POR_DEFECTO = Object.fromEntries(
-  FUNCIONALIDADES.map(([k]) => [k, k !== "whatsapp"]),
-);
+function porDefecto(catalogo) {
+  return Object.fromEntries((catalogo || []).map((f) => [f.clave, f.por_defecto]));
+}
 
 const TABS = [
   ["dashboard", "Dashboard"], ["clinicas", "Clínicas"],
@@ -200,10 +187,20 @@ function PanelDeCredenciales({ cred, clinica, onClose }) {
 function ClinicsTab() {
   const [confirm, ConfirmUI] = useConfirm();
   const [clinics, setClinics] = useState([]);
+  const [catalogo, setCatalogo] = useState([]);
   const VACIO = { name: "", ruc: "", address: "", phone: "", email: "",
                   admin_full_name: "", admin_email: "",
-                  funcionalidades: { ...FUNCIONALIDADES_POR_DEFECTO } };
+                  funcionalidades: porDefecto(catalogo) };
   const [form, setForm] = useState(VACIO);
+
+  // El catálogo llega de la API; el formulario de alta arranca con lo
+  // que trae una clínica nueva (las adicionales, apagadas).
+  useEffect(() => {
+    api("/platform/funcionalidades/").then(readObject).then((d) => {
+      setCatalogo(d.funcionalidades || []);
+      setForm((f) => ({ ...f, funcionalidades: porDefecto(d.funcionalidades) }));
+    }).catch(() => {});
+  }, []);
   const [editing, setEditing] = useState(null);   // clínica en edición
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -332,35 +329,49 @@ function ClinicsTab() {
         <div style={{ borderTop: "1px solid var(--line)", margin: "16px 0 14px" }} />
         <h4 style={{ marginBottom: 2, fontSize: 14 }}>Funcionalidades</h4>
         <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-          Pacientes, agenda, historia clínica y pagos están siempre incluidos.
-          Aquí se eligen los módulos adicionales.
+          Pacientes, agenda, historia clínica y pagos van siempre. Las incluidas vienen marcadas
+          en una clínica nueva; las adicionales se agregan a pedido. Se pueden cambiar después:
+          apagar una no borra sus datos.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 18px",
-                      marginBottom: 4 }}>
-          {FUNCIONALIDADES.map(([clave, titulo, detalle]) => {
-            const fuente = editing || form;
-            const puesto = fuente.funcionalidades || FUNCIONALIDADES_POR_DEFECTO;
-            return (
-              <label key={clave} style={{ display: "flex", gap: 8, alignItems: "start",
-                                          fontSize: 14 }}>
-                <input type="checkbox" style={{ marginTop: 3 }}
-                       checked={!!puesto[clave]}
-                       onChange={(e) => {
-                         const nuevas = { ...puesto, [clave]: e.target.checked };
-                         editing
-                           ? setEditing({ ...editing, funcionalidades: nuevas })
-                           : setForm({ ...form, funcionalidades: nuevas });
-                       }} />
-                <span>
-                  {titulo}
-                  <span style={{ display: "block", fontSize: 12, color: "var(--ink-soft)" }}>
-                    {detalle}
-                  </span>
-                </span>
-              </label>
-            );
-          })}
-        </div>
+        {["incluida", "adicional"].map((tipo) => {
+          const grupo = catalogo.filter((f) => f.tipo === tipo);
+          if (!grupo.length) return null;
+          const fuente = editing || form;
+          const puesto = fuente.funcionalidades || porDefecto(catalogo);
+          return (
+            <div key={tipo} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
+                            color: "var(--ink-soft)", margin: "4px 0 8px" }}>
+                {tipo === "incluida" ? "Incluidas" : "Adicionales · a pedido"}
+              </div>
+              <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 18px" }}>
+                {grupo.map((f) => (
+                  <label key={f.clave} style={{ display: "flex", gap: 8, alignItems: "start", fontSize: 14 }}>
+                    <input type="checkbox" style={{ marginTop: 3 }}
+                           checked={!!puesto[f.clave]}
+                           onChange={(e) => {
+                             const nuevas = { ...puesto, [f.clave]: e.target.checked };
+                             editing
+                               ? setEditing({ ...editing, funcionalidades: nuevas })
+                               : setForm({ ...form, funcionalidades: nuevas });
+                           }} />
+                    <span>
+                      {f.nombre}
+                      <span style={{ display: "block", fontSize: 12, color: "var(--ink-soft)" }}>
+                        {f.descripcion}
+                      </span>
+                      {f.origen && (
+                        <span style={{ display: "block", fontSize: 11.5, color: "var(--petrol)", marginTop: 2 }}>
+                          {f.origen}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
 
         {/* Los datos del administrador solo al crear: al editar una
             clínica ya existente su administrador se gestiona en su
@@ -394,7 +405,16 @@ function ClinicsTab() {
             <tbody>
               {clinics.map((c) => (
                 <tr key={c.id} style={c.is_active ? {} : { opacity: 0.65 }}>
-                  <td style={{ fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ fontWeight: 600 }}>
+                    {c.name}
+                    {/* Las adicionales que tiene, para verlas sin abrir la clínica. */}
+                    {catalogo.some((f) => f.tipo === "adicional" && c.funcionalidades?.[f.clave]) && (
+                      <span style={{ display: "block", fontSize: 11.5, fontWeight: 500, color: "var(--petrol)" }}>
+                        + {catalogo.filter((f) => f.tipo === "adicional" && c.funcionalidades?.[f.clave])
+                            .map((f) => f.nombre).join(", ")}
+                      </span>
+                    )}
+                  </td>
                   <td className="tabular">{c.ruc || "—"}</td>
                   <td style={{ fontSize: 13 }}>{c.phone || "—"}{c.email ? ` · ${c.email}` : ""}</td>
                   <td>{c.is_active
@@ -406,7 +426,7 @@ function ClinicsTab() {
                             onClick={() => setEditing({ id: c.id, name: c.name, ruc: c.ruc,
                               address: c.address, phone: c.phone, email: c.email,
                               funcionalidades: c.funcionalidades
-                                || { ...FUNCIONALIDADES_POR_DEFECTO } })}>Editar</button>
+                                || porDefecto(catalogo) })}>Editar</button>
                     <button className="btn btn-ghost"
                             style={{ padding: "4px 10px", fontSize: 12, marginLeft: 6,
                                      color: c.is_active ? "var(--red)" : "var(--petrol)" }}

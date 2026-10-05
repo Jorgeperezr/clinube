@@ -545,7 +545,7 @@ class ModulosClinicaView(APIView):
         contratado, efectivo = contratadas(tenant), efectivas(tenant)
         return Response([
             {"clave": clave, "nombre": d["nombre"], "descripcion": d["descripcion"],
-             "contratado": contratado[clave], "activo": efectivo[clave]}
+             "tipo": d["tipo"], "contratado": contratado[clave], "activo": efectivo[clave]}
             for clave, d in CATALOGO.items()
         ])
 
