@@ -20,6 +20,7 @@ para que el paciente se organice, no una copia de su historia.
 """
 
 from django.utils import timezone
+from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -272,6 +273,14 @@ def _racha_seguida(periodos):
     return seguidos
 
 
+def _se_puede_confirmar(c):
+    """Solo una cita futura que la clínica aún espera que se confirme."""
+    from apps.agenda.models import Appointment
+
+    return (c.status in (Appointment.Status.PENDING, Appointment.Status.RESCHEDULED)
+            and c.scheduled_start > timezone.now())
+
+
 def _cita(c):
     """Una cita como la ve el paciente: sin notas internas."""
     return {
@@ -281,4 +290,38 @@ def _cita(c):
         "estado": c.get_status_display(),
         "doctor": (c.doctor.user.full_name if c.doctor and c.doctor.user else None),
         "motivo": c.treatment.name if getattr(c, "treatment", None) else None,
+        # Lo decide el servidor, como el estado: la app no repite la regla.
+        "se_puede_confirmar": _se_puede_confirmar(c),
     }
+
+
+class ConfirmarCitaView(BaseVistaPaciente):
+    """
+    POST /api/v1/app/citas/{id}/confirmar/ — «Sí, asistiré».
+
+    Lo mismo que contestar «sí» al recordatorio de WhatsApp, sin depender
+    de que el paciente lo haya autorizado: una cita confirmada es un hueco
+    que recepción no tiene que perseguir por teléfono.
+    """
+
+    def post(self, request, pk):
+        from apps.accounts.models import AuditLog
+        from apps.agenda.models import Appointment
+
+        cita = generics.get_object_or_404(
+            Appointment.objects.select_related("doctor__user", "treatment"),
+            pk=pk, patient=ficha_del_paciente(request), tenant=request.tenant,
+        )
+        if not _se_puede_confirmar(cita):
+            return Response(
+                {"detail": "Esta cita ya no se puede confirmar desde la app. "
+                           "Si necesitas cambiar algo, escribe a la clínica."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        cita.status = Appointment.Status.CONFIRMED
+        cita.save(update_fields=["status"])
+        AuditLog.objects.create(
+            tenant=request.tenant, user=request.user, action="confirm_appointment_app",
+            entity_type="Appointment", entity_id=str(cita.id),
+        )
+        return Response(_cita(cita))

@@ -90,6 +90,11 @@ for r in me citas saldo indicaciones solicitudes-cita mensajes; do
 done
 ```
 
+Para confirmar asistencia hacen falta tres capturas en orden, con una
+cita futura **pendiente**: `/app/citas/` antes (`citas-por-confirmar`),
+el `POST /app/citas/<id>/confirmar/` (`cita-confirmada`) y `/app/citas/`
+y `/app/me/` después (`citas` y `me`, ya con la cita confirmada).
+
 El aviso de privacidad es público, sin token:
 
 ```sh

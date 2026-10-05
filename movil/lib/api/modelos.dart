@@ -27,6 +27,7 @@ class Cita {
     required this.estado,
     this.doctor,
     this.motivo,
+    this.sePuedeConfirmar = false,
   });
 
   final String id;
@@ -40,6 +41,10 @@ class Cita {
   final String? doctor;
   final String? motivo;
 
+  /// Lo decide el servidor (cita futura que la clínica espera que se
+  /// confirme), como el estado: la app no repite la regla.
+  final bool sePuedeConfirmar;
+
   factory Cita.desdeJson(Map<String, dynamic> j) => Cita(
         id: j['id'] as String,
         // `toLocal()` porque el servidor manda UTC con desfase y el
@@ -49,6 +54,7 @@ class Cita {
         estado: j['estado'] as String? ?? '',
         doctor: j['doctor'] as String?,
         motivo: j['motivo'] as String?,
+        sePuedeConfirmar: j['se_puede_confirmar'] as bool? ?? false,
       );
 }
 

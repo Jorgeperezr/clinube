@@ -200,6 +200,10 @@ class ClienteApi {
     return marca;
   }
 
+  /// «Sí, asistiré». Devuelve la cita ya confirmada.
+  Future<Cita> confirmarCita(String id) async =>
+      Cita.desdeJson(await enviar('/app/citas/$id/confirmar/', const {}));
+
   // ── Peticiones autenticadas ──────────────────────────────────────
 
   Future<Map<String, dynamic>> objeto(String ruta) async =>

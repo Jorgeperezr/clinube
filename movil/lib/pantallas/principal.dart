@@ -412,7 +412,7 @@ class _Citas extends StatelessWidget {
             pedir,
             if (a.proximas.isNotEmpty) ...[
               const _Titulo('Próximas'),
-              for (final c in a.proximas) _FilaCita(cita: c, proxima: true),
+              for (final c in a.proximas) _FilaCita(cita: c, proxima: true, api: api),
               const SizedBox(height: 18),
             ],
             if (a.anteriores.isNotEmpty) ...[
@@ -438,24 +438,67 @@ class _Titulo extends StatelessWidget {
       );
 }
 
-class _FilaCita extends StatelessWidget {
-  const _FilaCita({required this.cita, required this.proxima});
+class _FilaCita extends StatefulWidget {
+  const _FilaCita({required this.cita, required this.proxima, this.api});
 
   final Cita cita;
   final bool proxima;
+  final ClienteApi? api;
+
+  @override
+  State<_FilaCita> createState() => _FilaCitaState();
+}
+
+class _FilaCitaState extends State<_FilaCita> {
+  late Cita _cita = widget.cita;
+  bool _ocupado = false;
+
+  Future<void> _confirmar() async {
+    setState(() => _ocupado = true);
+    try {
+      final hecha = await widget.api!.confirmarCita(_cita.id);
+      if (!mounted) return;
+      setState(() => _cita = hecha);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Listo, la clínica ya sabe que irás.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e is ErrorDeApi
+              ? e.mensaje
+              : 'No se pudo confirmar. Revisa tu conexión e inténtalo otra vez.')));
+    } finally {
+      if (mounted) setState(() => _ocupado = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final c = _cita;
     return Card(
-      child: ListTile(
-        leading: Icon(proxima ? Icons.event_available_outlined : Icons.history),
-        title: Text(fechaYHora(cita.inicio)),
-        subtitle: Text([
-          if (cita.motivo != null) cita.motivo!,
-          if (cita.doctor != null) 'Con ${cita.doctor}',
-          cita.estado,
-        ].join(' · ')),
-        trailing: proxima ? Text(cuandoEs(cita.inicio)) : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: Icon(widget.proxima ? Icons.event_available_outlined : Icons.history),
+            title: Text(fechaYHora(c.inicio)),
+            subtitle: Text([
+              if (c.motivo != null) c.motivo!,
+              if (c.doctor != null) 'Con ${c.doctor}',
+              c.estado,
+            ].join(' · ')),
+            trailing: widget.proxima ? Text(cuandoEs(c.inicio)) : null,
+          ),
+          if (widget.proxima && c.sePuedeConfirmar && widget.api != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: FilledButton.tonalIcon(
+                onPressed: _ocupado ? null : _confirmar,
+                icon: const Icon(Icons.check_circle_outline),
+                label: Text(_ocupado ? 'Confirmando…' : 'Confirmar asistencia'),
+              ),
+            ),
+        ],
       ),
     );
   }
