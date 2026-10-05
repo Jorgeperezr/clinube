@@ -111,7 +111,7 @@ se rechaza («no pudimos iniciar sesión»).
 1. En una **clínica de demostración**, crear un paciente de prueba con
    datos inventados y un teléfono que no sea de nadie, p. ej.
    `+593900000001`. Darle una cita y algún pago para que la app no se
-   vea vacía.
+   vea vacía, y en su ficha pulsar **Activar acceso** (App del paciente).
 2. En el `.env` del servidor:
 
    ```properties
