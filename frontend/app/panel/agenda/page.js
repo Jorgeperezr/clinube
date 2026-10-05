@@ -85,11 +85,16 @@ export default function AgendaPage() {
   }
 
   const shiftDays = mode === "monthly" ? 30 : mode === "weekly" ? 7 : 1;
+  const periodo = describirPeriodo(mode, date);
+  const citasActivas = (appointments || []).filter((a) => !["cancelled", "no_show"].includes(a.status)).length;
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1 style={{ fontSize: 24 }}>Agenda</h1>
+      <div className="encabezado-pagina">
+        <div>
+          <h1>Agenda</h1>
+          <p>{periodo}{!loading && appointments ? ` · ${citasActivas === 1 ? "1 cita" : `${citasActivas} citas`}` : ""}</p>
+        </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
           {showForm ? "Cerrar" : "+ Nueva cita"}
         </button>
@@ -111,24 +116,20 @@ export default function AgendaPage() {
       )}
 
       {/* Controles: día/semana, fecha, doctor */}
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 18, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
+      <div className="barra-herramientas">
+        <div className="segmentado" role="group" aria-label="Vista">
           {["daily", "weekly", "monthly"].map((m) => (
-            <button key={m} onClick={() => setMode(m)}
-              style={{
-                padding: "8px 16px", border: "none", fontWeight: 600, fontSize: 14,
-                background: mode === m ? "var(--petrol)" : "var(--elev)",
-                color: mode === m ? "var(--on-brand)" : "var(--ink-soft)",
-              }}>
+            <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
               {m === "daily" ? "Día" : m === "weekly" ? "Semana" : "Mes"}
             </button>
           ))}
         </div>
 
-        <button className="btn btn-ghost" onClick={() => shiftDate(-shiftDays)} aria-label="Anterior">←</button>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-               style={{ padding: "8px 10px", border: "1px solid var(--line)", borderRadius: "var(--radius)" }} />
-        <button className="btn btn-ghost" onClick={() => shiftDate(shiftDays)} aria-label="Siguiente">→</button>
+        <div className="navegador-fecha">
+          <button type="button" onClick={() => shiftDate(-shiftDays)} aria-label="Anterior">‹</button>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Fecha" />
+          <button type="button" onClick={() => shiftDate(shiftDays)} aria-label="Siguiente">›</button>
+        </div>
         <button className="btn btn-ghost" onClick={() => setDate(todayISO())}>Hoy</button>
 
         {doctorId && (
@@ -148,7 +149,7 @@ export default function AgendaPage() {
           </button>
         )}
         <select value={doctorId} onChange={(e) => setDoctorId(e.target.value)}
-                style={{ padding: "8px 10px", border: "1px solid var(--line)", borderRadius: "var(--radius)", marginLeft: "auto" }}>
+                className="selector-suave" style={{ marginLeft: "auto" }} aria-label="Profesional">
           <option value="">Todos los doctores</option>
           {doctors.map((d) => <option key={d.id} value={d.id}>{d.full_name}</option>)}
         </select>
@@ -183,53 +184,37 @@ export default function AgendaPage() {
               ))}
             </div>
           )}
-          <table>
-            <thead>
-              <tr>
-                <th>Hora</th>
-                {mode === "weekly" && <th>Fecha</th>}
-                <th>Paciente</th>
-                <th>Doctor</th>
-                <th>Estado</th>
-                <th style={{ textAlign: "right" }}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {appointments.map((a) => {
-                const st = STATUS_STYLE[a.status] || { label: a.status, cls: "badge-warn" };
-                return (
-                  <tr key={a.id}
-                      style={{ boxShadow: `inset 3px 0 0 ${doctorColor(a.doctor_name)}` }}>
-                    <td className="tabular" style={{ whiteSpace: "nowrap" }}>
-                      {fmtTime(a.scheduled_start)}–{fmtTime(a.scheduled_end)}
-                    </td>
-                    {mode === "weekly" && (
-                      <td className="tabular">{a.scheduled_start.slice(0, 10)}</td>
-                    )}
-                    <td style={{ fontWeight: 600 }}>{a.patient_name}</td>
-                    <td>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                        <span aria-hidden="true"
-                              style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
-                                       background: doctorColor(a.doctor_name) }} />
-                        {a.doctor_name}
+          {/* Una fila por cita, con la hora destacada a la izquierda y el
+              color del profesional en el borde; en la semana, agrupadas por día. */}
+          {agruparPorDia(appointments, mode === "weekly").map(([dia, citas]) => (
+            <div key={dia || "dia"}>
+              {dia && <div className="lista-citas-dia">{dia}</div>}
+              <ol className="lista-citas">
+                {citas.map((a) => {
+                  const st = STATUS_STYLE[a.status] || { label: a.status, cls: "badge-warn" };
+                  return (
+                    <li key={a.id} className="cita-fila" style={{ "--color-doctor": doctorColor(a.doctor_name) }}>
+                      <span className="cita-fila-hora tabular">
+                        {fmtTime(a.scheduled_start)}
+                        <small>{fmtTime(a.scheduled_end)}</small>
                       </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${st.cls}`}>{st.label}</span>
-                      {a.reminder_sent_at && (
-                        <span title="Recordatorio WhatsApp enviado"
-                              style={{ marginLeft: 6, fontSize: 12 }}>📨</span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <RowActions appt={a} onAction={doAction} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      <a href={`/panel/paciente/?id=${a.patient}`} className="cita-fila-paciente">
+                        <strong>{a.patient_name}</strong>
+                        <span className="cita-fila-doctor">{a.doctor_name}</span>
+                      </a>
+                      <span className="cita-fila-estado">
+                        <span className={`badge ${st.cls}`}>{st.label}</span>
+                        {a.reminder_sent_at && (
+                          <span title="Recordatorio WhatsApp enviado" style={{ marginLeft: 6, fontSize: 12 }}>📨</span>
+                        )}
+                      </span>
+                      <span className="cita-fila-acciones"><RowActions appt={a} onAction={doAction} /></span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          ))}
           </>
         )}
       </div>
@@ -301,6 +286,35 @@ function MonthGrid({ date, appointments, onDayClick }) {
       </p>
     </div>
   );
+}
+
+/** «Lunes, 5 de octubre», «Semana del 5 al 11 de octubre», «Octubre de 2026». */
+function describirPeriodo(mode, date) {
+  const d = new Date(date + "T12:00:00");
+  const may = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  if (mode === "monthly") return may(d.toLocaleDateString("es-EC", { month: "long", year: "numeric" }));
+  if (mode === "weekly") {
+    const ini = new Date(d); ini.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const fin = new Date(ini); fin.setDate(ini.getDate() + 6);
+    const mes = (x) => x.toLocaleDateString("es-EC", { month: "long" });
+    return mes(ini) === mes(fin)
+      ? `Semana del ${ini.getDate()} al ${fin.getDate()} de ${mes(fin)}`
+      : `Semana del ${ini.getDate()} de ${mes(ini)} al ${fin.getDate()} de ${mes(fin)}`;
+  }
+  return may(d.toLocaleDateString("es-EC", { weekday: "long", day: "numeric", month: "long" }));
+}
+
+/** [[«Lunes 5», citas], …] en la semana; en el día, un solo grupo sin título. */
+function agruparPorDia(citas, porDia) {
+  if (!porDia) return [["", citas]];
+  const grupos = new Map();
+  for (const c of citas) {
+    const dia = new Date(c.scheduled_start).toLocaleDateString("es-EC", { weekday: "long", day: "numeric", month: "short" });
+    const clave = dia.charAt(0).toUpperCase() + dia.slice(1);
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(c);
+  }
+  return [...grupos.entries()];
 }
 
 function RowActions({ appt, onAction }) {

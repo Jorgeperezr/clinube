@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api, readList } from "../../../lib/api";
-import Portada from "../../../lib/Portada";
 
 const ORDER_OPTIONS = [
   ["name_asc", "Nombre (A-Z)"],
@@ -23,7 +22,7 @@ export default function PacientesPage() {
   const [patients, setPatients] = useState([]);
   const [search, setSearch] = useState("");
   const [ordering, setOrdering] = useState("name_asc");
-  const [view, setView] = useState("cards");   // "cards" (portadas, por omisión) | "list"
+  const [view, setView] = useState("list");   // "list" | "cards"
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
@@ -101,8 +100,8 @@ export default function PacientesPage() {
           {ORDER_OPTIONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
         </select>
         <div className="segmentado" role="group" aria-label="Vista">
-          <button type="button" aria-pressed={view === "cards"} onClick={() => setViewPersist("cards")}>▦ Portadas</button>
           <button type="button" aria-pressed={view === "list"} onClick={() => setViewPersist("list")}>▤ Lista</button>
+          <button type="button" aria-pressed={view === "cards"} onClick={() => setViewPersist("cards")}>▦ Tarjetas</button>
         </div>
       </div>
 
@@ -141,7 +140,8 @@ export default function PacientesPage() {
           </table>
         </div>
       ) : (
-        <div className="rejilla-albumes">
+        <div style={{ display: "grid", gap: 14,
+                      gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}>
           {patients.map((p) => <PatientCard key={p.id} patient={p} />)}
         </div>
       )}
@@ -149,21 +149,32 @@ export default function PacientesPage() {
   );
 }
 
-/** Un paciente como un álbum: portada, nombre y lo siguiente que tiene. */
 function PatientCard({ patient: p }) {
-  const proxima = p.next_appointment
-    ? new Date(p.next_appointment).toLocaleDateString("es-EC", { weekday: "short", day: "numeric", month: "short" })
-      + " · " + new Date(p.next_appointment).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })
-    : null;
+  const initials = (p.full_name || "?").split(" ").filter(Boolean).slice(0, 2)
+    .map((w) => w[0]).join("").toUpperCase();
   return (
-    <a className="album" href={`/panel/paciente/?id=${p.id}`} title={p.full_name}>
-      <Portada nombre={p.full_name} />
-      <span className="album-titulo">{p.full_name}</span>
-      <span className={`album-sub${proxima ? " album-sub--acento" : ""}`}>
-        {proxima ? `Cita: ${proxima}` : `${p.attention_count ?? 0} atencion${(p.attention_count ?? 0) === 1 ? "" : "es"}`}
-      </span>
-      <span className="album-sub tabular">CI {p.national_id}</span>
-    </a>
+    <div className="card" onClick={() => window.location.href = `/panel/paciente/?id=${p.id}`}
+         style={{ cursor: "pointer", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
+                      background: "var(--petrol-soft)", color: "var(--petrol-deep)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontWeight: 700, fontSize: 16 }}>
+          {initials}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {p.full_name}
+          </div>
+          <div className="tabular" style={{ fontSize: 13, color: "var(--ink-soft)" }}>{p.national_id}</div>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: "var(--ink-soft)", display: "flex", flexDirection: "column", gap: 3 }}>
+        <span>📞 {p.phone || "—"}</span>
+        <span>🗂 {p.attention_count ?? 0} atencion{(p.attention_count ?? 0) === 1 ? "" : "es"}</span>
+        <span>📅 {p.next_appointment ? fmtDateTime(p.next_appointment) : "Sin cita próxima"}</span>
+      </div>
+    </div>
   );
 }
 

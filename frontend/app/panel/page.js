@@ -3,13 +3,17 @@
 import { useEffect, useState } from "react";
 import { api, currentUser, readList, tieneFuncion } from "../../lib/api";
 import DayAlerts from "../../lib/DayAlerts";
-import Portada from "../../lib/Portada";
 import { hoyISO } from "../../lib/fechas.mjs";
 
 const money = (v) => `$${Number(v || 0).toFixed(2)}`;
 const todayISO = () => hoyISO();
 const fmtTime = (iso) =>
   new Date(iso).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
+
+const STATUS_BADGE = {
+  pending: "badge-warn", confirmed: "badge-ok", completed: "badge-ok",
+  cancelled: "badge-danger", no_show: "badge-danger",
+};
 
 function firstOfMonth() {
   const d = new Date();
@@ -24,7 +28,6 @@ export default function Dashboard() {
   const [delinquents, setDelinquents] = useState(null);
   const [lowStock, setLowStock] = useState(null);
   const [followUps, setFollowUps] = useState(null);
-  const [recientes, setRecientes] = useState(null);
 
   useEffect(() => {
     const u = currentUser();
@@ -44,10 +47,6 @@ export default function Dashboard() {
     api("/patients/?search=")
       .then(async (r) => { if (r.ok) { const d = await r.json(); setPatientCount(d.count ?? (d.results || d).length); } })
       .catch(() => {});
-    api("/patients/?ordering=created_desc")
-      .then(readList)
-      .then((l) => setRecientes(l.slice(0, 12)))
-      .catch(() => setRecientes([]));
 
     if (tieneFuncion(u, "reportes")) {
       api(`/reports/financial/?date_from=${firstOfMonth()}&date_to=${todayISO()}`)
@@ -131,49 +130,38 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Estanterías, como el «Inicio» de Música: lo de hoy y lo reciente. */}
-      <section className="estante">
-        <div className="estante-cabecera">
-          <h2>Hoy</h2>
-          <a href="/panel/agenda/">Ver agenda completa</a>
+      {/* Agenda de hoy */}
+      <div className="card" style={{ padding: 0 }}>
+        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)",
+                      display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <strong>Agenda de hoy</strong>
+          <a href="/panel/agenda/" style={{ fontSize: 13 }}>Ver agenda completa →</a>
         </div>
         {appointments === null ? (
-          <div className="estante-vacio">Cargando…</div>
+          <div className="empty">Cargando…</div>
         ) : appointments.length === 0 ? (
-          <div className="estante-vacio">No hay citas agendadas para hoy.</div>
+          <div className="empty">No hay citas agendadas para hoy.</div>
         ) : (
-          <div className="estante-fila">
-            {appointments.map((a) => (
-              <a key={a.id} className="album" href={`/panel/paciente/?id=${a.patient}`} title={a.patient_name}>
-                <div className="cita-hora">
-                  <Portada nombre={a.patient_name} texto={<HoraPortada iso={a.scheduled_start} />} />
-                  <span className="cita-estado">{a.status_display}</span>
-                </div>
-                <span className="album-titulo">{a.patient_name}</span>
-                <span className="album-sub">{a.doctor_name}</span>
-              </a>
-            ))}
-          </div>
+          <table>
+            <thead>
+              <tr><th>Hora</th><th>Paciente</th><th>Doctor</th><th>Estado</th></tr>
+            </thead>
+            <tbody>
+              {appointments.slice(0, 8).map((a) => (
+                <tr key={a.id} onClick={() => window.location.href = "/panel/agenda/"}
+                    style={{ cursor: "pointer" }}>
+                  <td className="tabular" style={{ whiteSpace: "nowrap" }}>
+                    {fmtTime(a.scheduled_start)}–{fmtTime(a.scheduled_end)}
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{a.patient_name}</td>
+                  <td>{a.doctor_name}</td>
+                  <td><span className={`badge ${STATUS_BADGE[a.status] || "badge-warn"}`}>{a.status_display}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-      </section>
-
-      {recientes !== null && recientes.length > 0 && (
-        <section className="estante">
-          <div className="estante-cabecera">
-            <h2>Pacientes recientes</h2>
-            <a href="/panel/pacientes/">Ver todos</a>
-          </div>
-          <div className="estante-fila">
-            {recientes.map((p) => (
-              <a key={p.id} className="album" href={`/panel/paciente/?id=${p.id}`} title={p.full_name}>
-                <Portada nombre={p.full_name} />
-                <span className="album-titulo">{p.full_name}</span>
-                <span className="album-sub">Desde el {new Date(p.created_at).toLocaleDateString("es-EC", { day: "numeric", month: "short" })}</span>
-              </a>
-            ))}
-          </div>
-        </section>
-      )}
+      </div>
 
       {/* Alertas de stock (si las hay) */}
       {lowStock !== null && lowStock.length > 0 && (
@@ -221,17 +209,6 @@ export default function Dashboard() {
         </div>
       )}
     </div>
-  );
-}
-
-/** «06:10 p. m.» en la portada: la hora grande y el «p. m.» debajo. */
-function HoraPortada({ iso }) {
-  const [hora, ...resto] = fmtTime(iso).split(" ");
-  return (
-    <span className="portada-hora">
-      <b>{hora}</b>
-      {resto.length > 0 && <small>{resto.join(" ")}</small>}
-    </span>
   );
 }
 
