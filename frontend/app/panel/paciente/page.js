@@ -608,7 +608,7 @@ function EvolutionsTab({ patientId }) {
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 18, alignItems: "start" }}>
+    <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 18, alignItems: "start" }}>
       {ConfirmUI}
       <form onSubmit={submit} className="card">
         <h3 style={{ marginBottom: 12 }}>Nueva evolución</h3>
@@ -794,7 +794,7 @@ function PatientAgreement({ patient, canEdit, onChanged }) {
             {patient.agreement_name || "Particular"}
           </strong>
           {canEdit && (
-            <button type="button" onClick={() => setEditing(true)}
+            <button type="button" className="enlace-accion" onClick={() => setEditing(true)}
                     style={{ background: "transparent", border: "none", padding: 0,
                              color: "var(--petrol)", fontSize: 13, cursor: "pointer" }}>
               Cambiar
@@ -865,10 +865,10 @@ function AvisoPrivacidad({ patient }) {
           <strong style={{ color: "var(--amber)" }}>
             {anterior ? `Se entregó una versión anterior (${anterior.version})` : "No consta que se haya entregado"}
           </strong>
-          <button type="button" style={enlace} disabled={ocupado} onClick={registrar}>Registrar entrega</button>
+          <button type="button" className="enlace-accion" style={enlace} disabled={ocupado} onClick={registrar}>Registrar entrega</button>
         </>
       )}
-      <a href="/privacidad/" target="_blank" rel="noopener" style={{ fontSize: 13 }}>Ver aviso</a>
+      <a href="/privacidad/" target="_blank" rel="noopener" className="enlace-accion" style={{ fontSize: 13 }}>Ver aviso</a>
       {error && <span style={{ color: "var(--red)" }}>{error}</span>}
       {ConfirmUI}
     </div>
@@ -931,13 +931,13 @@ function AutorizacionWhatsApp({ patient }) {
           <strong style={{ color: "var(--ink)" }}>
             Autorizados desde el {new Date(activa.opted_in_at).toLocaleDateString("es-EC")}
           </strong>
-          <button type="button" style={enlace} disabled={ocupado} onClick={retirar}>Retirar</button>
+          <button type="button" className="enlace-accion" style={enlace} disabled={ocupado} onClick={retirar}>Retirar</button>
         </>
       ) : (
         <>
           <strong style={{ color: "var(--ink)" }}>No autorizados</strong>
           {patient.phone
-            ? <button type="button" style={enlace} disabled={ocupado} onClick={registrar}>Registrar autorización</button>
+            ? <button type="button" className="enlace-accion" style={enlace} disabled={ocupado} onClick={registrar}>Registrar autorización</button>
             : <span>(falta el teléfono)</span>}
         </>
       )}

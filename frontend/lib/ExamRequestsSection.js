@@ -83,7 +83,7 @@ export default function ExamRequestsSection({ patientId }) {
 
       {adding && (
         <form onSubmit={createExam} style={{ background: "var(--petrol-soft)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 160px", gap: 12, marginBottom: 12 }}>
+          <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "180px 1fr 160px", gap: 12, marginBottom: 12 }}>
             <div className="field" style={{ marginBottom: 0 }}>
               <label>Tipo de examen</label>
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>

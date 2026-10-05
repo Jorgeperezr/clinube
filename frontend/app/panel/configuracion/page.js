@@ -954,7 +954,7 @@ function ConsentTemplatesTab() {
 
       {editing && (
         <div className="card" style={{ marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 12, marginBottom: 12 }}>
+          <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 12, marginBottom: 12 }}>
             <div className="field" style={{ marginBottom: 0 }}>
               <label>Procedimiento</label>
               <select value={editing.procedure} onChange={(e) => setEditing({ ...editing, procedure: e.target.value })}>

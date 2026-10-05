@@ -140,7 +140,7 @@ function DiagnosisForm({ patientId, onSaved, onCancel }) {
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 150px", gap: 12, alignItems: "end" }}>
+      <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "90px 1fr 150px", gap: 12, alignItems: "end" }}>
         <div className="field" style={{ marginBottom: 0 }}>
           <label>Pieza</label>
           <input value={tooth} onChange={(e) => setTooth(e.target.value)} placeholder="16" />
