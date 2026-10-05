@@ -81,11 +81,40 @@ jobs:
           [[ "${USUARIO}" =~ ^ocid1\.user\. ]] || { echo "::error::OCI_USER_OCID no empieza por ocid1.user. (copia solo el valor de user=)"; MAL=1; }
           [[ "${ARRENDAMIENTO}" =~ ^ocid1\.tenancy\. ]] || { echo "::error::OCI_TENANCY_OCID no empieza por ocid1.tenancy. (copia solo el valor de tenancy=)"; MAL=1; }
           [[ "${HUELLA}" =~ ^([0-9a-f]{2}:){15}[0-9a-f]{2}$ ]] || { echo "::error::OCI_FINGERPRINT no tiene la forma aa:bb:…:ff (16 pares)"; MAL=1; }
-          grep -q "BEGIN" <<< "${OCI_PRIVATE_KEY}" || { echo "::error::OCI_PRIVATE_KEY no parece una clave: pega el .pem entero, con BEGIN y END"; MAL=1; }
           [ "${MAL}" -eq 0 ] || exit 1
-          printf '%s\n' "${OCI_PRIVATE_KEY}" | tr -d '\r' > ~/.oci/clave.pem
+
+          # La clave privada. Se comprueba antes de dárscela a la CLI, que
+          # solo dice «not a private key» sin explicar por qué.
+          CLAVE="$(printf '%s\n' "${OCI_PRIVATE_KEY}" | tr -d '\r')"
+          if grep -q "PUBLIC KEY" <<< "${CLAVE}"; then
+            echo "::error::OCI_PRIVATE_KEY contiene la clave PÚBLICA. Hace falta la privada: el archivo de «Descargar clave privada»."
+            exit 1
+          fi
+          TIPO="$(grep -oE 'BEGIN [A-Z ]*PRIVATE KEY' <<< "${CLAVE}" | head -1 | sed 's/^BEGIN //')"
+          if [ -z "${TIPO}" ]; then
+            echo "::error::OCI_PRIVATE_KEY no tiene la línea -----BEGIN PRIVATE KEY-----. Pega el .pem entero."
+            exit 1
+          fi
+          # Al copiar y pegar a veces se pierden los saltos de línea y la
+          # clave llega en una sola línea, que ya no se puede leer. Se rehace.
+          if [ "$(grep -c . <<< "${CLAVE}")" -lt 5 ]; then
+            echo "La clave llegó sin saltos de línea: se reconstruye."
+            CUERPO="$(sed -E 's/-----(BEGIN|END) [A-Z ]+-----//g; s/OCI_API_KEY//g' <<< "${CLAVE}" | tr -d '[:space:]')"
+            CLAVE="$(printf '%s\n%s\n%s' "-----BEGIN ${TIPO}-----" "$(fold -w 64 <<< "${CUERPO}")" "-----END ${TIPO}-----")"
+          fi
+          printf '%s\n' "${CLAVE}" | grep -v '^OCI_API_KEY$' > ~/.oci/clave.pem
+          if ! openssl pkey -in ~/.oci/clave.pem -noout 2>/dev/null; then
+            echo "::error::OCI_PRIVATE_KEY no se puede leer como clave privada (¿incompleta, o con contraseña?). Vuelve a pegar el .pem entero."
+            exit 1
+          fi
+          # ¿Es la clave de esa huella? Si no, Oracle diría «NotAuthenticated».
+          CALCULADA="$(openssl pkey -in ~/.oci/clave.pem -pubout -outform DER 2>/dev/null | openssl md5 -c | awk '{print $NF}')"
+          if [ "${CALCULADA}" != "${HUELLA}" ]; then
+            echo "::error::La clave privada no corresponde a OCI_FINGERPRINT: actualiza los dos con la misma clave de API."
+            exit 1
+          fi
           # La etiqueta que Oracle añade a sus claves; sin ella, la CLI avisa.
-          grep -q "OCI_API_KEY" ~/.oci/clave.pem || echo "OCI_API_KEY" >> ~/.oci/clave.pem
+          echo "OCI_API_KEY" >> ~/.oci/clave.pem
           {
             echo "[DEFAULT]"
             echo "user=${USUARIO}"
