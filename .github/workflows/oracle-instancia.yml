@@ -66,12 +66,31 @@ jobs:
         run: |
           umask 077
           mkdir -p ~/.oci
-          printf '%s\n' "${OCI_PRIVATE_KEY}" > ~/.oci/clave.pem
+          # Se aceptan los valores tal como los da la vista previa de
+          # Oracle: con o sin «user=» / «tenancy=» / «fingerprint=» delante,
+          # y sin que importen espacios o saltos de línea pegados de más.
+          limpiar() {
+            printf '%s' "$1" | tr -d '\r' \
+              | sed -E 's/^[[:space:]]*(user|tenancy|fingerprint)[[:space:]]*=//' \
+              | tr -d '[:space:]'
+          }
+          USUARIO="$(limpiar "${OCI_USER_OCID}")"
+          ARRENDAMIENTO="$(limpiar "${OCI_TENANCY_OCID}")"
+          HUELLA="$(limpiar "${OCI_FINGERPRINT}")"
+          MAL=0
+          [[ "${USUARIO}" =~ ^ocid1\.user\. ]] || { echo "::error::OCI_USER_OCID no empieza por ocid1.user. (copia solo el valor de user=)"; MAL=1; }
+          [[ "${ARRENDAMIENTO}" =~ ^ocid1\.tenancy\. ]] || { echo "::error::OCI_TENANCY_OCID no empieza por ocid1.tenancy. (copia solo el valor de tenancy=)"; MAL=1; }
+          [[ "${HUELLA}" =~ ^([0-9a-f]{2}:){15}[0-9a-f]{2}$ ]] || { echo "::error::OCI_FINGERPRINT no tiene la forma aa:bb:…:ff (16 pares)"; MAL=1; }
+          grep -q "BEGIN" <<< "${OCI_PRIVATE_KEY}" || { echo "::error::OCI_PRIVATE_KEY no parece una clave: pega el .pem entero, con BEGIN y END"; MAL=1; }
+          [ "${MAL}" -eq 0 ] || exit 1
+          printf '%s\n' "${OCI_PRIVATE_KEY}" | tr -d '\r' > ~/.oci/clave.pem
+          # La etiqueta que Oracle añade a sus claves; sin ella, la CLI avisa.
+          grep -q "OCI_API_KEY" ~/.oci/clave.pem || echo "OCI_API_KEY" >> ~/.oci/clave.pem
           {
             echo "[DEFAULT]"
-            echo "user=${OCI_USER_OCID}"
-            echo "fingerprint=${OCI_FINGERPRINT}"
-            echo "tenancy=${OCI_TENANCY_OCID}"
+            echo "user=${USUARIO}"
+            echo "fingerprint=${HUELLA}"
+            echo "tenancy=${ARRENDAMIENTO}"
             echo "region=${OCI_CLI_REGION}"
             echo "key_file=${HOME}/.oci/clave.pem"
           } > ~/.oci/config
@@ -79,7 +98,6 @@ jobs:
       - name: Intentar crear la máquina
         if: env.TIENE_CREDENCIALES == 'true'
         env:
-          OCI_COMPARTIMENTO: ${{ secrets.OCI_TENANCY_OCID }}
           SALIDA_IP: ip.txt
         run: |
           bash scripts/crear-instancia-oracle.sh | tee -a "${GITHUB_STEP_SUMMARY}"
