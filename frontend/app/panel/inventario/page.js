@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, readList } from "../../../lib/api";
-import BackButton from "../../../lib/BackButton";
 
 const money = (v) => Number(v || 0).toFixed(2);
 
@@ -32,9 +31,12 @@ export default function InventarioPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <BackButton fallback="/panel/" />
-        <h1 style={{ fontSize: 24 }}>Inventario</h1>
+      <div className="encabezado-pagina">
+        <div>
+          <h1>Inventario</h1>
+          <p>{products.length === 1 ? "1 producto" : `${products.length} productos`}
+            {lowCount > 0 ? ` · ${lowCount} con stock bajo` : ""}</p>
+        </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
           {showForm ? "Cerrar" : "+ Nuevo producto"}
         </button>

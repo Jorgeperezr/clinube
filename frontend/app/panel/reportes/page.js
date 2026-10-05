@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../../lib/api";
-import BackButton from "../../../lib/BackButton";
 
 const money = (v) => `$${Number(v || 0).toFixed(2)}`;
 const METHOD_LABELS = { cash: "Efectivo", transfer: "Transferencia", card: "Tarjeta" };
@@ -99,10 +98,11 @@ export default function ReportesPage() {
         }
       `}</style>
 
-      <div className="no-print" style={{ display: "flex", justifyContent: "space-between",
-                                          alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <BackButton fallback="/panel/" />
-        <h1 style={{ fontSize: 24, margin: 0 }}>Reportes</h1>
+      <div className="encabezado-pagina no-print">
+        <div>
+          <h1>Reportes</h1>
+          <p>Ingresos, producción y agenda del período elegido.</p>
+        </div>
         <button className="btn btn-ghost" onClick={() => window.print()}>🖨 Imprimir</button>
       </div>
 
@@ -121,11 +121,12 @@ export default function ReportesPage() {
         </div>
         <button className="btn btn-primary" onClick={() => loadAll()}>Actualizar</button>
       </div>
-      <div className="no-print" style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
-        {QUICK_RANGES.map(([label, fn]) => (
-          <button key={label} className="btn btn-ghost" style={{ fontSize: 13, padding: "6px 12px" }}
-                  onClick={() => applyQuick(fn)}>{label}</button>
-        ))}
+      <div className="no-print barra-herramientas">
+        <div className="segmentado" role="group" aria-label="Rangos rápidos">
+          {QUICK_RANGES.map(([label, fn]) => (
+            <button key={label} type="button" onClick={() => applyQuick(fn)}>{label}</button>
+          ))}
+        </div>
       </div>
 
       {/* Encabezado del período (visible también al imprimir) */}

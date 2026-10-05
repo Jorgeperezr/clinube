@@ -256,18 +256,30 @@ export default function BandejaPage() {
 
   function hecho(texto) { setOk(texto); cargar(); }
 
+  const pendientes = solicitudes && mensajes
+    ? solicitudes.filter((s) => s.estado === "pendiente").length + mensajes.filter((m) => !m.respondido).length
+    : null;
+
   return (
     <div style={{ maxWidth: 1100 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 24, marginBottom: 4 }}>Bandeja de la app</h1>
-        <label style={{ marginLeft: "auto", fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
-          <input type="checkbox" checked={historial} onChange={(e) => setHistorial(e.target.checked)} />
-          Ver también lo ya atendido
-        </label>
+      <div className="encabezado-pagina">
+        <div>
+          <h1>Bandeja de la app</h1>
+          <p>
+            {pendientes === null
+              ? "Solicitudes y mensajes que llegan desde la app de los pacientes."
+              : pendientes === 0
+                ? "Todo atendido. Lo nuevo que llegue de la app aparecerá aquí."
+                : `${pendientes} ${pendientes === 1 ? "cosa por atender" : "cosas por atender"}, de la más antigua a la más reciente.`}
+          </p>
+        </div>
       </div>
-      <p style={{ color: "var(--ink-soft)", marginBottom: 16, fontSize: 14 }}>
-        Solicitudes y mensajes que llegan desde la app de los pacientes, de los más antiguos a los más recientes.
-      </p>
+      <div className="barra-herramientas">
+        <div className="segmentado" role="group" aria-label="Qué mostrar">
+          <button type="button" aria-pressed={!historial} onClick={() => setHistorial(false)}>Por atender</button>
+          <button type="button" aria-pressed={historial} onClick={() => setHistorial(true)}>Todo</button>
+        </div>
+      </div>
       {err && <div className="error-box">{err}</div>}
       {ok && <div className="success-box">✓ {ok}</div>}
 

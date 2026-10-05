@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, readList } from "../../../lib/api";
-import BackButton from "../../../lib/BackButton";
 import { useConfirm } from "../../../lib/ConfirmDialog";
 import { hoyISO } from "../../../lib/fechas.mjs";
 
@@ -26,16 +25,31 @@ export default function PagosPage() {
 
   return (
     <div>
-      <BackButton fallback="/panel/" />
-      <h1 style={{ fontSize: 24, marginBottom: 16 }}>Pagos</h1>
+      <div className="encabezado-pagina">
+        <div>
+          <h1>Pagos</h1>
+          <p>{patient
+            ? <>Estado de cuenta de <strong style={{ color: "var(--ink)" }}>{patient.full_name}</strong></>
+            : "Presupuestos, cuotas y cobros de cada paciente."}</p>
+        </div>
+        {patient && (
+          <button type="button" className="btn btn-ghost" onClick={() => { setPatient(null); setQuery(""); }}>
+            Cambiar de paciente
+          </button>
+        )}
+      </div>
 
-      <div className="field" style={{ position: "relative", maxWidth: 460 }}>
-        <label>Paciente</label>
-        <input
-          placeholder="Buscar por nombre o cédula…"
-          value={patient ? `${patient.full_name} (${patient.national_id})` : query}
-          onChange={(e) => search(e.target.value)}
-        />
+      <div className="barra-herramientas" style={{ position: "relative", maxWidth: 520 }}>
+        <div className="campo-busqueda" role="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+               strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+          <input
+            placeholder="Buscar paciente por nombre o cédula"
+            aria-label="Buscar paciente"
+            value={patient ? `${patient.full_name} (${patient.national_id})` : query}
+            onChange={(e) => search(e.target.value)}
+          />
+        </div>
         {results.length > 0 && !patient && (
           <div style={{
             position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10,
