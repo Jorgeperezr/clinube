@@ -1,6 +1,6 @@
 # Crea la máquina de Clinube en Oracle Cloud sin tener Cloud Shell abierto.
 #
-# Cada 20 minutos intenta UNA vez crear la instancia Always Free (Ampere
+# Cada 10 minutos intenta UNA vez crear la instancia Always Free (Ampere
 # A1, 1 OCPU, 6 GB, 100 GB) con scripts/crear-instancia-oracle.sh. En
 # Santiago casi nunca hay capacidad: la mayoría de las vueltas terminan
 # en «sin capacidad», en verde y sin avisar. Cuando sale:
@@ -13,18 +13,19 @@
 # Cómo sacarlos: DEPLOY.md, «Crear la máquina desde GitHub Actions». Sin
 # ellos, cada vuelta termina enseguida sin hacer nada.
 #
-# Minutos: cada vuelta dura unos 45 s y se cobra como 1 minuto. Con la
-# cuenta Pro (estudiante) hay 3000 al mes para repositorios privados; cada
-# 20 minutos son unos 2200, y el CI gasta unos 7 por push. Cada 15 serían
-# unos 2900 y, si se acaban, también se para el CI hasta el mes siguiente.
-# Por eso no es más frecuente, y por eso se apaga al crear la máquina.
+# Minutos: cada vuelta dura unos 45 s y se cobra como 1 minuto; cada 10
+# minutos son unos 4300 al mes, más que los 3000 de la cuenta Pro. Es a
+# propósito, para tener la máquina cuanto antes: si se acaban, Actions se
+# detiene (sin cobrar nada con el límite de gasto en 0 $) y el CI también
+# hasta que empiece el mes siguiente. Al crear la máquina, este flujo se
+# apaga solo y deja de gastar.
 
 name: Crear la máquina en Oracle
 
 on:
   schedule:
     # Minutos sueltos y no en punto: a las :00 GitHub retrasa las vueltas.
-    - cron: "2,22,42 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 permissions:
