@@ -109,6 +109,11 @@ services:
       sh -c "npm install --no-audit --no-fund &&
              NEXT_EXPORT=1 NEXT_TELEMETRY_DISABLED=1 npm run build &&
              rm -rf /static-out/* && cp -r out/. /static-out/"
+    # Enlaces de las tiendas para /descargar/. Se leen al compilar: tras
+    # cambiarlos en el .env hay que volver a lanzar este servicio.
+    environment:
+      NEXT_PUBLIC_URL_APP_STORE: ${URL_APP_STORE:-}
+      NEXT_PUBLIC_URL_GOOGLE_PLAY: ${URL_GOOGLE_PLAY:-}
     volumes:
       - ./frontend:/app
       - frontend_static:/static-out

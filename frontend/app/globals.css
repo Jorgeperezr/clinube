@@ -630,3 +630,77 @@ main > * { animation: rise var(--dur-slow) var(--ease) both; }
   .legal-cabecera svg path:first-child { fill: #111; }
   .legal-cuerpo { padding: 0; }
 }
+
+/* ═══════════ Descargas (app/descargar) ═══════════ */
+.dl { min-height: 100vh; background: var(--paper); color: var(--ink); }
+.dl-cabecera {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px max(16px, calc((100% - 1080px) / 2)); background: var(--nav-bg);
+}
+.dl-entrar {
+  color: #fff; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .28);
+}
+.dl-entrar:hover { background: rgba(255, 255, 255, .1); text-decoration: none; }
+.dl-portada {
+  background: var(--nav-bg); color: #fff; text-align: center;
+  padding: 36px 16px 96px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.dl-portada h1 { font-size: clamp(30px, 6vw, 46px); letter-spacing: -.02em; margin: 6px 0 0; color: #fff; }
+.dl-portada p { max-width: 560px; color: rgba(255, 255, 255, .78); font-size: 16px; line-height: 1.55; margin: 0; }
+.dl-chip {
+  margin-top: 6px; font-size: 13px; padding: 5px 12px; border-radius: 999px;
+  background: rgba(255, 255, 255, .1); color: var(--mint);
+}
+.dl-cuerpo { max-width: 1080px; margin: -64px auto 0; padding: 0 16px 56px; }
+.dl-tarjetas { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.dl-tarjeta {
+  background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+  padding: 28px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
+}
+.dl-tarjeta--destacada { outline: 2px solid var(--petrol); outline-offset: -2px; }
+.dl-etiqueta {
+  align-self: flex-start; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--petrol); background: var(--petrol-soft); padding: 4px 10px; border-radius: 999px;
+}
+.dl-tarjeta h2 { font-size: 26px; margin: 14px 0 2px; letter-spacing: -.01em; }
+.dl-lema { color: var(--ink-soft); margin: 0 0 18px; font-size: 15px; }
+.dl-tiendas { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.dl-tienda {
+  display: inline-flex; flex-direction: column; justify-content: center; min-width: 150px;
+  padding: 8px 18px; border-radius: 12px; background: #000; color: #fff; font-size: 18px; font-weight: 700;
+  line-height: 1.15; border: 1px solid #000;
+}
+.dl-tienda small { font-size: 11px; font-weight: 500; opacity: .85; }
+.dl-tienda:hover { text-decoration: none; opacity: .88; }
+.dl-tienda--pronto { background: transparent; color: var(--ink-soft); border: 1px dashed var(--line-strong); cursor: default; }
+.dl-accion { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+.dl-instalar { align-self: flex-start; padding: 12px 20px; font-size: 15px; }
+.dl-pasos { margin: 0; padding-left: 20px; line-height: 1.75; font-size: 14.5px; }
+.dl-pasos-texto { margin: 0; font-size: 14.5px; line-height: 1.6; }
+.dl-enlace { font-size: 14px; font-weight: 600; }
+.dl-ok { margin: 0; font-size: 14px; color: var(--petrol); font-weight: 600; }
+.dl-lista { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+.dl-lista li::marker { color: var(--petrol); }
+.dl-requisitos { margin: auto 0 0; padding-top: 18px; font-size: 12.5px; color: var(--ink-faint); }
+.dl-seccion { margin-top: 56px; }
+.dl-seccion h2 { font-size: 24px; margin: 0 0 18px; letter-spacing: -.01em; }
+.dl-rejilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.dl-rejilla h3 { font-size: 16px; margin: 0 0 6px; }
+.dl-rejilla p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+.dl-pregunta { border-bottom: 1px solid var(--line); padding: 14px 0; }
+.dl-pregunta summary { cursor: pointer; font-weight: 600; font-size: 15.5px; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+.dl-pregunta summary::-webkit-details-marker { display: none; }
+.dl-pregunta summary::after { content: "+"; color: var(--petrol); font-size: 20px; line-height: 1; }
+.dl-pregunta[open] summary::after { content: "−"; }
+.dl-pregunta p { margin: 10px 0 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); max-width: 760px; }
+.dl-pie {
+  border-top: 1px solid var(--line); padding: 24px max(16px, calc((100% - 1080px) / 2));
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.dl-pie nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13.5px; }
+.dl-pie nav a { color: var(--ink-soft); }
+@media (max-width: 820px) {
+  .dl-tarjetas, .dl-rejilla { grid-template-columns: 1fr; }
+  .dl-tarjeta { padding: 22px; }
+}

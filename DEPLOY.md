@@ -427,6 +427,14 @@ se pueden bajar también sueltas, para copias antiguas.
 | Cómo se actualiza | Publicando versión en las tiendas | Sola, con cada despliegue del panel |
 | Coste | Cuentas de las tiendas | Ninguno |
 
+**Página de descargas:** `/descargar/` (y `/download/`, que redirige)
+presenta las dos apps con la marca de Clinube. Cuando la app del paciente
+esté publicada, poner sus enlaces en `URL_APP_STORE` y `URL_GOOGLE_PLAY`
+del `.env` y volver a compilar el panel
+(`docker compose -f docker-compose.prod.yml up frontend-build`); mientras
+estén vacíos, la página dice «Muy pronto». Si `clinube.com` apunta al
+mismo servidor, `www.clinube.com/descargar/` funciona sin más.
+
 La app del personal **solo funciona con HTTPS** (en `localhost` también,
 para probar): con el túnel de Cloudflare ya lo está. Guarda en el
 dispositivo el envoltorio del panel —páginas, JS, CSS, iconos— y **nunca**

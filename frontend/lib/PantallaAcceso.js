@@ -31,7 +31,8 @@ export default function PantallaAcceso({ children }) {
         <div>
           {children}
           <p className="acceso-legal">
-            <a href="/privacidad/">Aviso de privacidad</a> · <a href="/condiciones/">Condiciones de uso</a>
+            <a href="/descargar/">Descargar las apps</a> · <a href="/privacidad/">Aviso de privacidad</a> ·{" "}
+            <a href="/condiciones/">Condiciones de uso</a>
           </p>
         </div>
       </div>
