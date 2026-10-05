@@ -902,3 +902,76 @@ body.con-proxima-cita .panel-contenido { padding-bottom: 84px; }
   .proxima-quien { padding-left: 10px; }
 }
 @media print { .lateral, .panel-superior, .proxima-cita { display: none !important; } }
+
+/* ═══════════ Contenido al estilo de Música ═══════════ */
+.encabezado-pagina {
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 18px;
+}
+.encabezado-pagina h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+.encabezado-pagina p { margin: 2px 0 0; color: var(--ink-soft); font-size: 14px; }
+
+.barra-herramientas { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 22px; }
+.campo-busqueda {
+  flex: 1 1 260px; display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 38px;
+  border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: var(--ink-soft);
+}
+.campo-busqueda input { flex: 1; min-width: 0; border: none; background: transparent; outline: none; font-size: 14px; color: var(--ink); padding: 0; }
+.campo-busqueda:focus-within { border-color: var(--petrol); box-shadow: 0 0 0 3px var(--petrol-soft); }
+.selector-suave {
+  height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); font-size: 13.5px;
+}
+.segmentado { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--line); gap: 2px; }
+.segmentado button {
+  border: none; background: transparent; color: var(--ink-soft); cursor: pointer;
+  padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.segmentado button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+
+.portada {
+  aspect-ratio: 1; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  color: rgba(255, 255, 255, .94); box-shadow: 0 2px 6px rgba(0, 0, 0, .10), 0 10px 24px rgba(0, 0, 0, .10);
+  overflow: hidden; flex: none; container-type: inline-size;
+}
+.portada span { font-size: 34cqi; font-weight: 700; letter-spacing: -.03em; text-shadow: 0 2px 10px rgba(0, 0, 0, .15); }
+.portada--redonda { border-radius: 50%; }
+:root[data-paleta="sin_color"] .portada { filter: grayscale(1); }
+
+.rejilla-albumes { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 26px 20px; }
+.album { display: flex; flex-direction: column; gap: 10px; color: inherit; min-width: 0; }
+.album:hover { text-decoration: none; }
+.album .portada { transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.album:hover .portada { transform: translateY(-2px) scale(1.015); box-shadow: 0 4px 10px rgba(0, 0, 0, .12), 0 16px 32px rgba(0, 0, 0, .14); }
+.album-titulo { font-size: 14px; font-weight: 600; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.album-sub { font-size: 13px; color: var(--ink-soft); line-height: 1.3; margin-top: -6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-sub--acento { color: var(--petrol); font-weight: 600; }
+
+.estante { margin-bottom: 30px; }
+.estante-cabecera { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.estante-cabecera h2 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0; }
+.estante-cabecera a { font-size: 13.5px; font-weight: 600; }
+.estante-fila {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: 20px;
+  overflow-x: auto; padding: 4px 2px 14px; scroll-snap-type: x mandatory;
+  scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+.estante-fila > * { scroll-snap-align: start; }
+.estante-vacio { color: var(--ink-soft); font-size: 14px; padding: 18px 0; }
+.cita-hora { position: relative; }
+.portada-hora { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.portada .portada-hora b { font-size: 25cqi; font-weight: 700; letter-spacing: -.03em; }
+.portada .portada-hora small { font-size: 10cqi; font-weight: 600; opacity: .85; margin-top: 4cqi; }
+.portada .portada-hora { font-size: inherit; }
+.cita-estado {
+  position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border-radius: 999px; background: rgba(0, 0, 0, .45); color: #fff;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+@media (max-width: 600px) {
+  .barra-herramientas .selector-suave { flex: 1 1 120px; min-width: 0; }
+  .rejilla-albumes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 14px; }
+  .estante-fila { grid-auto-columns: 142px; gap: 14px; }
+  .encabezado-pagina h1 { font-size: 26px; }
+}

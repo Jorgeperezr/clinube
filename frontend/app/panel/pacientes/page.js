@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api, readList } from "../../../lib/api";
+import Portada from "../../../lib/Portada";
 
 const ORDER_OPTIONS = [
   ["name_asc", "Nombre (A-Z)"],
@@ -22,7 +23,7 @@ export default function PacientesPage() {
   const [patients, setPatients] = useState([]);
   const [search, setSearch] = useState("");
   const [ordering, setOrdering] = useState("name_asc");
-  const [view, setView] = useState("list");   // "list" | "cards"
+  const [view, setView] = useState("cards");   // "cards" (portadas, por omisión) | "list"
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
@@ -69,8 +70,11 @@ export default function PacientesPage() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
-        <h1 style={{ fontSize: 24 }}>Pacientes</h1>
+      <div className="encabezado-pagina">
+        <div>
+          <h1>Pacientes</h1>
+          {!loading && <p>{patients.length === 1 ? "1 paciente" : `${patients.length} pacientes`}{search ? ` con «${search}»` : ""}</p>}
+        </div>
         <button className="btn btn-primary" onClick={() => setShowForm(!showForm)}>
           {showForm ? "Cerrar" : "+ Nuevo paciente"}
         </button>
@@ -84,42 +88,21 @@ export default function PacientesPage() {
         />
       )}
 
-      <form onSubmit={handleSearch} style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <input
-          placeholder="Buscar por nombre, apellido o cédula…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{ flex: "1 1 240px", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: "var(--radius)" }}
-        />
-        <button className="btn btn-ghost">Buscar</button>
-      </form>
-
-      {/* Barra de controles: ordenar + alternar vista */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                    marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "var(--ink-soft)" }}>
-          Ordenar por:
-          <select value={ordering} onChange={(e) => setOrdering(e.target.value)}
-                  style={{ padding: "8px 10px", border: "1px solid var(--line)", borderRadius: 8 }}>
-            {ORDER_OPTIONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
-        </label>
-
-        <div style={{ display: "inline-flex", border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
-          <button onClick={() => setViewPersist("list")}
-                  aria-label="Vista de lista" title="Vista de lista"
-                  style={{ padding: "8px 14px", border: "none", cursor: "pointer", fontSize: 14,
-                           background: view === "list" ? "var(--petrol)" : "#fff",
-                           color: view === "list" ? "#fff" : "var(--ink)" }}>
-            ▤ Lista
-          </button>
-          <button onClick={() => setViewPersist("cards")}
-                  aria-label="Vista de tarjetas" title="Vista de tarjetas"
-                  style={{ padding: "8px 14px", border: "none", cursor: "pointer", fontSize: 14,
-                           background: view === "cards" ? "var(--petrol)" : "#fff",
-                           color: view === "cards" ? "#fff" : "var(--ink)" }}>
-            ▦ Tarjetas
-          </button>
+      {/* Buscar, ordenar y alternar vista, en una sola barra */}
+      <div className="barra-herramientas">
+        <form onSubmit={handleSearch} className="campo-busqueda" role="search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
+               strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+          <input placeholder="Buscar por nombre, apellido o cédula" aria-label="Buscar pacientes"
+                 value={search} onChange={(e) => setSearch(e.target.value)} />
+        </form>
+        <select value={ordering} onChange={(e) => setOrdering(e.target.value)}
+                className="selector-suave" aria-label="Ordenar por">
+          {ORDER_OPTIONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <div className="segmentado" role="group" aria-label="Vista">
+          <button type="button" aria-pressed={view === "cards"} onClick={() => setViewPersist("cards")}>▦ Portadas</button>
+          <button type="button" aria-pressed={view === "list"} onClick={() => setViewPersist("list")}>▤ Lista</button>
         </div>
       </div>
 
@@ -158,8 +141,7 @@ export default function PacientesPage() {
           </table>
         </div>
       ) : (
-        <div style={{ display: "grid", gap: 14,
-                      gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}>
+        <div className="rejilla-albumes">
           {patients.map((p) => <PatientCard key={p.id} patient={p} />)}
         </div>
       )}
@@ -167,32 +149,21 @@ export default function PacientesPage() {
   );
 }
 
+/** Un paciente como un álbum: portada, nombre y lo siguiente que tiene. */
 function PatientCard({ patient: p }) {
-  const initials = (p.full_name || "?").split(" ").filter(Boolean).slice(0, 2)
-    .map((w) => w[0]).join("").toUpperCase();
+  const proxima = p.next_appointment
+    ? new Date(p.next_appointment).toLocaleDateString("es-EC", { weekday: "short", day: "numeric", month: "short" })
+      + " · " + new Date(p.next_appointment).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" })
+    : null;
   return (
-    <div className="card" onClick={() => window.location.href = `/panel/paciente/?id=${p.id}`}
-         style={{ cursor: "pointer", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
-                      background: "var(--petrol-soft)", color: "var(--petrol-deep)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontWeight: 700, fontSize: 16 }}>
-          {initials}
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {p.full_name}
-          </div>
-          <div className="tabular" style={{ fontSize: 13, color: "var(--ink-soft)" }}>{p.national_id}</div>
-        </div>
-      </div>
-      <div style={{ fontSize: 13, color: "var(--ink-soft)", display: "flex", flexDirection: "column", gap: 3 }}>
-        <span>📞 {p.phone || "—"}</span>
-        <span>🗂 {p.attention_count ?? 0} atencion{(p.attention_count ?? 0) === 1 ? "" : "es"}</span>
-        <span>📅 {p.next_appointment ? fmtDateTime(p.next_appointment) : "Sin cita próxima"}</span>
-      </div>
-    </div>
+    <a className="album" href={`/panel/paciente/?id=${p.id}`} title={p.full_name}>
+      <Portada nombre={p.full_name} />
+      <span className="album-titulo">{p.full_name}</span>
+      <span className={`album-sub${proxima ? " album-sub--acento" : ""}`}>
+        {proxima ? `Cita: ${proxima}` : `${p.attention_count ?? 0} atencion${(p.attention_count ?? 0) === 1 ? "" : "es"}`}
+      </span>
+      <span className="album-sub tabular">CI {p.national_id}</span>
+    </a>
   );
 }
 
