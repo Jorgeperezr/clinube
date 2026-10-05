@@ -126,7 +126,50 @@ Comparativa hecha en septiembre de 2026:
   el límite anterior de 4 OCPU / 24 GB) y **crear una alerta de
   presupuesto de 1 US$** para enterarse si algo empieza a cobrar.
 - La VM Arm a veces da «Out of capacity» al crearla: se reintenta más
-  tarde o en otro dominio de disponibilidad.
+  tarde o en otro dominio de disponibilidad. En Santiago hay un solo
+  dominio y casi nunca hay capacidad: ver «Crear la máquina desde GitHub
+  Actions», justo debajo.
+
+### Crear la máquina desde GitHub Actions
+
+El flujo `.github/workflows/oracle-instancia.yml` intenta crearla cada
+media hora (`scripts/crear-instancia-oracle.sh`), sin tener Cloud Shell
+abierto ni el computador encendido. Cuando lo consigue, abre una
+incidencia en el repositorio con la IP —llega por correo— y se apaga.
+
+Necesita una **clave de API** de Oracle, distinta de la clave SSH:
+
+1. En la consola de Oracle: icono de perfil (arriba a la derecha) →
+   **Mi perfil** → **Claves de API** → **Agregar clave de API** →
+   **Generar par de claves de API** → **Descargar clave privada** →
+   **Agregar**.
+2. Oracle enseña una «vista previa del archivo de configuración» con
+   `user`, `fingerprint` y `tenancy`.
+3. En GitHub: el repositorio → **Settings** → **Secrets and variables**
+   → **Actions** → **New repository secret**, cuatro veces:
+
+   | Secreto | Valor |
+   |---|---|
+   | `OCI_USER_OCID` | el `user=` de la vista previa (`ocid1.user…`) |
+   | `OCI_TENANCY_OCID` | el `tenancy=` (`ocid1.tenancy…`) |
+   | `OCI_FINGERPRINT` | el `fingerprint=` (`aa:bb:…`) |
+   | `OCI_PRIVATE_KEY` | el contenido entero del `.pem` descargado, con las líneas `BEGIN` y `END` |
+
+   La clave privada va **solo** ahí: no se pega en ningún chat, correo
+   ni archivo del repositorio. Después se puede borrar del Mac.
+4. **Actions** → «Crear la máquina en Oracle» → **Run workflow**, para
+   comprobar que las credenciales funcionan: debe terminar en verde con
+   «Sin capacidad…» o con la máquina creada. Si termina en rojo, el
+   mensaje dice qué falta.
+
+Mientras corre, hay que **parar el bucle de Cloud Shell** (Ctrl+C): los
+dos a la vez gastan el cupo de peticiones de Oracle. El guion no crea
+una segunda máquina si ya existe una llamada `clinube`.
+
+Cada vuelta gasta 1–2 de los 2000 minutos gratuitos al mes de Actions
+(unos 1400 al mes). Si en una o dos semanas no sale, lo efectivo es pasar
+la cuenta a Pay As You Go (ver arriba): con la cuenta de pago suele haber
+capacidad al primer o segundo intento.
 - Todo lo del proyecto funciona en Arm: las imágenes de Python,
   PostgreSQL, Redis y Nginx son multiarquitectura.
 

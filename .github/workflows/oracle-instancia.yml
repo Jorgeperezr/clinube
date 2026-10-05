@@ -1,0 +1,108 @@
+# Crea la máquina de Clinube en Oracle Cloud sin tener Cloud Shell abierto.
+#
+# Cada media hora intenta UNA vez crear la instancia Always Free (Ampere
+# A1, 1 OCPU, 6 GB, 100 GB) con scripts/crear-instancia-oracle.sh. En
+# Santiago casi nunca hay capacidad: la mayoría de las vueltas terminan
+# en «sin capacidad», en verde y sin avisar. Cuando sale:
+#
+#   · abre una incidencia en el repositorio con la IP (llega por correo),
+#   · y se desactiva a sí mismo, para no seguir gastando minutos.
+#
+# Necesita cuatro secretos (Settings → Secrets and variables → Actions):
+# OCI_USER_OCID, OCI_TENANCY_OCID, OCI_FINGERPRINT y OCI_PRIVATE_KEY.
+# Cómo sacarlos: DEPLOY.md, «Crear la máquina desde GitHub Actions». Sin
+# ellos, cada vuelta termina enseguida sin hacer nada.
+#
+# Minutos: cada vuelta gasta 1-2 de los 2000 gratuitos al mes de un
+# repositorio privado (unos 1400 al mes cada media hora). Por eso no es
+# más frecuente, y por eso se apaga al crear la máquina.
+
+name: Crear la máquina en Oracle
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+concurrency:
+  group: oracle-instancia
+  cancel-in-progress: false
+
+jobs:
+  intentar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OCI_CLI_REGION: sa-santiago-1
+      OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+      # Pública: es la que se instala en la máquina para entrar por SSH.
+      CLAVE_SSH_PUBLICA: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJuRUm5AbXHD3i/K6SF2hqq6Ssgh5qBPhTUNhfh6FVa clinube"
+      TIENE_CREDENCIALES: ${{ secrets.OCI_PRIVATE_KEY != '' && secrets.OCI_USER_OCID != '' }}
+    steps:
+      - name: ¿Hay credenciales?
+        if: env.TIENE_CREDENCIALES != 'true'
+        run: |
+          echo "Faltan los secretos OCI_* (ver DEPLOY.md). No se intenta nada." >> "${GITHUB_STEP_SUMMARY}"
+
+      - uses: actions/checkout@v4
+        if: env.TIENE_CREDENCIALES == 'true'
+
+      - name: OCI CLI
+        if: env.TIENE_CREDENCIALES == 'true'
+        run: pip install --quiet --disable-pip-version-check oci-cli
+
+      - name: Configuración de OCI
+        if: env.TIENE_CREDENCIALES == 'true'
+        env:
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          umask 077
+          mkdir -p ~/.oci
+          printf '%s\n' "${OCI_PRIVATE_KEY}" > ~/.oci/clave.pem
+          {
+            echo "[DEFAULT]"
+            echo "user=${OCI_USER_OCID}"
+            echo "fingerprint=${OCI_FINGERPRINT}"
+            echo "tenancy=${OCI_TENANCY_OCID}"
+            echo "region=${OCI_CLI_REGION}"
+            echo "key_file=${HOME}/.oci/clave.pem"
+          } > ~/.oci/config
+
+      - name: Intentar crear la máquina
+        if: env.TIENE_CREDENCIALES == 'true'
+        env:
+          OCI_COMPARTIMENTO: ${{ secrets.OCI_TENANCY_OCID }}
+          SALIDA_IP: ip.txt
+        run: |
+          bash scripts/crear-instancia-oracle.sh | tee -a "${GITHUB_STEP_SUMMARY}"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Avisar y apagar este flujo
+        if: env.TIENE_CREDENCIALES == 'true' && hashFiles('ip.txt') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          IP="$(cat ip.txt)"
+          [ -n "${IP}" ] || exit 0
+          gh issue create \
+            --title "Oracle: la máquina de Clinube está creada (IP ${IP})" \
+            --body "$(printf '%s\n' \
+              "La instancia **clinube** ya existe en Oracle Cloud (Santiago)." \
+              "" \
+              "- IP pública: \`${IP}\`" \
+              "- Entrar desde el Mac: \`ssh -i ~/.ssh/clinube ubuntu@${IP}\`" \
+              "" \
+              "Siguiente paso: DEPLOY.md, desde «Preparar el servidor»." \
+              "" \
+              "El flujo «Crear la máquina en Oracle» se ha desactivado solo.")" \
+            || echo "No se pudo abrir la incidencia (¿están desactivadas en el repositorio?). IP: ${IP}"
+          gh workflow disable oracle-instancia.yml
+          echo "### Máquina creada: ${IP}. Flujo desactivado." >> "${GITHUB_STEP_SUMMARY}"
