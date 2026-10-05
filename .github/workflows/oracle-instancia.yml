@@ -95,16 +95,17 @@ jobs:
             echo "::error::OCI_PRIVATE_KEY no tiene la línea -----BEGIN PRIVATE KEY-----. Pega el .pem entero."
             exit 1
           fi
-          # Al copiar y pegar a veces se pierden los saltos de línea y la
-          # clave llega en una sola línea, que ya no se puede leer. Se rehace.
-          if [ "$(grep -c . <<< "${CLAVE}")" -lt 5 ]; then
-            echo "La clave llegó sin saltos de línea: se reconstruye."
-            CUERPO="$(sed -E 's/-----(BEGIN|END) [A-Z ]+-----//g; s/OCI_API_KEY//g' <<< "${CLAVE}" | tr -d '[:space:]')"
-            CLAVE="$(printf '%s\n%s\n%s' "-----BEGIN ${TIPO}-----" "$(fold -w 64 <<< "${CUERPO}")" "-----END ${TIPO}-----")"
-          fi
+          # Al copiar y pegar se cuelan cosas: saltos de línea perdidos,
+          # espacios al principio de cada línea, «\n» escritos como texto.
+          # Se toma solo lo que hay entre BEGIN y END, se deja únicamente lo
+          # que es base64 y se rearma en líneas de 64, como la escribe Oracle.
+          CUERPO="$(printf '%s' "${CLAVE}" | sed 's/\\n/\n/g' \
+            | tr '\n' ' ' | sed -E "s/.*BEGIN ${TIPO}-+//; s/-+END ${TIPO}.*//" \
+            | tr -cd 'A-Za-z0-9+/=')"
+          CLAVE="$(printf '%s\n%s\n%s' "-----BEGIN ${TIPO}-----" "$(fold -w 64 <<< "${CUERPO}")" "-----END ${TIPO}-----")"
           printf '%s\n' "${CLAVE}" | grep -v '^OCI_API_KEY$' > ~/.oci/clave.pem
           if ! openssl pkey -in ~/.oci/clave.pem -noout 2>/dev/null; then
-            echo "::error::OCI_PRIVATE_KEY no se puede leer como clave privada (¿incompleta, o con contraseña?). Vuelve a pegar el .pem entero."
+            echo "::error::OCI_PRIVATE_KEY no se puede leer como clave privada aunque se limpió (${#CUERPO} caracteres de clave; una de 2048 bits tiene unos 1620). Está incompleta: vuelve a copiarla con pbcopy (DEPLOY.md)."
             exit 1
           fi
           # ¿Es la clave de esa huella? Si no, Oracle diría «NotAuthenticated».
