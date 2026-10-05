@@ -15,11 +15,13 @@
  *
  * El texto NO se guarda solo: al detener el dictado se escribe en el
  * campo de notas y el profesional lo revisa antes de pulsar Guardar.
+ * Mientras se dicta, `onEstado(true)` avisa al formulario para que no
+ * se pueda guardar a medias: lo dictado aún no está en el campo.
  */
 
 import { useEffect, useRef, useState } from "react";
 
-import { SECCIONES, aTextoNota, aplicarPuntuacion, detectarSeccion, organizarDictado } from "./secciones.mjs";
+import { SECCIONES, aTextoNota, agregarFrase, detectarSeccion, organizarDictado, pulir } from "./secciones.mjs";
 
 const ERRORES = {
   "not-allowed": "El navegador no tiene permiso para usar el micrófono. Actívalo en el candado de la barra de direcciones.",
@@ -43,8 +45,9 @@ function idioma() {
  * @param conSecciones  ordenar en motivo / hallazgos / procedimiento /
  *                      indicaciones (nota clínica) o dictado corrido
  * @param onTexto       recibe el texto final al detener
+ * @param onEstado      recibe true al empezar a escuchar y false al acabar
  */
-export default function Dictado({ conSecciones = true, onTexto }) {
+export default function Dictado({ conSecciones = true, onTexto, onEstado }) {
   const [estado, setEstado] = useState("inactivo");   // inactivo | escuchando | error
   const [frases, setFrases] = useState([]);
   const [parcial, setParcial] = useState("");
@@ -54,18 +57,25 @@ export default function Dictado({ conSecciones = true, onTexto }) {
   const activo = useRef(false);     // el usuario quiere seguir dictando
   const acumuladas = useRef([]);    // frases finales, sin esperar al render
   const onTextoRef = useRef(onTexto);
-  useEffect(() => { onTextoRef.current = onTexto; }, [onTexto]);
+  const onEstadoRef = useRef(onEstado);
+  const montado = useRef(true);
+  useEffect(() => { onTextoRef.current = onTexto; onEstadoRef.current = onEstado; }, [onTexto, onEstado]);
 
   // Se comprueba en el navegador, no en el primer render (SSR).
   useEffect(() => { setSoportado(Boolean(reconocedor())); }, []);
-  useEffect(() => () => { activo.current = false; rec.current?.abort?.(); }, []);
+  useEffect(() => () => {
+    montado.current = false;
+    activo.current = false;
+    rec.current?.abort?.();
+  }, []);
+  useEffect(() => { onEstadoRef.current?.(estado === "escuchando"); }, [estado]);
 
   function entregar() {
     const lista = acumuladas.current;
-    if (!lista.length) return;
+    if (!lista.length || !montado.current) return;
     const texto = conSecciones
       ? aTextoNota(organizarDictado(lista))
-      : aplicarPuntuacion(lista.join(" ")).replace(/^\p{Ll}/u, (l) => l.toUpperCase());
+      : pulir(lista.join(" ")).replace(/^\p{Ll}/u, (l) => l.toUpperCase());
     if (texto) onTextoRef.current?.(texto);
   }
 
@@ -85,7 +95,7 @@ export default function Dictado({ conSecciones = true, onTexto }) {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) {
-          acumuladas.current = [...acumuladas.current, t.trim()];
+          acumuladas.current = agregarFrase(acumuladas.current, t);
         } else {
           interino += t;
         }
@@ -100,17 +110,40 @@ export default function Dictado({ conSecciones = true, onTexto }) {
       setEstado("error");
       setMensaje(ERRORES[e.error] || `El dictado se detuvo (${e.error}).`);
     };
-    r.onend = () => {
-      // Chrome corta el reconocimiento tras unos segundos de silencio
-      // aunque se le pida continuo: si el usuario no ha pulsado
-      // Detener, se vuelve a arrancar sin que lo note.
-      if (activo.current) {
-        try { r.start(); return; } catch { /* ya estaba arrancando */ }
-      }
+    const terminar = () => {
+      activo.current = false;
+      if (!montado.current) return;
       setParcial("");
       setEstado((s) => (s === "error" ? s : "inactivo"));
       entregar();
       acumuladas.current = [];
+    };
+    // Chrome corta el reconocimiento tras unos segundos de silencio
+    // aunque se le pida continuo, y Safari a veces al minuto. Si el
+    // usuario no ha pulsado Detener, se vuelve a arrancar sin que lo
+    // note. Arrancar en el mismo `onend` falla a menudo en Safari
+    // («InvalidStateError»): se espera un momento y se reintenta unas
+    // veces antes de rendirse, y lo dictado hasta ahí no se pierde.
+    let reintentos = 0;
+    const rearrancar = () => {
+      setTimeout(() => {
+        if (!activo.current) { terminar(); return; }
+        try {
+          r.start();
+          reintentos = 0;
+        } catch {
+          if (++reintentos < 4) rearrancar();
+          else {
+            setEstado("error");
+            setMensaje("El navegador cortó el dictado. Lo dictado hasta ahora se añadió a las notas.");
+            terminar();
+          }
+        }
+      }, 250 * (reintentos + 1));
+    };
+    r.onend = () => {
+      if (activo.current) rearrancar();
+      else terminar();
     };
 
     acumuladas.current = [];
@@ -185,8 +218,9 @@ export default function Dictado({ conSecciones = true, onTexto }) {
           )}
           {conSecciones && (
             <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "var(--ink-faint)" }}>
-              Para cambiar de sección, empieza la frase con «motivo», «hallazgos»,
-              «procedimiento» o «indicaciones». «Punto y seguido» y «punto y aparte» puntúan.
+              Para cambiar de sección, empieza la frase con «motivo», «hallazgos», «diagnóstico»,
+              «procedimiento» o «indicaciones». Se puntúa diciendo «coma», «punto y seguido» o
+              «punto y aparte»; «pieza cuatro seis» se escribe 46.
             </p>
           )}
         </div>

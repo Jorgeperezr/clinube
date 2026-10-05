@@ -13,6 +13,7 @@ import CpoCeoCard from "../../../lib/CpoCeoCard";
 import OralHealthIndicators from "../../../lib/OralHealthIndicators";
 import OdontogramLegend from "../../../lib/OdontogramLegend";
 import ExamRequestsSection from "../../../lib/ExamRequestsSection";
+import FotoAnotada, { EVENTO_DOCUMENTOS } from "../../../lib/FotoAnotada";
 import { useConfirm } from "../../../lib/ConfirmDialog";
 import AlertasPaciente, { revisarReceta, textoChoques } from "../../../lib/AlertasClinicas";
 import { ConsentsTab, DocumentsTab, PlanTab } from "../../../lib/ClinicalTabs";
@@ -40,6 +41,14 @@ function PatientDetail() {
   const [rolListo, setRolListo] = useState(false);
   const [puedeCobrar, setPuedeCobrar] = useState(false);
   const [tab, setTab] = useState("odontograma");
+  // La lista de documentos (ClinicalTabs) solo se carga al montarse:
+  // cuando se guarda una foto marcada se vuelve a montar.
+  const [versionDocs, setVersionDocs] = useState(0);
+  useEffect(() => {
+    const recargar = () => setVersionDocs((v) => v + 1);
+    window.addEventListener(EVENTO_DOCUMENTOS, recargar);
+    return () => window.removeEventListener(EVENTO_DOCUMENTOS, recargar);
+  }, []);
   // Recepción no ve datos clínicos (el servidor responde 403). Antes la
   // ficha le enseñaba igual el odontograma, las evoluciones y el plan,
   // VACÍOS: parecía que la paciente no tenía ningún registro. Ahora solo
@@ -143,7 +152,8 @@ function PatientDetail() {
       {tab === "documentos" && (
         <>
           <ExamRequestsSection patientId={id} />
-          <DocumentsTab patientId={id} />
+          {["admin", "reception", "doctor"].includes(role) && <MarcarFoto patientId={id} />}
+          <DocumentsTab key={versionDocs} patientId={id} />
         </>
       )}
       {tab === "consentimientos" && <ConsentsTab patientId={id} />}
@@ -532,6 +542,7 @@ function EvolutionsTab({ patientId }) {
   const [form, setForm] = useState({ type: "clinical_note", notes: "", visible_to_patient: false, follow_up_date: "" });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [dictando, setDictando] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -623,7 +634,7 @@ function EvolutionsTab({ patientId }) {
           <label>Notas *</label>
           {/* Dictado: en la nota clínica ordena por secciones; en receta
               e indicaciones, dictado corrido. Se AÑADE a lo escrito. */}
-          <Dictado conSecciones={form.type === "clinical_note"}
+          <Dictado conSecciones={form.type === "clinical_note"} onEstado={setDictando}
                    onTexto={(texto) => setForm((f) => ({ ...f, notes: f.notes ? `${f.notes}\n${texto}` : texto }))} />
           <textarea rows={Math.min(12, Math.max(4, form.notes.split("\n").length + 1))} required value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })} />
@@ -638,8 +649,11 @@ function EvolutionsTab({ patientId }) {
                  onChange={(e) => setForm({ ...form, visible_to_patient: e.target.checked })} />
           Visible para el paciente en la app
         </label>
-        <button className="btn btn-primary" disabled={saving}>
-          {saving ? "Guardando…" : "Guardar"}
+        {/* Lo dictado entra en las notas al detener el dictado: guardar
+            antes dejaría la nota sin ello. */}
+        <button className="btn btn-primary" disabled={saving || dictando}
+                title={dictando ? "Detén el dictado para guardar" : undefined}>
+          {saving ? "Guardando…" : dictando ? "Detén el dictado para guardar" : "Guardar"}
         </button>
       </form>
 
@@ -943,6 +957,30 @@ function AutorizacionWhatsApp({ patient }) {
       )}
       {error && <span style={{ color: "var(--red)" }}>{error}</span>}
       {ConfirmUI}
+    </div>
+  );
+}
+
+
+/**
+ * Tomar o subir una foto y señalar sobre ella (flechas, círculos, texto)
+ * antes de guardarla en los documentos. Ver lib/FotoAnotada.js.
+ */
+function MarcarFoto({ patientId }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <div className="card" style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <h3 style={{ margin: 0 }}>Foto con marcas</h3>
+        <p style={{ margin: "2px 0 0", fontSize: 13, color: "var(--ink-soft)" }}>
+          Toma o sube una foto y señala sobre ella con flechas, círculos o texto, con el ratón,
+          el dedo o el lápiz de una tableta. Se guarda en los documentos, junto a la original.
+        </p>
+      </div>
+      <button type="button" className="btn btn-primary" onClick={() => setAbierto(true)}>Marcar una foto</button>
+      {abierto && (
+        <FotoAnotada patientId={patientId} onCerrar={() => setAbierto(false)} onListo={() => setAbierto(false)} />
+      )}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import os
+
 from rest_framework import serializers
 
 from apps.patients.models import MedicalBackground, Patient, PatientDocument
@@ -11,6 +13,18 @@ class MedicalBackgroundSerializer(serializers.ModelSerializer):
             "is_pregnant", "updated_at",
         ]
         read_only_fields = ["updated_at"]
+
+
+# Lo que se puede adjuntar a la historia: PDF (los escaneos del panel
+# salen así), fotos y documentos de Word. Sin SVG ni HTML: se pueden
+# abrir en el navegador y llevar código dentro.
+EXTENSIONES_DOCUMENTO = {
+    ".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif",
+    ".bmp", ".tif", ".tiff", ".doc", ".docx",
+}
+# El mismo tope que Nginx (client_max_body_size 20M): pasado de ahí
+# Nginx corta con un 413 sin explicación; aquí se dice qué pasó.
+TAMANO_MAXIMO_DOCUMENTO = 20 * 1024 * 1024
 
 
 class PatientDocumentSerializer(serializers.ModelSerializer):
@@ -32,6 +46,20 @@ class PatientDocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "uploaded_at"]
         extra_kwargs = {"file": {"write_only": True}}
+
+    def validate_file(self, archivo):
+        extension = os.path.splitext(archivo.name or "")[1].lower()
+        if extension not in EXTENSIONES_DOCUMENTO:
+            raise serializers.ValidationError(
+                "Ese tipo de archivo no se puede adjuntar. Se admiten PDF, imágenes "
+                "(JPG, PNG, HEIC…) y documentos de Word.")
+        if archivo.size > TAMANO_MAXIMO_DOCUMENTO:
+            raise serializers.ValidationError(
+                "El archivo pasa de 20 MB. Si es un escaneo, guárdalo en dos partes.")
+        if extension == ".pdf" and not archivo.read(5).startswith(b"%PDF"):
+            raise serializers.ValidationError("El archivo dice ser un PDF pero no lo es.")
+        archivo.seek(0)
+        return archivo
 
     def get_file_url(self, obj):
         """

@@ -173,8 +173,14 @@ class PatientDocumentFileView(generics.GenericAPIView):
         as_download = request.query_params.get("download") in ("1", "true")
         filename = doc.file.name.split("/")[-1]
 
+        # Solo se abren en el navegador los PDF y las imágenes de mapa de
+        # bits. Cualquier otra cosa —un SVG o un HTML subidos antes de que
+        # se validara el tipo— se descarga: abierta en línea podría
+        # ejecutar código con la sesión de quien la mira.
+        en_linea = content_type == "application/pdf" or (
+            content_type.startswith("image/") and content_type != "image/svg+xml")
         response = FileResponse(doc.file.open("rb"), content_type=content_type)
-        disposition = "attachment" if as_download else "inline"
+        disposition = "attachment" if as_download or not en_linea else "inline"
         response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
         return response
 

@@ -293,3 +293,63 @@ class PatientDocumentDeleteTests(APITestCase):
         self.assertEqual(resp.status_code, 404)
         doc.refresh_from_db()
         self.assertTrue(doc.is_active)  # intacto
+
+
+class DocumentoValidacionTests(APITestCase):
+    """Qué se puede adjuntar a la historia y cómo se entrega."""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Clínica Archivos")
+        self.doctor = User.objects.create_user(
+            email="d@archivos.ec", password="superseguro123", role="doctor", tenant=self.tenant,
+        )
+        self.patient = Patient.objects.create(
+            tenant=self.tenant, first_name="Ana", last_name="Archivo", national_id="1919191919",
+        )
+        self.client.force_authenticate(user=self.doctor)
+
+    def _subir(self, nombre, contenido, tipo="application/octet-stream"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return self.client.post(
+            f"/api/v1/patients/{self.patient.id}/documents/",
+            {"doc_type": "exam", "file": SimpleUploadedFile(nombre, contenido, content_type=tipo)},
+            format="multipart",
+        )
+
+    def test_se_admiten_pdf_e_imagenes(self):
+        self.assertEqual(self._subir("escaneo.pdf", b"%PDF-1.7 x", "application/pdf").status_code, 201)
+        self.assertEqual(self._subir("foto.JPG", b"\xff\xd8\xff", "image/jpeg").status_code, 201)
+
+    def test_html_y_svg_no(self):
+        for nombre in ("pagina.html", "dibujo.svg", "programa.exe"):
+            r = self._subir(nombre, b"<script>alert(1)</script>")
+            self.assertEqual(r.status_code, 400, nombre)
+
+    def test_un_pdf_falso_no(self):
+        r = self._subir("factura.pdf", b"<html>no soy un pdf</html>", "application/pdf")
+        self.assertEqual(r.status_code, 400)
+
+    def test_mas_de_20_mb_no(self):
+        from apps.patients import serializers as s
+        original = s.TAMANO_MAXIMO_DOCUMENTO
+        s.TAMANO_MAXIMO_DOCUMENTO = 10
+        try:
+            r = self._subir("grande.pdf", b"%PDF-1.7 mas de diez bytes", "application/pdf")
+        finally:
+            s.TAMANO_MAXIMO_DOCUMENTO = original
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("20 MB", str(r.data))
+
+    def test_lo_que_no_es_pdf_ni_imagen_se_descarga(self):
+        # Un SVG que entró antes de validar el tipo no se abre en línea.
+        from django.core.files.base import ContentFile
+
+        from apps.patients.models import PatientDocument
+        doc = PatientDocument(patient=self.patient, doc_type="exam", uploaded_by=self.doctor)
+        doc.file.save("viejo.svg", ContentFile(b"<svg onload='x'/>"), save=True)
+        r = self.client.get(f"/api/v1/patients/{self.patient.id}/documents/{doc.id}/file/")
+        self.assertTrue(r["Content-Disposition"].startswith("attachment"))
+        pdf = self._subir("ok.pdf", b"%PDF-1.7 x", "application/pdf").data
+        r = self.client.get(f"/api/v1/patients/{self.patient.id}/documents/{pdf['id']}/file/")
+        self.assertTrue(r["Content-Disposition"].startswith("inline"))
+

@@ -1,183 +1,378 @@
 "use client";
 
 /**
- * Escaneo de documentos por cámara (Sprint 38).
+ * Escanear documentos con la cámara y guardarlos como un PDF en la
+ * historia clínica del paciente.
+ * ────────────────────────────────────────────────────────────────────
+ * Un navegador no puede hablar con un escáner TWAIN/WIA (hace falta
+ * software nativo), así que se escanea con la cámara del ordenador o del
+ * teléfono:
  *
- * Alcance real en navegador: los escáneres TWAIN/WIA no son accesibles
- * desde una página web por seguridad del navegador (requieren software
- * nativo). Lo que sí es viable y se implementa aquí es la CAPTURA POR
- * CÁMARA (getUserMedia) del computador o del móvil: se toman una o varias
- * páginas, se aplica una mejora de brillo/contraste sobre el canvas, y las
- * capturas se combinan en un ÚNICO PDF que se sube a la historia clínica
- * del paciente por el mismo endpoint de documentos.
+ *   · en vivo (getUserMedia), pidiendo la mayor resolución que dé la
+ *     cámara: la de por omisión, 640×480, no deja leer letra pequeña;
+ *   · o con «Añadir fotos», que en el teléfono abre la cámara del sistema
+ *     —fotos a plena resolución, con enfoque y flash— y en el ordenador
+ *     deja elegir imágenes. También es la salida cuando el navegador no
+ *     da acceso a la cámara (permiso denegado, página sin https).
  *
- * El recorte automático de bordes y la corrección de perspectiva exigen
- * visión por computador (OpenCV.js) — se deja como mejora futura; aquí se
- * ofrece encuadre manual y realce de imagen, que cubre el caso habitual.
+ * Cada página se reduce a LADO_MAXIMO, se realza según sus propios
+ * niveles (ver realceDocumento.mjs) y se puede girar, reordenar, marcar
+ * (flechas, círculos, texto: lib/AnotadorFoto.js) o quitar.
+ * Al guardar se arma un único PDF —cada página con la orientación de su
+ * foto— y se sube con `api()`, que renueva la sesión si caducó mientras
+ * se escaneaba: antes se mandaba el token tal cual y, si había caducado,
+ * se perdían todas las páginas con un «error 401».
+ *
+ * Recortar bordes y corregir perspectiva automáticamente exigiría visión
+ * por computador (OpenCV.js, varios MB): fuera de alcance sin añadir
+ * dependencias.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiBase } from "./api";
+import AnotadorFoto from "./AnotadorFoto";
+import Capa from "./Capa";
+import { api, readObject } from "./api";
+import {
+  MODOS, TOPE_PDF, bytesDeDataUrl, medidaDestino, orientacion, realzar, tamanoLegible,
+} from "./realceDocumento.mjs";
+
+const CALIDAD_JPEG = 0.82;
+
+/** Dibuja `fuente` reducida y realzada; devuelve la página lista. */
+function procesar(fuente, anchoFuente, altoFuente, modo) {
+  const { ancho, alto } = medidaDestino(anchoFuente, altoFuente);
+  const canvas = document.createElement("canvas");
+  canvas.width = ancho;
+  canvas.height = alto;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(fuente, 0, 0, ancho, alto);
+  if (modo !== "original") {
+    const img = ctx.getImageData(0, 0, ancho, alto);
+    realzar(img.data, modo);
+    ctx.putImageData(img, 0, 0);
+  }
+  return { url: canvas.toDataURL("image/jpeg", CALIDAD_JPEG), ancho, alto };
+}
+
+function cargarImagen(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("imagen ilegible"));
+    img.src = src;
+  });
+}
+
+/** La página girada 90° en el sentido de las agujas del reloj. */
+async function girar(pagina) {
+  const img = await cargarImagen(pagina.url);
+  const canvas = document.createElement("canvas");
+  canvas.width = pagina.alto;
+  canvas.height = pagina.ancho;
+  const ctx = canvas.getContext("2d");
+  ctx.translate(canvas.width, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(img, 0, 0);
+  return { ...pagina, url: canvas.toDataURL("image/jpeg", CALIDAD_JPEG), ancho: pagina.alto, alto: pagina.ancho };
+}
+
+const plural = (n, una, varias) => `${n} ${n === 1 ? una : varias}`;
+
+let siguienteId = 1;
 
 export default function DocumentScanner({ patientId, docType = "exam", onDone, onClose }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [pages, setPages] = useState([]);       // dataURLs mejoradas
-  const [ready, setReady] = useState(false);
-  const [enhance, setEnhance] = useState(true);
+  const archivoRef = useRef(null);
+  const [pages, setPages] = useState([]);            // { id, url, ancho, alto }
+  const [camara, setCamara] = useState("iniciando"); // iniciando | lista | sin-camara
+  const [modo, setModo] = useState("documento");
+  const [descripcion, setDescripcion] = useState("");
   const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
   const [saving, setSaving] = useState(false);
+  const [linterna, setLinterna] = useState(null);    // null: la cámara no tiene
+  const [destello, setDestello] = useState(false);
+  const [confirmarSalida, setConfirmarSalida] = useState(false);
+  const [marcando, setMarcando] = useState(null);    // id de la página que se marca
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCamara("sin-camara");
+        setAviso(window.isSecureContext === false
+          ? "La cámara en vivo necesita abrir el panel con https. Puedes usar «Añadir fotos»."
+          : "Este navegador no da acceso a la cámara en vivo. Puedes usar «Añadir fotos».");
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }, audio: false,
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } },
+          audio: false,
         });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
+        const pista = stream.getVideoTracks()[0];
+        if (pista?.getCapabilities?.().torch) setLinterna(false);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
-          setReady(true);
+          setCamara("lista");
         }
-      } catch {
-        setError("No se pudo acceder a la cámara. Revisa los permisos del navegador.");
+      } catch (e) {
+        if (cancelled) return;
+        setCamara("sin-camara");
+        setAviso(e?.name === "NotAllowedError"
+          ? "El navegador no tiene permiso para usar la cámara (se activa en el candado de la barra de direcciones). Mientras tanto, puedes usar «Añadir fotos»."
+          : "No se encontró una cámara disponible. Puedes usar «Añadir fotos».");
       }
     })();
     return () => {
       cancelled = true;
-      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
+  // Cerrar con páginas sin guardar pide confirmación: antes un clic de
+  // más en «Cerrar» tiraba todo lo escaneado.
+  const pedirCierre = useCallback(() => {
+    if (saving) return;
+    if (pages.length) setConfirmarSalida(true);
+    else onClose?.();
+  }, [pages.length, saving, onClose]);
+
+  useEffect(() => {
+    if (marcando) return undefined;   // con el editor abierto, Escape es suyo
+    const tecla = (e) => {
+      if (e.key !== "Escape") return;
+      if (confirmarSalida) setConfirmarSalida(false);
+      else pedirCierre();
+    };
+    window.addEventListener("keydown", tecla);
+    return () => window.removeEventListener("keydown", tecla);
+  }, [confirmarSalida, pedirCierre, marcando]);
+
+  function agregar(pagina) {
+    setPages((p) => [...p, { id: siguienteId++, ...pagina }]);
+  }
+
   function capture() {
     const video = videoRef.current;
-    if (!video) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (!video?.videoWidth) return;
+    agregar(procesar(video, video.videoWidth, video.videoHeight, modo));
+    setDestello(true);
+    setTimeout(() => setDestello(false), 160);
+  }
 
-    if (enhance) {
-      // Realce simple de brillo/contraste (documento más legible)
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = img.data;
-      const contrast = 1.25, brightness = 12;
-      for (let i = 0; i < d.length; i += 4) {
-        for (let k = 0; k < 3; k++) {
-          d[i + k] = Math.max(0, Math.min(255, (d[i + k] - 128) * contrast + 128 + brightness));
-        }
+  async function desdeArchivos(e) {
+    const archivos = [...(e.target.files || [])];
+    e.target.value = "";
+    let fallidas = 0;
+    for (const archivo of archivos) {
+      const url = URL.createObjectURL(archivo);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const img = await cargarImagen(url);
+        agregar(procesar(img, img.naturalWidth, img.naturalHeight, modo));
+      } catch {
+        fallidas++;
+      } finally {
+        URL.revokeObjectURL(url);
       }
-      ctx.putImageData(img, 0, 0);
     }
-    setPages((p) => [...p, canvas.toDataURL("image/jpeg", 0.85)]);
+    setError(fallidas
+      ? `No se pudo leer ${fallidas === 1 ? "una imagen" : `${fallidas} imágenes`}. Usa JPG o PNG (las HEIC del iPhone solo se leen en Safari).`
+      : "");
   }
 
-  function removePage(idx) {
-    setPages((p) => p.filter((_, i) => i !== idx));
+  async function alternarLinterna() {
+    const pista = streamRef.current?.getVideoTracks()[0];
+    if (!pista) return;
+    try {
+      await pista.applyConstraints({ advanced: [{ torch: !linterna }] });
+      setLinterna(!linterna);
+    } catch { setLinterna(null); }
   }
+
+  async function girarPagina(id) {
+    const pagina = pages.find((p) => p.id === id);
+    if (!pagina) return;
+    const girada = await girar(pagina);
+    setPages((p) => p.map((x) => (x.id === id ? girada : x)));
+  }
+
+  function mover(id, delta) {
+    setPages((p) => {
+      const i = p.findIndex((x) => x.id === id);
+      const j = i + delta;
+      if (i < 0 || j < 0 || j >= p.length) return p;
+      const copia = [...p];
+      [copia[i], copia[j]] = [copia[j], copia[i]];
+      return copia;
+    });
+  }
+
+  const peso = pages.reduce((total, p) => total + bytesDeDataUrl(p.url), 0);
+  const demasiado = peso > TOPE_PDF;
 
   async function saveAsPdf() {
     if (pages.length === 0) { setError("Captura al menos una página."); return; }
+    if (demasiado) return;
     setSaving(true); setError("");
     try {
       const { jsPDF } = await import("jspdf");
-      const pdf = new jsPDF({ unit: "px", format: "a4" });
-      const pw = pdf.internal.pageSize.getWidth();
-      const ph = pdf.internal.pageSize.getHeight();
-      for (let i = 0; i < pages.length; i++) {
-        if (i > 0) pdf.addPage();
-        // Ajustar la imagen dentro de la página conservando proporción
-        const img = new Image();
-        img.src = pages[i];
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((res) => { img.onload = res; });
-        const ratio = Math.min(pw / img.width, ph / img.height);
-        const w = img.width * ratio, h = img.height * ratio;
-        pdf.addImage(pages[i], "JPEG", (pw - w) / 2, (ph - h) / 2, w, h);
-      }
+      const primera = pages[0];
+      const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: orientacion(primera.ancho, primera.alto) });
+      pages.forEach((p, i) => {
+        if (i > 0) pdf.addPage("a4", orientacion(p.ancho, p.alto));
+        const pw = pdf.internal.pageSize.getWidth();
+        const ph = pdf.internal.pageSize.getHeight();
+        const ratio = Math.min(pw / p.ancho, ph / p.alto);
+        const w = p.ancho * ratio, h = p.alto * ratio;
+        // "NONE": el JPEG ya va comprimido; volver a comprimirlo solo
+        // gasta tiempo en el teléfono.
+        pdf.addImage(p.url, "JPEG", (pw - w) / 2, (ph - h) / 2, w, h, undefined, "NONE");
+      });
       const blob = pdf.output("blob");
 
-      // Subir por el mismo endpoint de documentos (a la historia clínica)
       const fd = new FormData();
       fd.append("doc_type", docType);
-      fd.append("description", `Documento escaneado (${pages.length} pág.)`);
+      fd.append("description", descripcion.trim()
+        || `Documento escaneado (${plural(pages.length, "página", "páginas")})`);
       fd.append("file", new File([blob], `escaneo_${Date.now()}.pdf`, { type: "application/pdf" }));
-      const token = localStorage.getItem("access");
-      const resp = await fetch(`${apiBase()}/api/v1/patients/${patientId}/documents/`, {
-        method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: fd,
-      });
-      if (!resp.ok) throw new Error(`No se pudo guardar (error ${resp.status}).`);
+      await readObject(await api(`/patients/${patientId}/documents/`, { method: "POST", body: fd }));
       onDone?.();
     } catch (err) {
-      setError(err.message || "No se pudo generar el PDF.");
+      setError(`${err.message || "No se pudo generar el PDF."} Las páginas siguen aquí: puedes volver a intentarlo.`);
     } finally {
       setSaving(false);
     }
   }
 
-  const btn = {
-    background: "rgba(255,255,255,.14)", color: "#fff", border: "none",
-    borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13,
-  };
+  const ayudaModo = MODOS.find((m) => m.clave === modo)?.ayuda;
+  const paginaMarcada = pages.find((p) => p.id === marcando);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 85, background: "rgba(15,23,42,.9)",
-                  display: "flex", flexDirection: "column", color: "#fff" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", flexWrap: "wrap" }}>
-        <span style={{ fontWeight: 600, flex: 1 }}>Escanear documento (cámara)</span>
-        <label style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-          <input type="checkbox" checked={enhance} onChange={(e) => setEnhance(e.target.checked)} />
-          Mejorar brillo/contraste
-        </label>
-        <button style={{ ...btn, background: "rgba(255,255,255,.28)" }} onClick={onClose}>✕ Cerrar</button>
-      </div>
-
-      {error && <div style={{ background: "#7f1d1d", padding: "8px 16px", fontSize: 13 }}>{error}</div>}
-
-      <div style={{ flex: 1, display: "flex", gap: 12, padding: 16, overflow: "hidden" }}>
-        {/* Cámara */}
-        <div style={{ flex: 2, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-          <video ref={videoRef} playsInline muted
-                 style={{ width: "100%", maxHeight: "70vh", background: "#000",
-                          borderRadius: 10, objectFit: "contain" }} />
-          <button style={{ ...btn, background: "var(--petrol)", color: "var(--on-brand)", padding: "10px 24px", fontSize: 15 }}
-                  disabled={!ready} onClick={capture}>
-            ◉ Capturar página
-          </button>
+    <Capa>
+    <div className="escaner" role="dialog" aria-modal="true" aria-label="Escanear documento">
+      <div className="escaner-barra">
+        <span className="escaner-titulo">Escanear documento</span>
+        <div className="escaner-modos" role="radiogroup" aria-label="Tratamiento de la imagen">
+          {MODOS.map((m) => (
+            <button key={m.clave} type="button" role="radio" aria-checked={modo === m.clave}
+                    className={modo === m.clave ? "activo" : ""} title={m.ayuda}
+                    onClick={() => setModo(m.clave)}>
+              {m.titulo}
+            </button>
+          ))}
         </div>
+        <button type="button" className="escaner-boton" onClick={pedirCierre}>✕ Cerrar</button>
+      </div>
+      <p className="escaner-nota">{ayudaModo} Se aplica a las páginas que captures desde ahora.</p>
 
-        {/* Páginas capturadas */}
-        <div style={{ flex: 1, overflow: "auto", background: "rgba(255,255,255,.06)",
-                      borderRadius: 10, padding: 12 }}>
-          <div style={{ fontSize: 13, marginBottom: 8 }}>Páginas: {pages.length}</div>
-          <div style={{ display: "grid", gap: 8 }}>
-            {pages.map((p, i) => (
-              <div key={i} style={{ position: "relative" }}>
-                <img src={p} alt={`Página ${i + 1}`} style={{ width: "100%", borderRadius: 6 }} />
-                <button onClick={() => removePage(i)}
-                        style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,.6)",
-                                 color: "#fff", border: "none", borderRadius: 6, cursor: "pointer",
-                                 padding: "2px 8px" }}>✕</button>
-              </div>
-            ))}
+      {error && <div className="escaner-error" role="alert">{error}</div>}
+      {aviso && <div className="escaner-aviso">{aviso}</div>}
+
+      <div className="escaner-cuerpo">
+        <div className="escaner-camara">
+          {camara !== "sin-camara" ? (
+            <div className="escaner-visor">
+              <video ref={videoRef} playsInline muted />
+              <div className="escaner-guia" aria-hidden="true" />
+              {destello && <div className="escaner-destello" aria-hidden="true" />}
+              {camara === "iniciando" && <div className="escaner-cargando">Abriendo la cámara…</div>}
+            </div>
+          ) : (
+            <div className="escaner-sin-camara">
+              Toma fotos del documento con la cámara del teléfono o elige imágenes del equipo.
+            </div>
+          )}
+          <div className="escaner-acciones">
+            {camara === "lista" && (
+              <button type="button" className="escaner-boton escaner-boton--principal" onClick={capture}>
+                ◉ Capturar página
+              </button>
+            )}
+            <button type="button" className="escaner-boton" onClick={() => archivoRef.current?.click()}>
+              Añadir fotos
+            </button>
+            {linterna !== null && (
+              <button type="button" className="escaner-boton" aria-pressed={linterna} onClick={alternarLinterna}>
+                {linterna ? "Apagar luz" : "Encender luz"}
+              </button>
+            )}
+            <input ref={archivoRef} type="file" accept="image/*" capture="environment" multiple hidden
+                   onChange={desdeArchivos} />
           </div>
         </div>
+
+        <div className="escaner-paginas">
+          <div className="escaner-resumen">
+            {pages.length ? `${plural(pages.length, "página", "páginas")} · ${tamanoLegible(peso)}` : "Sin páginas todavía"}
+          </div>
+          <ol>
+            {pages.map((p, i) => (
+              <li key={p.id}>
+                <img src={p.url} alt={`Página ${i + 1}`} />
+                <span className="escaner-numero">{i + 1}</span>
+                <div className="escaner-herramientas">
+                  <button type="button" onClick={() => mover(p.id, -1)} disabled={i === 0}
+                          aria-label={`Subir la página ${i + 1}`} title="Subir">↑</button>
+                  <button type="button" onClick={() => mover(p.id, 1)} disabled={i === pages.length - 1}
+                          aria-label={`Bajar la página ${i + 1}`} title="Bajar">↓</button>
+                  <button type="button" onClick={() => setMarcando(p.id)}
+                          aria-label={`Marcar la página ${i + 1}`} title="Marcar">✎</button>
+                  <button type="button" onClick={() => girarPagina(p.id)}
+                          aria-label={`Girar la página ${i + 1}`} title="Girar">↻</button>
+                  <button type="button" onClick={() => setPages((x) => x.filter((y) => y.id !== p.id))}
+                          aria-label={`Quitar la página ${i + 1}`} title="Quitar">✕</button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 16px" }}>
-        <button style={btn} onClick={onClose}>Cancelar</button>
-        <button style={{ ...btn, background: "var(--petrol)", color: "var(--on-brand)" }} disabled={saving || pages.length === 0}
-                onClick={saveAsPdf}>
-          {saving ? "Guardando…" : `Guardar PDF (${pages.length} pág.)`}
-        </button>
+      {paginaMarcada && (
+        <AnotadorFoto src={paginaMarcada.url} titulo={`Marcar la página ${pages.indexOf(paginaMarcada) + 1}`}
+                      textoGuardar="Aplicar a la página" onCerrar={() => setMarcando(null)}
+                      onGuardar={({ dataUrl, ancho, alto }) => {
+                        setPages((x) => x.map((y) => (y.id === marcando ? { ...y, url: dataUrl, ancho, alto } : y)));
+                        setMarcando(null);
+                      }} />
+      )}
+
+      <div className="escaner-pie">
+        {confirmarSalida ? (
+          <>
+            <span className="escaner-pregunta">
+              ¿Descartar {pages.length === 1 ? "la página capturada" : `las ${pages.length} páginas capturadas`}?
+            </span>
+            <button type="button" className="escaner-boton" onClick={() => setConfirmarSalida(false)}>Seguir escaneando</button>
+            <button type="button" className="escaner-boton escaner-boton--peligro" onClick={onClose}>Descartar</button>
+          </>
+        ) : (
+          <>
+            <input className="escaner-descripcion" value={descripcion} maxLength={200}
+                   onChange={(e) => setDescripcion(e.target.value)}
+                   placeholder="Descripción (opcional): p. ej. Consentimiento de extracción"
+                   aria-label="Descripción del documento" />
+            {demasiado && (
+              <span className="escaner-limite">
+                Pasa de {tamanoLegible(TOPE_PDF)}: quita páginas o guárdalo en dos partes.
+              </span>
+            )}
+            <button type="button" className="escaner-boton" onClick={pedirCierre} disabled={saving}>Cancelar</button>
+            <button type="button" className="escaner-boton escaner-boton--principal"
+                    disabled={saving || pages.length === 0 || demasiado} onClick={saveAsPdf}>
+              {saving ? "Guardando…" : `Guardar PDF (${plural(pages.length, "pág.", "págs.")})`}
+            </button>
+          </>
+        )}
       </div>
     </div>
+    </Capa>
   );
 }

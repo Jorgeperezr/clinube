@@ -4,6 +4,8 @@
  * Vista previa de documentos en modal (Sprint 38).
  * Soporta PDF e imágenes (jpg/jpeg/png/gif/webp). Acciones: ampliar,
  * reducir, rotar (imágenes), descargar e imprimir. No abandona la página.
+ * En las imágenes, «Marcar» abre el editor de marcas (lib/FotoAnotada.js):
+ * la versión marcada se guarda como documento nuevo y esta no se toca.
  *
  * El archivo se carga autenticado (api + blob) y se muestra desde un
  * objectURL, de modo que nunca se apunta a una URL con host interno.
@@ -11,7 +13,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { api } from "./api";
+import Capa from "./Capa";
+import FotoAnotada from "./FotoAnotada";
+import { api, currentUser } from "./api";
 
 const IMG_RE = /\.(png|jpe?g|gif|webp)$/i;
 const PDF_RE = /\.pdf$/i;
@@ -22,6 +26,9 @@ export default function DocumentPreview({ doc, patientId, onClose, onDelete }) {
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [marcando, setMarcando] = useState(false);
+  // Marcar guarda un documento nuevo: solo quien puede subir documentos.
+  const puedeMarcar = ["admin", "reception", "doctor"].includes(currentUser()?.role);
   const objectUrlRef = useRef(null);
 
   const name = doc?.file_name || doc?.description || "documento";
@@ -55,10 +62,12 @@ export default function DocumentPreview({ doc, patientId, onClose, onDelete }) {
   }, [doc.id, patientId]);
 
   useEffect(() => {
+    // Con el editor abierto, Escape es suyo.
+    if (marcando) return undefined;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, marcando]);
 
   async function download() {
     try {
@@ -82,7 +91,18 @@ export default function DocumentPreview({ doc, patientId, onClose, onDelete }) {
     borderRadius: 8, padding: "7px 12px", cursor: "pointer", fontSize: 13,
   };
 
+  // Fuera del contenedor de la vista previa: sus clics la cerrarían.
+  if (marcando) {
+    return (
+      <FotoAnotada patientId={patientId} srcInicial={blobUrl} tipoInicial={doc.doc_type || "photo"}
+                   descripcionInicial={`${doc.description || name} · marcada`}
+                   onCerrar={() => setMarcando(false)}
+                   onListo={() => { setMarcando(false); onClose(); }} />
+    );
+  }
+
   return (
+    <Capa>
     <div onClick={onClose}
          style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(15,23,42,.82)",
                   display: "flex", flexDirection: "column" }}>
@@ -97,6 +117,10 @@ export default function DocumentPreview({ doc, patientId, onClose, onDelete }) {
             <button style={btn} onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}>− Reducir</button>
             <button style={btn} onClick={() => setZoom((z) => Math.min(4, z + 0.25))}>+ Ampliar</button>
             <button style={btn} onClick={() => setRotation((r) => (r + 90) % 360)}>⟳ Rotar</button>
+            {blobUrl && puedeMarcar && (
+              <button style={{ ...btn, background: "var(--petrol)", color: "var(--on-brand)" }}
+                      onClick={() => setMarcando(true)}>✎ Marcar</button>
+            )}
           </>
         )}
         <button style={btn} onClick={download}>⭳ Descargar</button>
@@ -133,5 +157,6 @@ export default function DocumentPreview({ doc, patientId, onClose, onDelete }) {
         )}
       </div>
     </div>
+    </Capa>
   );
 }

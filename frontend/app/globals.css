@@ -983,3 +983,201 @@ body.con-proxima-cita .panel-contenido { padding-bottom: 84px; }
   font-size: 11px; font-weight: 600; vertical-align: 2px;
   color: var(--petrol); background: color-mix(in srgb, var(--petrol) 12%, transparent);
 }
+
+/* ── Escáner de documentos (lib/DocumentScanner.js) ─────────────────
+   A pantalla completa y oscuro, como la cámara de un teléfono. En
+   pantallas estrechas las páginas van debajo de la cámara. */
+.escaner {
+  position: fixed; inset: 0; z-index: 85; display: flex; flex-direction: column;
+  background: #0f172a; color: #fff;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.escaner-barra { display: flex; align-items: center; gap: 10px; padding: 10px 16px; flex-wrap: wrap; }
+.escaner-titulo { font-weight: 600; flex: 1; min-width: 150px; }
+.escaner-nota { margin: 0; padding: 0 16px 8px; font-size: 12px; color: rgba(255,255,255,.65); }
+.escaner-modos { display: inline-flex; background: rgba(255,255,255,.1); border-radius: 9px; padding: 2px; }
+.escaner-modos button {
+  background: none; border: 0; color: rgba(255,255,255,.8); font-size: 12.5px;
+  padding: 5px 12px; border-radius: 7px; cursor: pointer;
+}
+.escaner-modos button.activo { background: rgba(255,255,255,.22); color: #fff; font-weight: 600; }
+.escaner-boton {
+  background: rgba(255,255,255,.14); color: #fff; border: 0; border-radius: 8px;
+  padding: 8px 14px; cursor: pointer; font-size: 13px;
+}
+.escaner-boton:disabled { opacity: .45; cursor: default; }
+.escaner-boton--principal { background: var(--petrol); color: var(--on-brand); font-weight: 600; }
+.escaner-boton--peligro { background: #b91c1c; }
+.escaner-error { background: #7f1d1d; padding: 8px 16px; font-size: 13px; }
+.escaner-aviso { background: rgba(255,255,255,.1); padding: 8px 16px; font-size: 13px; }
+.escaner-cuerpo { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px 16px; }
+.escaner-camara { flex: 2; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+/* El visor se ajusta al vídeo, para que el marco guía quede sobre la imagen. */
+.escaner-visor { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.escaner-visor video { display: block; max-width: 100%; max-height: 68vh; width: auto; height: auto; background: #000; border-radius: 10px; }
+/* Marco orientativo para encuadrar la hoja. */
+.escaner-guia {
+  position: absolute; inset: 6%; border: 2px dashed rgba(255,255,255,.45);
+  border-radius: 8px; pointer-events: none;
+}
+.escaner-destello { position: absolute; inset: 0; background: #fff; opacity: .55; border-radius: 10px; pointer-events: none; }
+.escaner-cargando { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: rgba(255,255,255,.75); }
+.escaner-sin-camara {
+  flex: 1; width: 100%; display: grid; place-items: center; text-align: center; padding: 24px;
+  border: 2px dashed rgba(255,255,255,.25); border-radius: 10px; font-size: 14px; color: rgba(255,255,255,.8);
+}
+.escaner-acciones { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.escaner-acciones .escaner-boton--principal { padding: 10px 24px; font-size: 15px; }
+.escaner-paginas {
+  flex: 1; min-width: 0; overflow: auto; background: rgba(255,255,255,.06);
+  border-radius: 10px; padding: 12px;
+}
+.escaner-resumen { font-size: 13px; margin-bottom: 8px; }
+.escaner-paginas ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.escaner-paginas li { position: relative; }
+.escaner-paginas img { width: 100%; border-radius: 6px; display: block; background: #fff; }
+.escaner-numero {
+  position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.65); border-radius: 6px;
+  font-size: 12px; font-weight: 600; padding: 1px 7px;
+}
+.escaner-herramientas { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+.escaner-herramientas button {
+  background: rgba(0,0,0,.65); color: #fff; border: 0; border-radius: 6px;
+  min-width: 28px; height: 28px; cursor: pointer; font-size: 13px;
+}
+.escaner-herramientas button:disabled { opacity: .35; cursor: default; }
+.escaner-pie { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 16px; flex-wrap: wrap; }
+.escaner-pregunta { flex: 1; font-size: 13.5px; }
+.escaner-descripcion {
+  flex: 1; min-width: 200px; background: rgba(255,255,255,.1); color: #fff;
+  border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.escaner-descripcion::placeholder { color: rgba(255,255,255,.5); }
+.escaner-limite { font-size: 12.5px; color: #fca5a5; }
+@media (max-width: 760px) {
+  .escaner-cuerpo { flex-direction: column; overflow: auto; }
+  .escaner-camara { flex: none; }
+  .escaner-visor video { max-height: 46vh; }
+  .escaner-paginas { flex: none; overflow: visible; }
+  .escaner-paginas ol { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}
+
+/* ── Marcar fotos (lib/AnotadorFoto.js y lib/FotoAnotada.js) ─────────
+   Oscuro, como el escáner: la foto es la protagonista. En escritorio
+   las herramientas van a la izquierda; en el teléfono, en una tira
+   debajo de la foto, al alcance del pulgar. */
+.anotador {
+  position: fixed; inset: 0; z-index: 95; display: flex; flex-direction: column;
+  background: #0f172a; color: #fff; padding-bottom: env(safe-area-inset-bottom);
+  -webkit-user-select: none; user-select: none;
+}
+.anotador-barra { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-wrap: wrap; }
+.anotador-titulo { flex: 1; min-width: 120px; font-size: 15px; }
+.anotador-grupo { display: inline-flex; gap: 4px; }
+.anotador-boton {
+  background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 8px;
+  padding: 7px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.anotador-boton:hover:not(:disabled) { background: rgba(255,255,255,.2); }
+.anotador-boton:disabled { opacity: .4; cursor: default; }
+.anotador-boton--principal { background: var(--petrol); color: var(--on-brand); font-weight: 600; }
+.anotador-boton--principal:hover:not(:disabled) { background: var(--petrol); filter: brightness(1.1); }
+.anotador-boton--peligro { background: #b91c1c; }
+.anotador-zoom { min-width: 64px; font-variant-numeric: tabular-nums; }
+.anotador-error { background: #7f1d1d; padding: 8px 16px; font-size: 13px; }
+.anotador-cuerpo { flex: 1; min-height: 0; display: flex; }
+.anotador-panel {
+  width: 214px; flex-shrink: 0; overflow-y: auto; padding: 4px 12px 12px;
+  display: flex; flex-direction: column; gap: 14px; border-right: 1px solid rgba(255,255,255,.08);
+}
+.anotador-herramientas { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.anotador-herramientas button {
+  display: flex; align-items: center; gap: 6px; background: none; border: 0; color: rgba(255,255,255,.82);
+  padding: 7px 8px; border-radius: 8px; font-size: 12.5px; cursor: pointer; text-align: left;
+}
+.anotador-herramientas button:hover { background: rgba(255,255,255,.08); }
+.anotador-herramientas button.activa { background: var(--petrol); color: var(--on-brand); }
+.anotador-seccion { display: flex; flex-direction: column; gap: 8px; }
+.anotador-etiqueta { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: rgba(255,255,255,.6); }
+.anotador-colores { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.anotador-colores button, .anotador-color-libre {
+  width: 100%; aspect-ratio: 1; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); cursor: pointer; padding: 0;
+}
+.anotador-colores button.activo { border-color: #fff; box-shadow: 0 0 0 2px var(--petrol); }
+.anotador-color-libre {
+  position: relative; overflow: hidden;
+  background: conic-gradient(#ef4444, #facc15, #22c55e, #06b6d4, #3b82f6, #a855f7, #ef4444);
+}
+.anotador-color-libre input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.anotador-grosor { display: flex; align-items: center; gap: 8px; }
+.anotador-grosor input, .anotador-seccion input[type="range"] { flex: 1; width: 100%; accent-color: var(--petrol); }
+.anotador-muestra { width: 44px; height: 44px; display: grid; place-items: center; background: rgba(255,255,255,.06); border-radius: 8px; flex-shrink: 0; }
+.anotador-muestra span { border-radius: 50%; max-width: 40px; max-height: 40px; }
+.anotador-rapidos { display: flex; gap: 4px; }
+.anotador-rapidos button {
+  flex: 1; background: rgba(255,255,255,.08); color: #fff; border: 0; border-radius: 6px;
+  padding: 4px 0; font-size: 12px; cursor: pointer;
+}
+.anotador-rapidos button.activo { background: rgba(255,255,255,.26); font-weight: 600; }
+.anotador-casilla { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: rgba(255,255,255,.85); }
+.anotador-vaciar { width: 100%; }
+.anotador-ayuda { margin: 0; font-size: 11.5px; line-height: 1.45; color: rgba(255,255,255,.5); }
+.anotador-marco { position: relative; flex: 1; min-width: 0; overflow: hidden; background: #1e293b; touch-action: none; }
+.anotador-marco canvas { position: absolute; inset: 0; display: block; }
+.anotador-cargando { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255,255,255,.7); }
+.anotador-texto {
+  position: absolute; z-index: 2; min-width: 160px; padding: 2px 4px; margin: 0; resize: none;
+  background: rgba(15,23,42,.55); border: 1px dashed rgba(255,255,255,.8); border-radius: 4px;
+  font-weight: 600; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.25;
+  outline: none; field-sizing: content; -webkit-user-select: text; user-select: text;
+}
+.anotador-pie { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 14px; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,.08); }
+.anotador-extra { flex: 1; min-width: 0; }
+.anotador-pregunta { flex: 1; font-size: 13.5px; }
+.foto-pie { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.foto-pie select, .foto-pie input:not([type]) {
+  background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2);
+  border-radius: 8px; padding: 7px 10px; font-size: 13px;
+}
+.foto-pie select option { color: #111827; }
+.foto-pie input:not([type]) { flex: 1; min-width: 200px; }
+.foto-pie input::placeholder { color: rgba(255,255,255,.5); }
+.foto-origen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px 16px; text-align: center; }
+.foto-origen p { max-width: 520px; color: rgba(255,255,255,.75); font-size: 14px; margin: 0; }
+.foto-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; width: 100%; max-width: 680px; }
+.foto-opciones button {
+  display: flex; flex-direction: column; gap: 4px; padding: 22px 16px; border-radius: 14px; cursor: pointer;
+  background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.14); text-align: center;
+}
+.foto-opciones button:hover { background: rgba(255,255,255,.14); }
+.foto-opciones strong { font-size: 15px; }
+.foto-opciones span { font-size: 12.5px; color: rgba(255,255,255,.6); }
+.foto-camara { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 16px; }
+.foto-camara video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; border-radius: 10px; }
+.foto-acciones { display: flex; gap: 10px; }
+.foto-error { color: #fca5a5; }
+@media (max-width: 760px) {
+  /* Teléfono: la foto arriba y, debajo, dos filas compactas —las
+     herramientas y, según la herramienta, colores y grosor—, todo a la
+     vista sin desplazar nada. */
+  .anotador-cuerpo { flex-direction: column-reverse; }
+  .anotador-panel {
+    width: auto; gap: 10px; padding: 8px 12px; overflow: visible;
+    border-right: 0; border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .anotador-herramientas { grid-template-columns: repeat(8, 1fr); }
+  .anotador-herramientas button { justify-content: center; padding: 0; height: 42px; }
+  .anotador-herramientas button span { display: none; }
+  .anotador-seccion { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .anotador-etiqueta, .anotador-rapidos, .anotador-vaciar, .anotador-ayuda { display: none; }
+  .anotador-colores { grid-template-columns: repeat(10, minmax(0, 1fr)); width: 100%; gap: 5px; }
+  .anotador-colores > * { min-width: 0; }
+  .anotador-grosor { flex: 1; }
+  .anotador-muestra { width: 32px; height: 32px; }
+  .anotador-seccion input[type="range"] { flex: 1; min-width: 0; }
+  .anotador-extra { flex: 1 1 100%; }
+  .foto-pie select { flex: 0 1 auto; max-width: 45%; }
+  .foto-pie input:not([type]) { flex: 1 1 140px; min-width: 0; }
+  .anotador-barra { gap: 6px; }
+  .anotador-barra .anotador-boton { padding: 7px 9px; }
+}
