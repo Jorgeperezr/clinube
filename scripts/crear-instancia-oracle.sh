@@ -69,7 +69,9 @@ else
 
   CLAVE="$(mktemp)"
   printf '%s\n' "${CLAVE_SSH_PUBLICA}" > "${CLAVE}"
-  SALIDA="$(oci compute instance launch \
+  # --no-retry: ante «sin capacidad» la CLI reintenta sola durante casi
+  # dos minutos, que en Actions se pagan; la próxima vuelta ya reintenta.
+  SALIDA="$(oci --no-retry compute instance launch \
     --availability-domain "${AD}" \
     --compartment-id "${OCI_COMPARTIMENTO}" \
     --display-name "${NOMBRE}" \
