@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { api, currentUser } from "../../../lib/api";
+import { instalar, useInstalacion } from "../../../lib/AppInstalable";
 
 const OPCIONES = [
   {
@@ -105,6 +106,54 @@ export default function PreferenciasPage() {
           </div>
         );
       })}
+
+      <InstalarApp />
+    </div>
+  );
+}
+
+/**
+ * El panel como app en el teléfono, la tableta o el ordenador: un icono
+ * en la pantalla de inicio que abre a pantalla completa, sin la barra del
+ * navegador. Es el mismo panel y se actualiza solo.
+ */
+function InstalarApp() {
+  const estado = useInstalacion();
+  const [aviso, setAviso] = useState("");
+
+  async function pulsar() {
+    const ok = await instalar();
+    setAviso(ok ? "Listo: la encontrarás en la pantalla de inicio como «Clinube»." : "");
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>App en este dispositivo</h3>
+      <p style={{ margin: 0, fontSize: 13.5, color: "var(--ink-soft)" }}>
+        Instala el panel como una app: tendrás el icono de Clinube en la pantalla de inicio y se
+        abrirá a pantalla completa. Es el mismo panel, se actualiza solo y no guarda datos de
+        pacientes en el dispositivo.
+      </p>
+      <div style={{ marginTop: 12, fontSize: 13.5 }}>
+        {estado === "instalada" && <strong>Ya la estás usando como app.</strong>}
+        {estado === "aviso" && (
+          <button type="button" className="btn btn-primary" onClick={pulsar}>Instalar la app</button>
+        )}
+        {estado === "ios" && (
+          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+            <li>Abre este panel en <strong>Safari</strong>.</li>
+            <li>Toca el botón <strong>Compartir</strong> (el cuadrado con la flecha hacia arriba).</li>
+            <li>Elige <strong>Añadir a pantalla de inicio</strong> y luego <strong>Añadir</strong>.</li>
+          </ol>
+        )}
+        {estado === null && (
+          <span style={{ color: "var(--ink-soft)" }}>
+            En Android ábrelo con Chrome y elige <strong>Instalar app</strong> en el menú ⋮. En el
+            ordenador, Chrome y Edge muestran un icono de instalar en la barra de direcciones.
+          </span>
+        )}
+        {aviso && <p style={{ margin: "10px 0 0", color: "var(--ink-soft)" }}>{aviso}</p>}
+      </div>
     </div>
   );
 }

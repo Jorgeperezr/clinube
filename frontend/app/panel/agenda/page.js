@@ -49,8 +49,9 @@ export default function AgendaPage() {
       if (doctorId) params.set("doctor_id", doctorId);
       const resp = await api(`/agenda/view/?${params}`);
       setAppointments(await readList(resp));
-    } catch {
-      setError("No se pudo cargar la agenda.");
+    } catch (err) {
+      setError(`No se pudo cargar la agenda. ${err?.message || ""}`.trim());
+      setAppointments(null);
     } finally {
       setLoading(false);
     }
@@ -154,12 +155,16 @@ export default function AgendaPage() {
       </div>
 
       {mode === "monthly" ? (
-        <MonthGrid date={date} appointments={appointments}
+        <MonthGrid date={date} appointments={appointments || []}
                    onDayClick={(d) => { setDate(d); setMode("daily"); }} />
       ) : (
       <div className="card" style={{ padding: 0 }}>
         {loading ? (
           <div className="empty">Cargando…</div>
+        ) : appointments === null ? (
+          // Si la carga falló no se sabe si hay citas: decir «no hay
+          // ninguna» haría que recepción diera huecos por libres.
+          <div className="empty">No se pudieron cargar las citas.</div>
         ) : appointments.length === 0 ? (
           <div className="empty">No hay citas en este período. Agenda la primera con “+ Nueva cita”.</div>
         ) : (

@@ -417,6 +417,31 @@ se pueden bajar también sueltas, para copias antiguas.
 - El JSON descifrado que se descarga va **sin cifrar** y contiene datos
   de salud: hay que borrarlo del equipo al terminar (LOPDP).
 
+## Las dos apps
+
+| | App del paciente | App del personal |
+|---|---|---|
+| Qué es | Flutter (`movil/`) | El mismo panel web, instalable (PWA) |
+| Quién la usa | Pacientes | Administración, recepción, doctores, auxiliares |
+| Cómo se instala | App Store y Google Play | Desde el navegador: Android/Chrome → «Instalar app»; iPhone/iPad/Safari → Compartir → «Añadir a pantalla de inicio». Las instrucciones están en el panel, en Mis preferencias |
+| Cómo se actualiza | Publicando versión en las tiendas | Sola, con cada despliegue del panel |
+| Coste | Cuentas de las tiendas | Ninguno |
+
+La app del personal **solo funciona con HTTPS** (en `localhost` también,
+para probar): con el túnel de Cloudflare ya lo está. Guarda en el
+dispositivo el envoltorio del panel —páginas, JS, CSS, iconos— y **nunca**
+respuestas de la API ni archivos de pacientes (`frontend/public/sw.js`).
+Sin conexión abre lo ya visitado y dice «Sin conexión» al pedir datos.
+
+Nginx sirve `sw.js` sin caché (si no, los teléfonos no se enterarían de
+un despliegue) y `/_next/static/` con caché de un año, porque esos
+archivos llevan un hash en el nombre.
+
+Si un día hace falta que el personal la descargue de las tiendas, se
+puede envolver el mismo panel en una app nativa; supone una dependencia
+nueva (un WebView) y Apple suele rechazar las apps que solo envuelven una
+web, así que la PWA es la vía recomendada.
+
 ## Actualizaciones del sistema
 
 ```bash

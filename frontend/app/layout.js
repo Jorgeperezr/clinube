@@ -1,11 +1,22 @@
 import "./globals.css";
 
+import AppInstalable from "../lib/AppInstalable";
 import { LEMA, MARCA } from "../lib/marca";
 
 export const metadata = {
   title: MARCA,
   description: `${MARCA} — ${LEMA.toLowerCase()}`,
   applicationName: MARCA,
+  // El panel se instala como app (ver lib/AppInstalable.js y public/sw.js).
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: MARCA, statusBarStyle: "black" },
+  formatDetection: { telephone: false },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0b1220",
 };
 
 /**
@@ -40,7 +51,10 @@ export default function RootLayout({ children }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: noFlashTheme }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <AppInstalable />
+      </body>
     </html>
   );
 }

@@ -7,8 +7,8 @@ de donde los toma todo lo demás, y los dibuja con Pillow (ya está en
 
     .venv/bin/python scripts/marca/iconos.py
 
-Sobrescribe los PNG de `movil/android/.../mipmap-*`, del AppIcon de iOS
-y de `movil/web/`. El fondo del icono adaptativo de Android es el color
+Sobrescribe los PNG de `movil/android/.../mipmap-*`, del AppIcon de iOS,
+de `movil/web/` y de `frontend/public/icons/` (el panel instalable). El fondo del icono adaptativo de Android es el color
 `ic_launcher_background` de `res/values/colors.xml`.
 """
 
@@ -104,8 +104,8 @@ def dibujar(tam, fondo, alto_rel, esquina=0.0, lleno=1.0, alfa=True):
     return im
 
 
-def guardar(im, ruta):
-    ruta = MOVIL / ruta
+def guardar(im, ruta, base=MOVIL):
+    ruta = base / ruta
     ruta.parent.mkdir(parents=True, exist_ok=True)
     im.save(ruta, optimize=True)
 
@@ -130,4 +130,13 @@ if __name__ == "__main__":
         guardar(dibujar(px, TINTA, 0.52, esquina=0.24), f"web/icons/Icon-{px}.png")
         guardar(dibujar(px, TINTA, 0.42), f"web/icons/Icon-maskable-{px}.png")
     guardar(dibujar(32, TINTA, 0.58, esquina=0.24), "web/favicon.png")
-    print("Iconos de la app regenerados.")
+
+    # Panel instalable (la app del personal): los mismos iconos web y el
+    # de la pantalla de inicio de iOS, que va sin transparencia.
+    panel = RAIZ / "frontend" / "public" / "icons"
+    for px in (192, 512):
+        guardar(dibujar(px, TINTA, 0.52, esquina=0.24), f"icon-{px}.png", panel)
+        guardar(dibujar(px, TINTA, 0.42), f"maskable-{px}.png", panel)
+    # Next lo enlaza solo como apple-touch-icon por estar en app/.
+    guardar(dibujar(180, TINTA, 0.52, alfa=False), "apple-icon.png", RAIZ / "frontend" / "app")
+    print("Iconos de la app y del panel regenerados.")

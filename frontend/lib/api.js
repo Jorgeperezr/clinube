@@ -66,11 +66,11 @@ export function tieneFuncion(usuario, clave) {
 }
 
 export async function login(email, password) {
-  const resp = await fetch(`${apiBase()}/api/v1/auth/login/`, {
+  const resp = await sinRed(() => fetch(`${apiBase()}/api/v1/auth/login/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
-  });
+  }));
   const data = await resp.json();
   if (!resp.ok) {
     const msg = data?.error?.message || data?.detail || "Credenciales incorrectas.";
@@ -105,6 +105,22 @@ async function refreshAccess() {
   return true;
 }
 
+/**
+ * Sin conexión, `fetch` falla con un «Failed to fetch» (Chrome) o «Load
+ * failed» (Safari) que no le dice nada a quien está en recepción con el
+ * wifi caído. Se traduce aquí, una vez, para todo el panel.
+ */
+export const SIN_CONEXION = "Sin conexión a internet. Revisa el wifi o los datos móviles y vuelve a intentarlo.";
+
+export async function sinRed(peticion) {
+  try {
+    return await peticion();
+  } catch (err) {
+    if (err instanceof TypeError) throw new Error(SIN_CONEXION);
+    throw err;
+  }
+}
+
 export async function api(path, options = {}) {
   // Con FormData el Content-Type lo pone el navegador, que es el único
   // que conoce el `boundary` del multipart; fijarlo a mano rompe la
@@ -120,9 +136,9 @@ export async function api(path, options = {}) {
       },
     });
 
-  let resp = await doFetch();
+  let resp = await sinRed(doFetch);
   if (resp.status === 401 && (await refreshAccess())) {
-    resp = await doFetch(); // reintento único con el token fresco
+    resp = await sinRed(doFetch); // reintento único con el token fresco
   }
   if (resp.status === 401) {
     tokens.clear();

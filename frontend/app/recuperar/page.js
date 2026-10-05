@@ -14,15 +14,15 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import { apiBase, apiErrorMessage } from "../../lib/api";
+import { apiBase, apiErrorMessage, sinRed } from "../../lib/api";
 import PantallaAcceso from "../../lib/PantallaAcceso";
 
 async function enviar(paso, cuerpo) {
-  const resp = await fetch(`${apiBase()}/api/v1/auth/recovery/${paso}/`, {
+  const resp = await sinRed(() => fetch(`${apiBase()}/api/v1/auth/recovery/${paso}/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cuerpo),
-  });
+  }));
   if (!resp.ok) throw new Error(await apiErrorMessage(resp));
 }
 
