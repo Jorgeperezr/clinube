@@ -108,6 +108,7 @@ function PatientDetail() {
                         onChanged={(p) => setPatient(p)} />
       {(role === "admin" || role === "reception") && <AutorizacionWhatsApp patient={patient} />}
       {(role === "admin" || role === "reception") && <AvisoPrivacidad patient={patient} />}
+      {(role === "admin" || role === "reception") && <AccesoApp patient={patient} />}
 
       {/* Las siete pestañas no caben a lo ancho de una tableta: medido,
           a 1024 px la última llegaba a 1189 y arrastraba a TODA la página
@@ -835,6 +836,98 @@ function PatientAgreement({ patient, canEdit, onChanged }) {
  * (LOPDP). Se le enseña o se le imprime desde «Ver aviso» y se registra
  * aquí; si el aviso cambia de versión, vuelve a aparecer como pendiente.
  */
+/**
+ * Acceso a la app del paciente (apps/patients/acceso_app.py).
+ *
+ * Sin esto la app no servía: el paciente entraba con su código y se
+ * encontraba con «tu cuenta aún no está enlazada», porque nadie podía
+ * enlazarla. La recepción activa el acceso con el teléfono de la ficha y
+ * el paciente entra con ese número. Si la clínica no tiene la app, no se
+ * enseña nada.
+ */
+function AccesoApp({ patient }) {
+  const [confirmar, ConfirmUI] = useConfirm();
+  const [estado, setEstado] = useState(null);
+  const [error, setError] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  const [recienActivado, setRecienActivado] = useState(false);
+  const url = `/patients/${patient.id}/app-access/`;
+
+  useEffect(() => {
+    api(url).then(readObject).then(setEstado).catch(() => setEstado(null));
+  }, [url, patient.phone]);
+
+  async function cambiar(activar) {
+    const nombre = patient.first_name || patient.full_name;
+    const ok = await confirmar(activar ? {
+      title: "Acceso a la app",
+      message: `${nombre} podrá entrar en la app Clinube con el número ${estado.telefono_ficha}: ` +
+        "le llegará un código por WhatsApp. Verá sus citas, su saldo y las indicaciones que se le compartan.",
+      confirmLabel: "Activar acceso",
+    } : {
+      title: "Quitar el acceso a la app",
+      message: `${nombre} dejará de poder entrar en la app y se cerrará su sesión. Sus datos en la clínica no cambian.`,
+      confirmLabel: "Quitar acceso",
+      danger: true,
+    });
+    if (!ok) return;
+    setOcupado(true); setError("");
+    try {
+      setEstado(await readObject(await api(url, { method: activar ? "POST" : "DELETE" })));
+      setRecienActivado(activar);
+    } catch (err) { setError(err.message); }
+    finally { setOcupado(false); }
+  }
+
+  if (!estado || !estado.funcion_activa) return null;
+  const enlace = { background: "transparent", border: "none", padding: 0, color: "var(--petrol)",
+                   fontSize: 13, cursor: "pointer" };
+  const otroNumero = estado.activo && estado.telefono_ficha && estado.telefono_ficha !== estado.telefono;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                  fontSize: 13, color: "var(--ink-soft)", marginBottom: 4 }}>
+      <span>App del paciente:</span>
+      {estado.activo ? (
+        <>
+          <strong style={{ color: "var(--ink)" }}>
+            Activa con {estado.telefono}
+            <span style={{ fontWeight: 400 }}>
+              {" · "}{estado.ultimo_ingreso
+                ? `último ingreso el ${new Date(estado.ultimo_ingreso).toLocaleDateString("es-EC")}`
+                : "aún no ha entrado"}
+            </span>
+          </strong>
+          {otroNumero && (
+            <>
+              <strong style={{ color: "var(--amber)" }}>La ficha tiene otro teléfono</strong>
+              <button type="button" className="enlace-accion" style={enlace} disabled={ocupado}
+                      onClick={() => cambiar(true)}>Usar {estado.telefono_ficha}</button>
+            </>
+          )}
+          <button type="button" className="enlace-accion" style={{ ...enlace, color: "var(--red)" }}
+                  disabled={ocupado} onClick={() => cambiar(false)}>Quitar acceso</button>
+        </>
+      ) : estado.telefono_valido ? (
+        <>
+          <strong style={{ color: "var(--ink)" }}>Sin acceso</strong>
+          <button type="button" className="enlace-accion" style={enlace} disabled={ocupado}
+                  onClick={() => cambiar(true)}>Activar acceso</button>
+        </>
+      ) : (
+        <strong style={{ color: "var(--ink)" }}>Añade un teléfono móvil a la ficha para darle acceso</strong>
+      )}
+      {recienActivado && estado.activo && (
+        <span style={{ flexBasis: "100%", color: "var(--ink-soft)" }}>
+          Dile que descargue Clinube desde <a href="/descargar/" target="_blank" rel="noopener">clinube.com/descargar</a> y
+          entre con su número: le llegará un código por WhatsApp.
+        </span>
+      )}
+      {error && <span style={{ color: "var(--red)" }}>{error}</span>}
+      {ConfirmUI}
+    </div>
+  );
+}
+
 function AvisoPrivacidad({ patient }) {
   const [confirmar, ConfirmUI] = useConfirm();
   const [estado, setEstado] = useState(undefined);   // undefined = cargando

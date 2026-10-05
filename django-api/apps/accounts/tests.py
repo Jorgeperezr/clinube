@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -30,11 +32,24 @@ class AuthTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_otp_request_creates_code(self):
-        resp = self.client.post(reverse("otp-request"), {"phone": "+593988888888"})
+        # Solo para un paciente con el acceso a la app activado en su ficha.
+        from apps.patients.models import Patient
+        user = User.objects.create_user(phone="+593988888888", role="patient", tenant=self.tenant)
+        Patient.objects.create(tenant=self.tenant, first_name="Ana", last_name="Código",
+                               national_id="1700000001", phone="0988888888", user=user)
+        with mock.patch("apps.accounts.views.send_whatsapp_template") as whatsapp:
+            resp = self.client.post(reverse("otp-request"), {"phone": "098 888 8888"})
         self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
-        user = User.objects.get(phone="+593988888888")
-        self.assertEqual(user.role, "patient")
         self.assertTrue(OTPCode.objects.filter(user=user).exists())
+        self.assertEqual(whatsapp.call_args.kwargs["to_phone"], "+593988888888")
+
+    def test_un_numero_sin_acceso_no_crea_cuenta_ni_envia_whatsapp(self):
+        with mock.patch("apps.accounts.views.send_whatsapp_template") as whatsapp:
+            resp = self.client.post(reverse("otp-request"), {"phone": "+593977777777"})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("no tiene acceso", resp.data["detail"])
+        self.assertFalse(User.objects.filter(phone="+593977777777").exists())
+        whatsapp.assert_not_called()
 
     def test_only_admin_lists_users(self):
         reception = User.objects.create_user(
@@ -117,7 +132,14 @@ class AccesoDeRevisionTests(APITestCase):
         cache.clear()
         self.addCleanup(cache.clear)
         self.tenant = Tenant.objects.create(name="Clínica Demostración")
-        self.revisor = User.objects.create_user(phone="+593900000001", role="patient", tenant=self.tenant)
+        self.revisor = self._paciente_con_acceso("+593900000001")
+
+    def _paciente_con_acceso(self, telefono):
+        from apps.patients.models import Patient
+        user = User.objects.create_user(phone=telefono, role="patient", tenant=self.tenant)
+        Patient.objects.create(tenant=self.tenant, first_name="Prueba", last_name=telefono[-4:],
+                               national_id=telefono[-10:], phone=telefono, user=user)
+        return user
 
     def _entrar(self, telefono, codigo):
         from unittest import mock
@@ -140,7 +162,7 @@ class AccesoDeRevisionTests(APITestCase):
         whatsapp.assert_called_once()
 
     def test_el_codigo_fijo_no_sirve_para_otro_telefono(self):
-        User.objects.create_user(phone="+593900000002", role="patient", tenant=self.tenant)
+        self._paciente_con_acceso("+593900000002")
         with self.settings(APP_REVISION_TELEFONO="+593900000001", APP_REVISION_CODIGO="246810"):
             _, entrada, whatsapp = self._entrar("+593900000002", "246810")
         self.assertEqual(entrada.status_code, status.HTTP_400_BAD_REQUEST)

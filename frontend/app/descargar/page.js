@@ -103,9 +103,10 @@ export default function DescargarPage() {
             servicio que tiene contratado la clínica.
           </Pregunta>
           <Pregunta titulo="Soy paciente: ¿cómo entro?">
-            Con el número de teléfono que diste en tu clínica. Te llega un código por WhatsApp y
-            listo. Si te dice que el número no está registrado, pide en recepción que lo
-            actualicen en tu ficha. Tu clínica tiene que tener la app activada.
+            Con el número de teléfono que diste en tu clínica. Primero, en recepción activan tu
+            acceso a la app en tu ficha; después pones ese número en la app, te llega un código por
+            WhatsApp y listo. Si te dice que el número no tiene acceso, pide en recepción que lo
+            activen o que revisen el teléfono de tu ficha.
           </Pregunta>
           <Pregunta titulo="Trabajo en una clínica: ¿por qué la app no está en las tiendas?">
             Porque es el mismo panel que usas en el ordenador, instalado como app: se actualiza

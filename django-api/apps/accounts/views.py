@@ -36,8 +36,10 @@ from apps.accounts.serializers import (
     StaffRecoveryRequestSerializer,
     UserSerializer,
 )
+from apps.common.funcionalidades import activa
 from apps.common.legal_views import condiciones_pendientes
 from apps.common.permissions import HasRole
+from apps.common.telefonos import normalizar_telefono
 from apps.whatsapp.gateway_client import send_whatsapp_template
 
 OTP_TTL_MINUTES = 5
@@ -69,7 +71,10 @@ class OTPRequestView(APIView):
     def post(self, request):
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        phone = serializer.validated_data["phone"]
+        phone = normalizar_telefono(serializer.validated_data["phone"])
+        if not phone:
+            return Response({"detail": "Escribe tu número de teléfono completo, por ejemplo 099 123 4567."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         revisor = self._paciente_de_revision(phone)
         if revisor is not None:
@@ -82,10 +87,25 @@ class OTPRequestView(APIView):
             logging.getLogger(__name__).info("Acceso de revisión de tienda usado (paciente %s).", revisor.id)
             return Response({"detail": "Código enviado por WhatsApp."}, status=status.HTTP_202_ACCEPTED)
 
-        user, _ = User.objects.get_or_create(
-            phone=phone,
-            defaults={"role": User.Role.PATIENT, "tenant_id": self._default_tenant_id()},
+        # Solo un número con acceso activado desde la ficha (ver
+        # apps/patients/acceso_app.py). Antes se creaba una cuenta para
+        # cualquier número —en la primera clínica— y se le enviaba un
+        # WhatsApp: cualquiera podía gastar los mensajes de la clínica, y
+        # el paciente real se quedaba con una cuenta «sin enlazar».
+        user = (
+            User.objects.filter(phone=phone, role=User.Role.PATIENT, is_active=True,
+                                patient_profile__isnull=False)
+            .select_related("tenant").first()
         )
+        if user is None:
+            return Response(
+                {"detail": "Este número no tiene acceso a la app. Pide en la recepción de tu "
+                           "clínica que lo activen en tu ficha."},
+                status=status.HTTP_400_BAD_REQUEST)
+        if not (user.tenant and user.tenant.is_active and activa(user.tenant, "app_paciente")):
+            return Response(
+                {"detail": "Tu clínica no tiene activa la app en este momento."},
+                status=status.HTTP_400_BAD_REQUEST)
         self._issue_and_send_otp(user, phone, OTPCode.Purpose.LOGIN)
         return Response({"detail": "Código enviado por WhatsApp."}, status=status.HTTP_202_ACCEPTED)
 
@@ -96,9 +116,9 @@ class OTPRequestView(APIView):
         su teléfono y el acceso está configurado (APP_REVISION_* en
         settings). Solo una cuenta que ya existe: nunca crea ninguna.
         """
-        telefono = (settings.APP_REVISION_TELEFONO or "").strip()
+        telefono = normalizar_telefono(settings.APP_REVISION_TELEFONO)
         codigo = settings.APP_REVISION_CODIGO or ""
-        if not telefono or not (len(codigo) == 6 and codigo.isdigit()) or phone.strip() != telefono:
+        if not telefono or not (len(codigo) == 6 and codigo.isdigit()) or phone != telefono:
             return None
         return User.objects.filter(phone=telefono, role=User.Role.PATIENT, is_active=True).first()
 
@@ -121,15 +141,6 @@ class OTPRequestView(APIView):
             patient_id=str(user.id),
         )
 
-    @staticmethod
-    def _default_tenant_id():
-        from apps.common.models import Tenant
-
-        # Por fecha de alta: sin orden, `first()` ordena por el UUID y con
-        # varias clínicas devolvía una cualquiera.
-        tenant = Tenant.objects.filter(is_active=True).order_by("created_at", "id").first()
-        return tenant.id if tenant else None
-
 
 class OTPVerifyView(APIView):
     """POST /api/v1/auth/otp/verify/ — RF-USR-02"""
@@ -141,11 +152,11 @@ class OTPVerifyView(APIView):
     def post(self, request):
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        phone = serializer.validated_data["phone"]
+        phone = normalizar_telefono(serializer.validated_data["phone"])
         code = serializer.validated_data["code"]
 
         try:
-            user = User.objects.get(phone=phone, role=User.Role.PATIENT)
+            user = User.objects.get(phone=phone, role=User.Role.PATIENT, is_active=True)
         except User.DoesNotExist:
             return self._invalid()
 
@@ -159,6 +170,9 @@ class OTPVerifyView(APIView):
 
         otp.used_at = timezone.now()
         otp.save(update_fields=["used_at"])
+        # La ficha enseña «último ingreso a la app» con esto.
+        user.last_login = otp.used_at
+        user.save(update_fields=["last_login"])
 
         refresh = RefreshToken.for_user(user)
         refresh["role"] = user.role

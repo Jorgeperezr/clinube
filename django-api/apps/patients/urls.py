@@ -1,6 +1,7 @@
 from django.urls import path
 
 from apps.patients import views
+from apps.patients.acceso_app import AccesoAppView
 
 urlpatterns = [
     path("patients/", views.PatientListCreateView.as_view(), name="patient-list"),
@@ -9,6 +10,11 @@ urlpatterns = [
         "patients/<uuid:pk>/aviso-privacidad/",
         views.AvisoPrivacidadView.as_view(),
         name="patient-aviso-privacidad",
+    ),
+    path(
+        "patients/<uuid:pk>/app-access/",
+        AccesoAppView.as_view(),
+        name="patient-app-access",
     ),
     path(
         "patients/<uuid:pk>/medical-background/",
