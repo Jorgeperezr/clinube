@@ -32,7 +32,8 @@ class PreferenciasTests(APITestCase):
     def test_por_defecto_el_3d_esta_encendido_y_disponible(self):
         r = self.client.get(RUTA)
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["preferencias"], {"odontograma_3d": True})
+        self.assertEqual(r.data["preferencias"],
+                         {"odontograma_3d": True, "acento": "", "barra_oculta": []})
         self.assertEqual(r.data["disponibles"], {"odontograma_3d": True})
 
     def test_apagarlo_se_guarda_y_lo_ve_auth_me(self):
@@ -40,7 +41,8 @@ class PreferenciasTests(APITestCase):
         self.assertEqual(r.status_code, 200, r.data)
         self.assertFalse(r.data["preferencias"]["odontograma_3d"])
         self.doctor.refresh_from_db()
-        self.assertEqual(self.doctor.preferencias, {"odontograma_3d": False})
+        self.assertEqual(self.doctor.preferencias,
+                         {"odontograma_3d": False, "acento": "", "barra_oculta": []})
         self.assertFalse(self.client.get("/api/v1/auth/me/").data["preferencias"]["odontograma_3d"])
 
     def test_no_toca_las_de_otro(self):
@@ -76,3 +78,38 @@ class PreferenciasTests(APITestCase):
     def test_sin_sesion_no_hay_acceso(self):
         self.client.force_authenticate(user=None)
         self.assertEqual(self.client.get(RUTA).status_code, 401)
+
+
+class AparienciaTests(APITestCase):
+    """El color de acento y la barra lateral de cada persona."""
+
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Clínica Apariencia")
+        self.yo = User.objects.create_user(
+            email="yo@apariencia.ec", password="clave-larga-8gatos", role="reception", tenant=self.tenant)
+        self.client.force_authenticate(user=self.yo)
+
+    def test_se_guardan_y_las_devuelve_auth_me(self):
+        r = self.client.patch(RUTA, {"acento": "vino", "barra_oculta": ["inventario", "reportes", "inventario"]},
+                              format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        prefs = self.client.get("/api/v1/auth/me/").data["preferencias"]
+        self.assertEqual(prefs["acento"], "vino")
+        self.assertEqual(prefs["barra_oculta"], ["inventario", "reportes"])
+        # Y no pisa el resto.
+        self.assertTrue(prefs["odontograma_3d"])
+
+    def test_volver_al_color_de_la_clinica(self):
+        self.client.patch(RUTA, {"acento": "vino"}, format="json")
+        self.assertEqual(self.client.patch(RUTA, {"acento": ""}, format="json").data["preferencias"]["acento"], "")
+
+    def test_formas_no_validas(self):
+        for cuerpo in ({"acento": 3}, {"acento": "<script>"}, {"barra_oculta": "inventario"},
+                       {"barra_oculta": ["ok", 5]}, {"barra_oculta": [f"s{i}" for i in range(30)]}):
+            self.assertEqual(self.client.patch(RUTA, cuerpo, format="json").status_code, 400, cuerpo)
+
+    def test_lo_guardado_a_mano_y_roto_no_rompe_el_panel(self):
+        self.yo.preferencias = {"acento": {"x": 1}, "barra_oculta": "todo"}
+        self.yo.save(update_fields=["preferencias"])
+        prefs = self.client.get(RUTA).data["preferencias"]
+        self.assertEqual((prefs["acento"], prefs["barra_oculta"]), ("", []))

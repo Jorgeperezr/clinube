@@ -107,6 +107,15 @@ export default function PreferenciasPage() {
         );
       })}
 
+      <div className="card" style={{ marginTop: 16 }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>Color de acento y barra lateral</h3>
+        <p style={{ margin: 0, fontSize: 13.5, color: "var(--ink-soft)" }}>
+          Se cambian desde tu perfil, abajo en la barra lateral: elige un color para los botones y
+          la sección activa, o «Editar barra lateral…» para quitar lo que no usas. Se guarda en tu
+          cuenta y lo verás igual en todos tus dispositivos.
+        </p>
+      </div>
+
       <InstalarApp />
     </div>
   );

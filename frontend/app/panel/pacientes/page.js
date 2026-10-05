@@ -42,7 +42,12 @@ export default function PacientesPage() {
     }
   }, []);
 
-  useEffect(() => { load(search, ordering); }, [load, ordering]);   // recarga al cambiar orden
+  // La búsqueda de la barra lateral llega como ?buscar=: se aplica nada
+  // más entrar, y después la página sigue a su aire.
+  const [inicial] = useState(() => (typeof window === "undefined" ? ""
+    : new URLSearchParams(window.location.search).get("buscar") || ""));
+  useEffect(() => { if (inicial) setSearch(inicial); }, [inicial]);
+  useEffect(() => { load(search || inicial, ordering); }, [load, ordering]);   // recarga al cambiar orden
 
   // Recordar la preferencia de vista
   useEffect(() => {

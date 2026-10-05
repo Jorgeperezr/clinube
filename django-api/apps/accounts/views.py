@@ -23,6 +23,7 @@ from apps.accounts.models import (
     PasswordResetToken,
     User,
 )
+from apps.accounts.preferencias import APARIENCIA, validar_apariencia
 from apps.accounts.preferencias import CATALOGO as CATALOGO_PREFERENCIAS
 from apps.accounts.preferencias import normalizar as normalizar_preferencias
 from apps.accounts.serializers import (
@@ -423,15 +424,21 @@ class PreferenciasView(APIView):
         u = request.user
         if u.role == User.Role.PATIENT:
             return Response(status=status.HTTP_403_FORBIDDEN)
-        datos = request.data if isinstance(request.data, dict) else {}
-        desconocidas = sorted(set(datos) - set(CATALOGO_PREFERENCIAS))
+        datos = dict(request.data) if isinstance(request.data, dict) else {}
+        desconocidas = sorted(set(datos) - set(CATALOGO_PREFERENCIAS) - set(APARIENCIA))
         if desconocidas:
             return Response({"detail": f"Preferencias desconocidas: {', '.join(desconocidas)}."},
                             status=status.HTTP_400_BAD_REQUEST)
-        no_booleanas = sorted(k for k, v in datos.items() if not isinstance(v, bool))
+        no_booleanas = sorted(k for k, v in datos.items()
+                              if k in CATALOGO_PREFERENCIAS and not isinstance(v, bool))
         if no_booleanas:
             return Response({"detail": f"Tienen que ser verdadero o falso: {', '.join(no_booleanas)}."},
                             status=status.HTTP_400_BAD_REQUEST)
+        for clave in set(datos) & set(APARIENCIA):
+            try:
+                datos[clave] = validar_apariencia(clave, datos[clave])
+            except ValueError as exc:
+                return Response({"detail": f"{clave}: {exc}."}, status=status.HTTP_400_BAD_REQUEST)
         u.preferencias = {**normalizar_preferencias(u.preferencias), **datos}
         u.save(update_fields=["preferencias"])
         return self._respuesta(u)

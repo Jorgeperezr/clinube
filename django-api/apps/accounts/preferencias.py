@@ -26,8 +26,44 @@ CATALOGO = {
 
 POR_DEFECTO = {clave: d["por_defecto"] for clave, d in CATALOGO.items()}
 
+# Apariencia del panel, también de cada persona (no dependen de nada
+# contratado, así que no van en CATALOGO ni en `disponibles`):
+#
+#   · acento: el color de acento propio. "" = el de la clínica. Las
+#     claves y sus colores están en frontend/lib/acentos.js; aquí solo
+#     se comprueba la forma, y una clave que el panel no conozca se
+#     ignora allí y se pinta con el de la clínica.
+#   · barra_oculta: las secciones que esa persona quitó de su barra
+#     lateral. Ocultar no quita permisos: la página sigue funcionando
+#     si se entra por su dirección.
+import re  # noqa: E402
+
+APARIENCIA = {"acento": "", "barra_oculta": []}
+_CLAVE = re.compile(r"^[a-z_]{1,30}$")
+MAX_OCULTAS = 20
+
+
+def validar_apariencia(clave, valor):
+    """Devuelve el valor limpio, o lanza ValueError con el motivo."""
+    if clave == "acento":
+        if not isinstance(valor, str) or (valor and not _CLAVE.match(valor)):
+            raise ValueError("el acento tiene que ser el nombre de un color")
+        return valor
+    if clave == "barra_oculta":
+        if not isinstance(valor, list) or len(valor) > MAX_OCULTAS or \
+                not all(isinstance(v, str) and _CLAVE.match(v) for v in valor):
+            raise ValueError("la barra lateral tiene que ser una lista de secciones")
+        return sorted(set(valor))
+    raise ValueError("preferencia desconocida")
+
 
 def normalizar(valores):
     """Lo guardado, completado con los valores por defecto y sin claves ajenas."""
     valores = valores if isinstance(valores, dict) else {}
-    return {clave: bool(valores.get(clave, defecto)) for clave, defecto in POR_DEFECTO.items()}
+    limpio = {clave: bool(valores.get(clave, defecto)) for clave, defecto in POR_DEFECTO.items()}
+    for clave, defecto in APARIENCIA.items():
+        try:
+            limpio[clave] = validar_apariencia(clave, valores.get(clave, defecto))
+        except ValueError:
+            limpio[clave] = defecto
+    return limpio

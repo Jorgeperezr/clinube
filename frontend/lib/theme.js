@@ -1,6 +1,7 @@
 "use client";
 
 import { apiBase } from "./api";
+import { leerAcento } from "./acentos";
 
 /**
  * Motor de temas por clínica (Sprint 33).
@@ -163,7 +164,12 @@ export function applyTheme(theme, mode) {
   const effective = theme || lastTheme;
   // «Sin color» elegido por la persona manda sobre el tema de la clínica,
   // pero solo en su pantalla: no toca lo que ven los demás.
-  const tema = readSinColor() ? { ...SIN_COLOR } : resolveTheme(effective);
+  // Y el acento personal (lib/acentos.js) sobre el color de la clínica:
+  // cambia los resaltes, no el segundo color de su marca.
+  const acento = leerAcento();
+  const tema = readSinColor() ? { ...SIN_COLOR }
+    : acento ? { ...resolveTheme(effective), primary: acento, nav: undefined }
+    : resolveTheme(effective);
   const { primary, secondary } = tema;
   const root = document.documentElement;
   const isDark = (mode || root.getAttribute("data-theme")) === "dark";
