@@ -133,7 +133,8 @@ Comparativa hecha en septiembre de 2026:
 ### Crear la máquina desde GitHub Actions
 
 El flujo `.github/workflows/oracle-instancia.yml` intenta crearla cada
-hora durante unos 55 minutos, una vez cada 5 minutos (`scripts/crear-instancia-oracle.sh`), sin tener Cloud Shell
+hora durante unos 55 minutos, una vez cada 5 minutos, y al acabar se
+relanza solo (GitHub descarta muchas ejecuciones programadas) (`scripts/crear-instancia-oracle.sh`), sin tener Cloud Shell
 abierto ni el computador encendido. Cuando lo consigue, abre una
 incidencia en el repositorio con la IP —llega por correo— y se apaga.
 
