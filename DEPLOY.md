@@ -133,7 +133,7 @@ Comparativa hecha en septiembre de 2026:
 ### Crear la máquina desde GitHub Actions
 
 El flujo `.github/workflows/oracle-instancia.yml` intenta crearla cada
-10 minutos (`scripts/crear-instancia-oracle.sh`), sin tener Cloud Shell
+hora durante unos 55 minutos, una vez cada 5 minutos (`scripts/crear-instancia-oracle.sh`), sin tener Cloud Shell
 abierto ni el computador encendido. Cuando lo consigue, abre una
 incidencia en el repositorio con la IP —llega por correo— y se apaga.
 
@@ -166,10 +166,13 @@ Mientras corre, hay que **parar el bucle de Cloud Shell** (Ctrl+C): los
 dos a la vez gastan el cupo de peticiones de Oracle. El guion no crea
 una segunda máquina si ya existe una llamada `clinube`.
 
-Cada vuelta gasta 1 minuto de Actions: unos 4300 al mes, más que los
-3000 de la cuenta Pro de estudiante. Si se acaban antes de que salga la
-máquina, Actions —también el CI— se detiene hasta el mes siguiente, sin
-cobrar nada mientras el límite de gasto siga en 0 $. Si en una o dos semanas no sale, lo efectivo es pasar
+Cada ejecución gasta unos 57 minutos de Actions, así que los 3000 al mes
+de la cuenta Pro de estudiante se acaban en pocos días. Entonces Actions
+—también el CI— se detiene hasta el mes siguiente, sin cobrar nada
+mientras el límite de gasto siga en 0 $. Se eligió así para tener la
+máquina cuanto antes: GitHub descarta la mayoría de las ejecuciones
+programadas frecuentes, y un intento suelto cada 10 minutos se quedaba
+en dos al día. Si en una o dos semanas no sale, lo efectivo es pasar
 la cuenta a Pay As You Go (ver arriba): con la cuenta de pago suele haber
 capacidad al primer o segundo intento.
 - Todo lo del proyecto funciona en Arm: las imágenes de Python,

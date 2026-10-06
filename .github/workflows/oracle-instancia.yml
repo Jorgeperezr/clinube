@@ -1,9 +1,14 @@
 # Crea la máquina de Clinube en Oracle Cloud sin tener Cloud Shell abierto.
 #
-# Cada 10 minutos intenta UNA vez crear la instancia Always Free (Ampere
-# A1, 1 OCPU, 6 GB, 100 GB) con scripts/crear-instancia-oracle.sh. En
-# Santiago casi nunca hay capacidad: la mayoría de las vueltas terminan
-# en «sin capacidad», en verde y sin avisar. Cuando sale:
+# Cada hora lanza scripts/crear-instancia-oracle.sh, que durante unos 55
+# minutos intenta crear la instancia Always Free (Ampere A1, 1 OCPU, 6 GB,
+# 100 GB) una vez cada 5 minutos. Por qué así y no un intento cada pocos
+# minutos: GitHub descarta la mayoría de las ejecuciones programadas
+# frecuentes (de 78 previstas en una noche corrieron 2); con cada
+# ejecución intentando una hora, las pocas que corren cuentan mucho.
+#
+# En Santiago casi nunca hay capacidad: la mayoría terminan en «sin
+# capacidad», en verde y sin avisar. Cuando sale:
 #
 #   · abre una incidencia en el repositorio con la IP (llega por correo),
 #   · y se desactiva a sí mismo, para no seguir gastando minutos.
@@ -13,19 +18,18 @@
 # Cómo sacarlos: DEPLOY.md, «Crear la máquina desde GitHub Actions». Sin
 # ellos, cada vuelta termina enseguida sin hacer nada.
 #
-# Minutos: cada vuelta dura unos 45 s y se cobra como 1 minuto; cada 10
-# minutos son unos 4300 al mes, más que los 3000 de la cuenta Pro. Es a
-# propósito, para tener la máquina cuanto antes: si se acaban, Actions se
-# detiene (sin cobrar nada con el límite de gasto en 0 $) y el CI también
-# hasta que empiece el mes siguiente. Al crear la máquina, este flujo se
-# apaga solo y deja de gastar.
+# Minutos: cada ejecución gasta unos 57. Es a propósito, para tener la
+# máquina cuanto antes, y agota rápido los 3000 al mes de la cuenta Pro:
+# entonces Actions se detiene (sin cobrar nada con el límite de gasto en
+# 0 $) y el CI también, hasta que empiece el mes siguiente. Al crear la
+# máquina, este flujo se apaga solo y deja de gastar.
 
 name: Crear la máquina en Oracle
 
 on:
   schedule:
     # Minutos sueltos y no en punto: a las :00 GitHub retrasa las vueltas.
-    - cron: "3,13,23,33,43,53 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -40,7 +44,7 @@ concurrency:
 jobs:
   intentar:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 70
     env:
       OCI_CLI_REGION: sa-santiago-1
       OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
@@ -133,6 +137,8 @@ jobs:
         if: env.TIENE_CREDENCIALES == 'true'
         env:
           SALIDA_IP: ip.txt
+          DURACION_MIN: "55"
+          ESPERA_S: "300"
         run: |
           bash scripts/crear-instancia-oracle.sh | tee -a "${GITHUB_STEP_SUMMARY}"
           exit "${PIPESTATUS[0]}"
