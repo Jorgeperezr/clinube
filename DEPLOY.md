@@ -121,10 +121,15 @@ Comparativa hecha en septiembre de 2026:
   días la CPU (percentil 95), la red y la memoria quedan por debajo del
   20 %, puede apagarla. Una clínica pequeña puede quedar por debajo.
   Remedio recomendado: **pasar la cuenta a «Pay As You Go»** (sigue
-  costando 0 US$ mientras no se salga de lo gratuito, la regla de VM
-  ociosas no se aplica y, según el soporte de Oracle, conserva además
-  el límite anterior de 4 OCPU / 24 GB) y **crear una alerta de
-  presupuesto de 1 US$** para enterarse si algo empieza a cobrar.
+  costando 0 US$ mientras no se salga de lo gratuito y la regla de VM
+  ociosas no se aplica) y **crear una alerta de presupuesto de 1 US$**
+  para enterarse si algo empieza a cobrar.
+- Lo gratuito de A1 es **el mismo con Pay As You Go**: «todas las
+  cuentas» reciben 1.500 horas de OCPU y 9.000 GB-hora al mes, es
+  decir, 2 OCPU y 12 GB encendidos el mes entero, y lo que pase de ahí
+  se cobra. Algunas respuestas del soporte decían que la cuenta de pago
+  conservaba el cupo anterior de 4 OCPU / 24 GB; la documentación
+  (*Always Free Resources*, octubre de 2026) no lo recoge.
 - La VM Arm a veces da «Out of capacity» al crearla: se reintenta más
   tarde o en otro dominio de disponibilidad. En Santiago hay un solo
   dominio y casi nunca hay capacidad: ver «Crear la máquina desde GitHub
@@ -198,7 +203,11 @@ capacidad al primer o segundo intento.
 2. **Antes de crear nada**, en *Billing & Cost Management*:
    - *Upgrade and Manage Payment* → **Pay As You Go**. Sigue costando 0
      US$ mientras todo sea «Always Free», y evita que Oracle recupere la
-     VM por ociosa.
+     VM por ociosa. Tipo de cuenta **Individual** (la *Corporate* no
+     tiene vuelta atrás). Al pedirlo, Oracle retiene **100 US$** en la
+     tarjeta y la anula enseguida, aunque el banco tarda lo suyo en
+     liberarlos; y el cambio puede tardar **uno o dos días**: llega un
+     correo y la página pasa a llamarse *Manage Payment*.
    - *Budgets* → *Create Budget*: importe **1 US$** al mes, alerta al
      **1 %** del presupuesto *real* (no el previsto), con tu correo. Si
      algo empieza a cobrar, llega un aviso en el día.
