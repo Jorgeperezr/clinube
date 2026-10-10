@@ -132,10 +132,84 @@ Comparativa hecha en septiembre de 2026:
   (*Always Free Resources*, octubre de 2026) no lo recoge.
 - La VM Arm a veces da «Out of capacity» al crearla: se reintenta más
   tarde o en otro dominio de disponibilidad. En Santiago hay un solo
-  dominio y casi nunca hay capacidad: ver «Crear la máquina desde GitHub
-  Actions», justo debajo.
+  dominio y casi nunca hay capacidad: ver «Crear la máquina desde tu
+  ordenador», justo debajo.
 
-### Crear la máquina desde GitHub Actions
+### Crear la máquina desde tu ordenador
+
+`scripts/oracle-local.sh` intenta crearla desde el Mac mientras está
+encendido, cada 2 minutos, hasta que Oracle tenga sitio; entonces avisa
+con una notificación y da la IP. No gasta minutos de GitHub. Quien habla
+con Oracle es `scripts/crear-instancia-oracle.sh`, el mismo que usaba el
+flujo de Actions.
+
+Todo desde la carpeta del repositorio, con los cambios al día:
+
+```sh
+git pull
+```
+
+Una sola vez:
+
+1. La CLI de Oracle:
+
+   ```sh
+   brew install oci-cli
+   ```
+
+2. La clave de API en el Mac. El guion crea una nueva —la privada no
+   sale del Mac—, copia la pública al portapapeles y dice dónde pegarla
+   en Oracle; después pide la «vista previa del archivo de
+   configuración» que enseña Oracle al agregarla:
+
+   ```sh
+   bash scripts/oracle-local.sh --configurar
+   ```
+
+   Si había otra clave de API que se descargó o se compartió fuera del
+   Mac, bórrala en **Mi perfil → Claves de API** cuando la nueva
+   funcione.
+
+3. Comprobar que no falta nada (la clave, la subred pública y la clave
+   SSH `~/.ssh/clinube` con la que se entrará en la máquina):
+
+   ```sh
+   bash scripts/oracle-local.sh --comprobar
+   ```
+
+Y a intentar, de una de estas dos formas:
+
+- En una ventana de la Terminal, que se deja abierta (Ctrl+C lo para):
+
+  ```sh
+  bash scripts/oracle-local.sh
+  ```
+
+- En segundo plano: sigue aunque se cierre la Terminal y vuelve a
+  empezar cada vez que se enciende el Mac y se inicia sesión, hasta
+  crearla. Al conseguirlo deja de arrancar solo.
+
+  ```sh
+  bash scripts/oracle-local.sh --al-encender
+  ```
+
+  Para ver cómo va y para pararlo:
+
+  ```sh
+  bash scripts/oracle-local.sh --estado
+  bash scripts/oracle-local.sh --parar
+  ```
+
+Mientras intenta, el Mac no se duerme solo; cerrar la tapa de un
+portátil sí lo duerme, y dormido no intenta. Si se corta internet,
+espera y sigue. Nunca crea una segunda máquina: antes de cada intento
+mira si ya existe `clinube`, y si no puede mirarlo, no lanza.
+
+### Crear la máquina desde GitHub Actions (desactivado)
+
+Desactivado en octubre de 2026: agotó los minutos de Actions del mes, y
+con ellos el CI. Queda como referencia; lo que se usa ahora es «Crear
+la máquina desde tu ordenador», arriba.
 
 El flujo `.github/workflows/oracle-instancia.yml` intenta crearla cada
 hora durante unos 55 minutos, una vez cada 5 minutos, y al acabar se
