@@ -26,11 +26,24 @@ def _saturation_value(rgb):
 
 def extract_palette(fileobj):
     """
-    Devuelve {"primary": "#...", "secondary": "#..."} a partir del logo.
-    Si la imagen es monocroma o sin colores útiles, secondary puede
-    repetir un tono derivado del primario.
+    Devuelve {"primary": "#...", "secondary": "#...", "colores": [...]} a
+    partir del logo. Si la imagen es monocroma o sin colores útiles,
+    secondary puede repetir un tono derivado del primario.
+
+    `colores` son los de tono distinto que tiene, del más presente al
+    menos (hasta cuatro): sirven de paleta para generar los temas de la
+    clínica cuando al darla de alta solo se tiene el logotipo. Se quedan
+    fuera los que apenas ocupan sitio, que suelen ser la mezcla de dos
+    colores en el borde donde se tocan (el suavizado), no un color de la
+    marca.
     """
-    img = Image.open(fileobj).convert("RGB")
+    img = Image.open(fileobj)
+    if img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info:
+        # Lo transparente cuenta como fondo blanco: hay programas que
+        # guardan debajo un color cualquiera, que no es de la marca.
+        img = img.convert("RGBA")
+        img = Image.alpha_composite(Image.new("RGBA", img.size, (255, 255, 255, 255)), img)
+    img = img.convert("RGB")
     img.thumbnail((96, 96))
     # Cuantizar a 12 colores y contarlos
     quant = img.quantize(colors=12, method=Image.Quantize.FASTOCTREE)
@@ -47,7 +60,7 @@ def extract_palette(fileobj):
         candidates.append((count, rgb, h))
 
     if not candidates:
-        return {"primary": "", "secondary": ""}
+        return {"primary": "", "secondary": "", "colores": []}
 
     primary_rgb, primary_h = candidates[0][1], candidates[0][2]
     secondary_rgb = None
@@ -59,7 +72,20 @@ def extract_palette(fileobj):
     if secondary_rgb is None and len(candidates) > 1:
         secondary_rgb = candidates[1][1]
 
+    # Los de tono distinto (a más de ~15 grados de los ya elegidos) y con
+    # presencia: al menos el 1,5 % de lo que tiene color.
+    minimo = 0.015 * sum(count for count, _, _ in candidates)
+    distintos = []
+    for count, rgb, h in candidates:
+        if count < minimo:
+            break
+        if all(min(abs(h - h2), 1 - abs(h - h2)) > 0.04 for _, h2 in distintos):
+            distintos.append((rgb, h))
+        if len(distintos) == 4:
+            break
+
     return {
         "primary": _rgb_to_hex(primary_rgb),
         "secondary": _rgb_to_hex(secondary_rgb) if secondary_rgb else "",
+        "colores": [_rgb_to_hex(rgb) for rgb, _ in distintos],
     }

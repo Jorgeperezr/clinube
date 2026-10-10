@@ -4,7 +4,7 @@ Comando de arranque en frío.
 Resuelve el problema chicken-and-egg del primer despliegue: el modelo
 User exige un tenant, pero para crear el primer usuario (superuser) aún
 no existe ningún tenant. Este comando:
-  1. Crea un tenant por defecto.
+  1. Crea un tenant por defecto (la clínica de pruebas, si no hay otra).
   2. Siembra las 5 especialidades base del SRS.
   3. Siembra los parámetros del sistema por defecto.
   4. Opcionalmente crea un superusuario.
@@ -35,6 +35,13 @@ class Command(BaseCommand):
         )
         if created:
             self.stdout.write(self.style.SUCCESS(f"Tenant creado: {tenant.name}"))
+            # La primera clínica de una instalación es la de pruebas: en
+            # ella se ven antes las funciones nuevas (fase «prueba» en
+            # apps/common/funcionalidades.py). Si ya hay una, se respeta.
+            if not Tenant.objects.filter(es_prueba=True).exclude(pk=tenant.pk).exists():
+                tenant.es_prueba = True
+                tenant.save(update_fields=["es_prueba"])
+                self.stdout.write("Es la clínica de pruebas: recibe antes las funciones nuevas.")
         else:
             self.stdout.write(f"Tenant ya existia: {tenant.name}")
 

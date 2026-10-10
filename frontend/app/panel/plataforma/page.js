@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, apiErrorMessage, readList, readObject } from "../../../lib/api";
 import { useConfirm } from "../../../lib/ConfirmDialog";
+import {
+  coloresDelLogotipo, EditorPaleta, LOGOS, SelectorLogo, usePrevisualizacion, VistaTemas,
+} from "../../../lib/IdentidadClinica";
 import { MARCA } from "../../../lib/marca";
 
 /*
@@ -18,8 +21,8 @@ function porDefecto(catalogo) {
 
 const TABS = [
   ["dashboard", "Dashboard"], ["clinicas", "Clínicas"],
-  ["admins", "Administradores"], ["auditoria", "Auditoría"],
-  ["config", "Configuración"],
+  ["admins", "Administradores"], ["funciones", "Funciones"],
+  ["auditoria", "Auditoría"], ["config", "Configuración"],
 ];
 
 export default function PlataformaPage() {
@@ -49,6 +52,7 @@ export default function PlataformaPage() {
       {tab === "dashboard" && <DashboardTab />}
       {tab === "clinicas" && <ClinicsTab />}
       {tab === "admins" && <AdminsTab />}
+      {tab === "funciones" && <FuncionesTab />}
       {tab === "auditoria" && <AuditTab />}
       {tab === "config" && <ConfigTab />}
     </div>
@@ -184,14 +188,46 @@ function PanelDeCredenciales({ cred, clinica, onClose }) {
 
 /* ───────────── 2. Gestión de Clínicas ───────────── */
 
+/** La identidad visual sin tocar, como arranca el formulario. */
+function identidadVacia(paleta = []) {
+  return { paleta, paletaTocada: false, archivos: {}, quitar: {} };
+}
+
+function identidadCambiada(id) {
+  return id.paletaTocada || Object.keys(id.archivos).length > 0
+    || Object.values(id.quitar).some(Boolean);
+}
+
+/** Como la espera PATCH /platform/clinics/{id}/identidad/: con archivos, multipart. */
+function identidadComoFormulario(id) {
+  const fd = new FormData();
+  if (id.paletaTocada) fd.append("paleta", JSON.stringify(id.paleta));
+  for (const [campo, archivo] of Object.entries(id.archivos)) fd.append(campo, archivo);
+  for (const [campo, quitar] of Object.entries(id.quitar)) {
+    if (quitar && !id.archivos[campo]) fd.append(`${campo}_clear`, "true");
+  }
+  return fd;
+}
+
+/** Guarda la identidad si se tocó. Devuelve el motivo si falló, o "". */
+async function guardarIdentidad(clinicaId, identidad) {
+  if (!identidadCambiada(identidad)) return "";
+  const resp = await api(`/platform/clinics/${clinicaId}/identidad/`, {
+    method: "PATCH", body: identidadComoFormulario(identidad),
+  });
+  return resp.ok ? "" : apiErrorMessage(resp);
+}
+
 function ClinicsTab() {
   const [confirm, ConfirmUI] = useConfirm();
   const [clinics, setClinics] = useState([]);
   const [catalogo, setCatalogo] = useState([]);
   const VACIO = { name: "", ruc: "", address: "", phone: "", email: "",
-                  admin_full_name: "", admin_email: "",
+                  admin_full_name: "", admin_email: "", es_prueba: false,
                   funcionalidades: porDefecto(catalogo) };
   const [form, setForm] = useState(VACIO);
+  const [identidad, setIdentidad] = useState(identidadVacia());
+  const [identidadActual, setIdentidadActual] = useState(null);   // la guardada, al editar
 
   // El catálogo llega de la API; el formulario de alta arranca con lo
   // que trae una clínica nueva (las adicionales, apagadas).
@@ -225,6 +261,13 @@ function ClinicsTab() {
         const first = typeof detail === "object" ? Object.values(detail)[0] : detail;
         throw new Error(Array.isArray(first) ? first[0] : `Error ${resp.status}`);
       }
+      // La identidad visual va después, con sus archivos. Igual que el
+      // administrador, si falla no deshace la clínica: se avisa.
+      const falloIdentidad = await guardarIdentidad(data.id, identidad);
+      const errores = falloIdentidad
+        ? [`La clínica "${form.name}" se creó, pero su identidad visual no: ${falloIdentidad} `
+           + "Puedes darla desde «Editar»."]
+        : [];
       // El alta del administrador va en la misma respuesta, y puede
       // traer su propio error sin que eso deshaga la clínica: un correo
       // repetido no es motivo para cancelar un alta que ya está hecha.
@@ -234,15 +277,38 @@ function ClinicsTab() {
         setOkMsg(`Clínica "${form.name}" creada con su administrador. Entrégale las credenciales de abajo.`);
       } else if (alta?.error) {
         setOkMsg("");
-        setError(`La clínica "${form.name}" se creó, pero su administrador no: ${alta.error} `
-                 + "Créalo desde la pestaña Administradores.");
+        errores.unshift(`La clínica "${form.name}" se creó, pero su administrador no: ${alta.error} `
+                        + "Créalo desde la pestaña Administradores.");
       } else {
         setOkMsg(`Clínica "${form.name}" creada (activa, con catálogo base). `
                  + "Aún no tiene administrador: créalo en la pestaña Administradores.");
       }
+      setError(errores.join(" "));
       setForm(VACIO);
+      setIdentidad(identidadVacia());
       load();
     } catch (err) { setError(err.message); }
+  }
+
+  async function empezarEdicion(c) {
+    setError(""); setOkMsg("");
+    setEditing({ id: c.id, name: c.name, ruc: c.ruc, address: c.address, phone: c.phone, email: c.email,
+                 es_prueba: Boolean(c.es_prueba),
+                 funcionalidades: c.funcionalidades || porDefecto(catalogo) });
+    setIdentidadActual(null);
+    setIdentidad(identidadVacia());
+    window.scrollTo?.({ top: 0, behavior: "smooth" });
+    try {
+      const actual = await readObject(await api(`/platform/clinics/${c.id}/identidad/`));
+      setIdentidadActual(actual);
+      setIdentidad(identidadVacia(actual.paleta || []));
+    } catch (err) { setError(`No se pudo cargar su identidad visual. ${err.message}`); }
+  }
+
+  function dejarDeEditar() {
+    setEditing(null);
+    setIdentidadActual(null);
+    setIdentidad(identidadVacia());
   }
 
   async function saveEdit(e) {
@@ -253,7 +319,10 @@ function ClinicsTab() {
         method: "PATCH", body: JSON.stringify(editing),
       });
       if (!resp.ok) throw new Error(`No se pudo guardar (error ${resp.status}).`);
-      setEditing(null);
+      const falloIdentidad = await guardarIdentidad(editing.id, identidad);
+      if (falloIdentidad) throw new Error(`Los datos se guardaron, pero la identidad visual no: ${falloIdentidad}`);
+      setOkMsg(`Cambios de "${editing.name}" guardados.`);
+      dejarDeEditar();
       load();
     } catch (err) { setError(err.message); }
   }
@@ -316,13 +385,19 @@ function ClinicsTab() {
           {fld("phone", "Teléfono")}
           {fld("email", "Correo", "email")}
         </div>
-        {editing && (
-          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-            <button className="btn btn-primary">Guardar cambios</button>
-            <button type="button" className="btn btn-ghost"
-                    onClick={() => setEditing(null)}>Cancelar</button>
-          </div>
-        )}
+        <label style={{ display: "flex", gap: 8, alignItems: "start", fontSize: 14, marginTop: 14 }}>
+          <input type="checkbox" style={{ marginTop: 3 }} checked={Boolean((editing || form).es_prueba)}
+                 onChange={(e) => (editing
+                   ? setEditing({ ...editing, es_prueba: e.target.checked })
+                   : setForm({ ...form, es_prueba: e.target.checked }))} />
+          <span>
+            Clínica de pruebas <span className="etiqueta-prueba" style={{ marginLeft: 4 }}>Pruebas</span>
+            <span style={{ display: "block", fontSize: 12, color: "var(--ink-soft)" }}>
+              Recibe las funciones nuevas antes que las demás, para probarlas. Lo que está en prueba no
+              llega a otras clínicas hasta publicarlo en la pestaña Funciones.
+            </span>
+          </span>
+        </label>
 
         {/* Qué módulos tiene esta clínica. Se pueden cambiar después:
             apagar uno NO borra sus datos, solo deja de verse. */}
@@ -333,22 +408,34 @@ function ClinicsTab() {
           en una clínica nueva; las adicionales se agregan a pedido. Se pueden cambiar después:
           apagar una no borra sus datos.
         </p>
-        {["incluida", "adicional"].map((tipo) => {
-          const grupo = catalogo.filter((f) => f.tipo === tipo);
+        {[
+          ["incluida", "Incluidas", (f) => f.fase !== "prueba" && f.tipo === "incluida"],
+          ["adicional", "Adicionales · a pedido", (f) => f.fase !== "prueba" && f.tipo === "adicional"],
+          ["prueba", "En prueba · solo clínicas de prueba", (f) => f.fase === "prueba"],
+        ].map(([grupoClave, titulo, cabe]) => {
+          const grupo = catalogo.filter(cabe);
           if (!grupo.length) return null;
           const fuente = editing || form;
           const puesto = fuente.funcionalidades || porDefecto(catalogo);
+          // Lo que está en prueba solo se le puede dar a una clínica de pruebas.
+          const bloqueado = grupoClave === "prueba" && !fuente.es_prueba;
           return (
-            <div key={tipo} style={{ marginBottom: 12 }}>
+            <div key={grupoClave} style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase",
                             color: "var(--ink-soft)", margin: "4px 0 8px" }}>
-                {tipo === "incluida" ? "Incluidas" : "Adicionales · a pedido"}
+                {titulo}
               </div>
+              {bloqueado && (
+                <p style={{ fontSize: 12.5, color: "var(--ink-soft)", margin: "0 0 8px" }}>
+                  Esta clínica no es de pruebas: las tendrá cuando se publiquen para todas.
+                </p>
+              )}
               <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 18px" }}>
                 {grupo.map((f) => (
-                  <label key={f.clave} style={{ display: "flex", gap: 8, alignItems: "start", fontSize: 14 }}>
-                    <input type="checkbox" style={{ marginTop: 3 }}
-                           checked={!!puesto[f.clave]}
+                  <label key={f.clave} style={{ display: "flex", gap: 8, alignItems: "start", fontSize: 14,
+                                                opacity: bloqueado ? 0.6 : 1 }}>
+                    <input type="checkbox" style={{ marginTop: 3 }} disabled={bloqueado}
+                           checked={!bloqueado && !!puesto[f.clave]}
                            onChange={(e) => {
                              const nuevas = { ...puesto, [f.clave]: e.target.checked };
                              editing
@@ -372,6 +459,18 @@ function ClinicsTab() {
             </div>
           );
         })}
+
+        {/* Paleta y logotipos: con ellos se generan los temas de la clínica. */}
+        <div style={{ borderTop: "1px solid var(--line)", margin: "16px 0 14px" }} />
+        <IdentidadDeLaClinica valor={identidad} onChange={setIdentidad}
+                              actual={editing ? identidadActual : null} />
+
+        {editing && (
+          <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+            <button className="btn btn-primary">Guardar cambios</button>
+            <button type="button" className="btn btn-ghost" onClick={dejarDeEditar}>Cancelar</button>
+          </div>
+        )}
 
         {/* Los datos del administrador solo al crear: al editar una
             clínica ya existente su administrador se gestiona en su
@@ -407,6 +506,7 @@ function ClinicsTab() {
                 <tr key={c.id} style={c.is_active ? {} : { opacity: 0.65 }}>
                   <td style={{ fontWeight: 600 }}>
                     {c.name}
+                    {c.es_prueba && <span className="etiqueta-prueba">De pruebas</span>}
                     {/* Las adicionales que tiene, para verlas sin abrir la clínica. */}
                     {catalogo.some((f) => f.tipo === "adicional" && c.funcionalidades?.[f.clave]) && (
                       <span style={{ display: "block", fontSize: 11.5, fontWeight: 500, color: "var(--petrol)" }}>
@@ -423,10 +523,7 @@ function ClinicsTab() {
                   <td className="tabular">{(c.created_at || "").slice(0, 10)}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }}
-                            onClick={() => setEditing({ id: c.id, name: c.name, ruc: c.ruc,
-                              address: c.address, phone: c.phone, email: c.email,
-                              funcionalidades: c.funcionalidades
-                                || porDefecto(catalogo) })}>Editar</button>
+                            onClick={() => empezarEdicion(c)}>Editar</button>
                     <button className="btn btn-ghost"
                             style={{ padding: "4px 10px", fontSize: 12, marginLeft: 6,
                                      color: c.is_active ? "var(--red)" : "var(--petrol)" }}
@@ -440,6 +537,74 @@ function ClinicsTab() {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * La identidad visual en el alta (o la edición) de una clínica: sus
+ * logotipos y la paleta de su marca. Con la paleta se generan sus temas
+ * —se ven aquí antes de guardar— y el principal pasa a ser el de la
+ * clínica si aún tenía el de fábrica. Todo es opcional: sin nada, empieza
+ * con la paleta de Clinube y su administración la cambia cuando quiera.
+ */
+function IdentidadDeLaClinica({ valor, onChange, actual }) {
+  const previa = usePrevisualizacion(valor.paleta);
+  const [leyendo, setLeyendo] = useState(false);
+  const [aviso, setAviso] = useState("");
+
+  function cambiarPaleta(paleta) {
+    onChange({ ...valor, paleta, paletaTocada: true });
+  }
+
+  async function sacarDelLogotipo() {
+    setLeyendo(true); setAviso("");
+    try {
+      const colores = await coloresDelLogotipo(valor.archivos.logo);
+      if (colores.length) cambiarPaleta(colores);
+      else setAviso("El logotipo no tiene colores que sirvan (es blanco y negro): elige la paleta a mano.");
+    } catch (e) { setAviso(e.message); }
+    finally { setLeyendo(false); }
+  }
+
+  function elegirArchivo(campo, archivo) {
+    onChange({ ...valor, archivos: { ...valor.archivos, [campo]: archivo },
+               quitar: { ...valor.quitar, [campo]: false } });
+  }
+
+  function quitar(campo) {
+    const archivos = { ...valor.archivos };
+    delete archivos[campo];
+    onChange({ ...valor, archivos, quitar: { ...valor.quitar, [campo]: true } });
+  }
+
+  return (
+    <div>
+      <h4 style={{ marginBottom: 2, fontSize: 14 }}>Identidad visual</h4>
+      <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
+        Opcional. Con la paleta de su marca se generan sus temas: el principal será el de la clínica y su
+        equipo podrá elegir entre estos y los de Clinube. Se puede cambiar después, aquí o desde su
+        Configuración.
+      </p>
+      <div className="logos-rejilla" style={{ marginBottom: 16 }}>
+        {LOGOS.map((d) => (
+          <SelectorLogo key={d.campo} definicion={d}
+                        url={actual?.[d.url]} version={actual?.updated_at}
+                        archivo={valor.archivos[d.campo]} quitado={Boolean(valor.quitar[d.campo])}
+                        onArchivo={(f) => elegirArchivo(d.campo, f)} onQuitar={() => quitar(d.campo)} />
+        ))}
+      </div>
+      <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>Paleta de la marca</div>
+      <EditorPaleta colores={valor.paleta} onChange={cambiarPaleta}
+                    accionExtra={valor.archivos.logo && (
+                      <button type="button" className="btn btn-ghost" style={{ fontSize: 13 }}
+                              disabled={leyendo} onClick={sacarDelLogotipo}>
+                        {leyendo ? "Leyendo el logotipo…" : "Sacar colores del logotipo"}
+                      </button>
+                    )} />
+      {aviso && <p className="identidad-ayuda" style={{ color: "var(--amber)" }}>{aviso}</p>}
+      <div style={{ fontSize: 13.5, fontWeight: 600, margin: "14px 0 8px" }}>Temas que se generan</div>
+      {previa.error ? <div className="error-box">{previa.error}</div> : <VistaTemas temas={previa.temas} />}
     </div>
   );
 }
@@ -647,6 +812,120 @@ function CreateAdminForm({ clinic, onClose, onSaved }) {
   );
 }
 
+/* ───────────── Funciones: en prueba y publicadas ───────────── */
+
+/**
+ * Lo nuevo nace «en prueba»: solo lo ven las clínicas de prueba. Cuando
+ * se ha probado lo suficiente se publica aquí para todas, y se puede
+ * volver a dejar solo en las de prueba. Ni publicar ni retirar borra
+ * datos (apps/common/funcionalidades.py).
+ */
+function FuncionesTab() {
+  const [confirm, ConfirmUI] = useConfirm();
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState("");
+
+  const load = useCallback(async () => {
+    try { setDatos(await readObject(await api("/platform/funcionalidades/"))); }
+    catch (err) { setError(err.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function publicar(f, publicada) {
+    const ok = await confirm(publicada ? {
+      title: `Publicar «${f.nombre}» para todas las clínicas`,
+      message: f.tipo === "adicional"
+        ? "Quedará disponible para agregarla a cualquier clínica desde la pestaña Clínicas."
+        : "Desde ahora la tendrán todas las clínicas, salvo las que la tengan apagada. Se puede retirar después.",
+      confirmLabel: "Publicar",
+    } : {
+      title: `Volver a dejar «${f.nombre}» en prueba`,
+      message: "Dejará de verse en las clínicas que no son de prueba. No se borra nada: al publicarla otra vez, vuelve como estaba.",
+      confirmLabel: "Volver a prueba", danger: true,
+    });
+    if (!ok) return;
+    setGuardando(f.clave); setError("");
+    try {
+      const resp = await api(`/platform/funcionalidades/${f.clave}/`, {
+        method: "PATCH", body: JSON.stringify({ publicada }),
+      });
+      if (!resp.ok) throw new Error(await apiErrorMessage(resp));
+      await load();
+    } catch (err) { setError(err.message); }
+    finally { setGuardando(""); }
+  }
+
+  if (!datos) return error ? <div className="error-box">{error}</div> : <div className="empty">Cargando…</div>;
+  const catalogo = datos.funcionalidades || [];
+  const enPrueba = catalogo.filter((f) => f.fase === "prueba");
+  const publicadas = catalogo.filter((f) => f.fase !== "prueba" && f.nacio_en_prueba);
+  const pruebas = datos.clinicas_de_prueba || [];
+
+  const fila = (f, accion) => (
+    <div key={f.clave} style={{ display: "flex", gap: 14, alignItems: "center", padding: "12px 18px",
+                                 borderTop: "1px solid var(--line)" }}>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <strong style={{ fontSize: 14 }}>{f.nombre}</strong>
+        <span className="etiqueta-adicional"
+              style={f.tipo === "adicional" ? undefined : { color: "var(--ink-soft)", background: "var(--line)" }}>
+          {f.tipo === "adicional" ? "Adicional" : "Incluida"}
+        </span>
+        <span style={{ display: "block", fontSize: 12.5, color: "var(--ink-soft)" }}>{f.descripcion}</span>
+      </span>
+      {accion}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 860 }}>
+      {ConfirmUI}
+      {error && <div className="error-box">{error}</div>}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginBottom: 4 }}>Clínicas de prueba</h3>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", margin: 0 }}>
+          {pruebas.length
+            ? <>Ven antes lo que está en prueba: <strong>{pruebas.map((c) => c.name).join(", ")}</strong>.</>
+            : "Ninguna clínica es de pruebas: márcala en Clínicas → Editar para probar lo nuevo antes de publicarlo."}
+        </p>
+      </div>
+
+      <h3 style={{ fontSize: 15, margin: "0 0 4px" }}>En prueba</h3>
+      <p style={{ fontSize: 13, color: "var(--ink-soft)", margin: "0 0 10px" }}>
+        Solo las tienen las clínicas de prueba. Al publicar una, se comporta como cualquier otra: una incluida
+        llega a todas y una adicional se puede agregar a quien la pida.
+      </p>
+      <div className="card" style={{ padding: 0, marginBottom: 18 }}>
+        {enPrueba.length === 0
+          ? <div className="empty">No hay nada en prueba ahora mismo.</div>
+          : enPrueba.map((f) => fila(f, (
+            <button type="button" className="btn btn-primary" style={{ fontSize: 13 }}
+                    disabled={guardando === f.clave} onClick={() => publicar(f, true)}>
+              {guardando === f.clave ? "Publicando…" : "Publicar para todas"}
+            </button>
+          )))}
+      </div>
+
+      {publicadas.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 15, margin: "0 0 4px" }}>Publicadas</h3>
+          <p style={{ fontSize: 13, color: "var(--ink-soft)", margin: "0 0 10px" }}>
+            Nacieron en prueba y ya las tienen todas. Si algo sale mal, se pueden volver a dejar solo en las de prueba.
+          </p>
+          <div className="card" style={{ padding: 0 }}>
+            {publicadas.map((f) => fila(f, (
+              <button type="button" className="btn btn-ghost" style={{ fontSize: 13, color: "var(--red)" }}
+                      disabled={guardando === f.clave} onClick={() => publicar(f, false)}>
+                Volver a prueba
+              </button>
+            )))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ───────────── 4. Auditoría ───────────── */
 
 const ACTION_LABELS = {
@@ -654,6 +933,8 @@ const ACTION_LABELS = {
   activate_clinic: "Activó clínica", deactivate_clinic: "Suspendió clínica",
   create_clinic_admin: "Creó administrador", update_clinic_admin: "Actualizó administrador",
   reset_clinic_admin_password: "Restableció contraseña", update_platform_config: "Cambió configuración",
+  update_clinic_identity: "Cambió identidad visual",
+  publish_feature: "Publicó función", unpublish_feature: "Devolvió función a prueba",
 };
 
 function AuditTab() {

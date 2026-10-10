@@ -11,6 +11,8 @@ urlpatterns = [
     path("config/tarifarios/<uuid:pk>/", views.TariffDetailView.as_view(), name="tariff-detail"),
     path("config/price-matrix/", views.PriceMatrixView.as_view(), name="price-matrix"),
     path("config/branding/", views.ClinicBrandingView.as_view(), name="clinic-branding"),
+    path("config/temas/previsualizar/", views.TemasPrevisualizarView.as_view(),
+         name="temas-previsualizar"),
     path("config/document-appearance/", views.DocumentAppearanceView.as_view(),
          name="document-appearance"),
     path("config/backup/", views.TenantBackupView.as_view(), name="tenant-backup"),

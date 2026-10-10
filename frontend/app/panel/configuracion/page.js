@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, apiBase, readList, currentUser} from "../../../lib/api";
 import BackButton from "../../../lib/BackButton";
 import { PRESETS, applyTheme, logoSrc, resetTheme, saveBrandingCache } from "../../../lib/theme";
+import { EditorPaleta, LOGOS, SelectorLogo, usePrevisualizacion, VistaTemas } from "../../../lib/IdentidadClinica";
 import LogoCropper from "../../../lib/LogoCropper";
 import DocumentAppearance from "../../../lib/DocumentAppearance";
 import ClinicBackup from "../../../lib/ClinicBackup";
@@ -639,12 +640,15 @@ function BrandingTab() {
   const [address, setAddress] = useState("");
   const [phone, setPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
+  const [paleta, setPaleta] = useState([]);
+  const previa = usePrevisualizacion(paleta);
 
   async function load() {
     try {
       const resp = await api("/config/branding/");
       const data = await resp.json();
       setBranding(data);
+      setPaleta(data.paleta || []);
       if (data.theme?.primary) setPrimary(data.theme.primary);
       if (data.theme?.secondary) setSecondary(data.theme.secondary);
       setDisplayName(data.display_name || "");
@@ -718,6 +722,49 @@ function BrandingTab() {
     finally { setSaving(false); }
   }
 
+  /** El logotipo para fondo oscuro o el ícono: se suben al elegirlos. */
+  async function cambiarVariante(campo, archivo) {
+    setSaving(true); setError(""); setOkMsg("");
+    try {
+      const fd = new FormData();
+      if (archivo) fd.append(campo, archivo);
+      else fd.append(`${campo}_clear`, "true");
+      const resp = await api("/config/branding/", { method: "PATCH", body: fd });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error(data?.detail || `Error ${resp.status}`);
+      setBranding(data);
+      saveBrandingCache(data);
+      const nombre = campo === "icono" ? "Ícono" : "Logotipo para fondo oscuro";
+      setOkMsg(archivo ? `${nombre} guardado.` : `${nombre} quitado.`);
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
+  /** Guarda la paleta: el servidor genera con ella los temas de la clínica. */
+  async function guardarPaleta() {
+    setSaving(true); setError(""); setOkMsg("");
+    try {
+      const resp = await api("/config/branding/", { method: "PATCH", body: JSON.stringify({ paleta }) });
+      const data = await resp.json().catch(() => null);
+      if (!resp.ok) throw new Error(data?.detail || `Error ${resp.status}`);
+      const eraDeLaClinica = String(branding?.theme?.preset || "").startsWith("clinica:");
+      const esDeLaClinica = String(data.theme?.preset || "").startsWith("clinica:");
+      setBranding(data);
+      applyTheme(data.theme);
+      saveBrandingCache(data);
+      if (!data.temas?.length) {
+        setOkMsg(eraDeLaClinica ? "Paleta quitada. La clínica vuelve al tema de Clinube." : "Paleta quitada.");
+      } else if (esDeLaClinica && !eraDeLaClinica) {
+        setOkMsg("Paleta guardada. Su tema principal es ya el de la clínica; los otros están en «Tema de colores».");
+      } else if (esDeLaClinica) {
+        setOkMsg("Paleta guardada. El tema de la clínica se ha recalculado con los colores nuevos.");
+      } else {
+        setOkMsg("Paleta guardada. Sus temas están en «Tema de colores»; la clínica sigue con el que tenía elegido.");
+      }
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  }
+
   async function saveNames() {
     setSaving(true); setError(""); setOkMsg("");
     try {
@@ -787,7 +834,46 @@ function BrandingTab() {
                                                  secondary: autoPalette.secondary || "" })}>
                 Usar como tema
               </button>
+              {autoPalette.colores?.length > 1 && (
+                <button className="btn btn-ghost" style={{ fontSize: 13 }} disabled={saving}
+                        onClick={() => setPaleta(autoPalette.colores)}>
+                  Usarlos de paleta
+                </button>
+              )}
             </div>
+          )}
+        </div>
+        {/* Las otras dos versiones: se suben al elegirlas. */}
+        <div className="logos-rejilla" style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+          {LOGOS.filter((d) => d.campo !== "logo").map((d) => (
+            <SelectorLogo key={d.campo} definicion={d} deshabilitado={saving}
+                          url={branding?.[d.url]} version={branding?.updated_at}
+                          onArchivo={(f) => cambiarVariante(d.campo, f)}
+                          onQuitar={() => cambiarVariante(d.campo, null)} />
+          ))}
+        </div>
+      </div>
+
+      {/* Paleta: con ella se generan los temas de la clínica */}
+      <div className="card">
+        <h3 style={{ marginBottom: 6 }}>Paleta de la marca</h3>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
+          Los colores de tu marca, el primero el principal. Con ellos se generan los temas de la clínica:
+          aparecen en «Tema de colores» y, si tu clínica tiene «Tema de cada persona», tu equipo puede
+          elegirlos para su panel.
+        </p>
+        <EditorPaleta colores={paleta} onChange={setPaleta} deshabilitado={saving} />
+        <div style={{ fontSize: 13.5, fontWeight: 600, margin: "14px 0 8px" }}>Temas que salen</div>
+        {previa.error ? <div className="error-box">{previa.error}</div> : <VistaTemas temas={previa.temas} />}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button className="btn btn-primary" disabled={saving
+                    || paleta.join(",") === (branding?.paleta || []).join(",")}
+                  onClick={guardarPaleta}>
+            Guardar paleta
+          </button>
+          {paleta.join(",") !== (branding?.paleta || []).join(",") && (
+            <button className="btn btn-ghost" disabled={saving}
+                    onClick={() => setPaleta(branding?.paleta || [])}>Deshacer cambios</button>
           )}
         </div>
       </div>
@@ -843,6 +929,33 @@ function BrandingTab() {
           pacientes y los documentos se ven en escala de grises; las alertas y el odontograma
           mantienen sus colores. Los colores se ajustan solos para que el texto se lea bien.
         </p>
+        {branding?.temas?.length > 0 && (
+          <>
+            <div className="lat-menu-titulo" style={{ margin: "0 0 8px", color: "var(--ink-soft)" }}>
+              De la clínica
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+              {branding.temas.map((t) => {
+                const clave = `clinica:${t.clave}`;
+                return (
+                  <button key={clave} disabled={saving} title={t.descripcion}
+                          onClick={() => saveTheme({ preset: clave })}
+                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                                   borderRadius: 10, cursor: "pointer", fontSize: 13, background: "var(--elev)",
+                                   border: currentPreset === clave ? "2px solid var(--petrol)" : "1px solid var(--line)",
+                                   fontWeight: currentPreset === clave ? 700 : 400 }}>
+                    <span style={{ width: 18, height: 18, borderRadius: "50%", background: t.primary }} />
+                    <span style={{ width: 18, height: 18, borderRadius: "50%", background: t.secondary }} />
+                    {t.nombre}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="lat-menu-titulo" style={{ margin: "0 0 8px", color: "var(--ink-soft)" }}>
+              De Clinube
+            </div>
+          </>
+        )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
           {PRESETS.map((p) => (
             <button key={p.key} disabled={saving}

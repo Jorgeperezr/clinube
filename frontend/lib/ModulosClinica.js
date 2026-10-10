@@ -11,7 +11,8 @@
  *
  * Las funciones adicionales (las que pidió alguna clínica y luego se
  * ofrecen a las demás, ver apps/common/funcionalidades.py) no vienen con
- * el plan: si la clínica no las tiene, aquí se le enseña qué son.
+ * el plan: si la clínica no las tiene, aquí se le enseña qué son. Las
+ * que están en prueba solo le llegan a la clínica de pruebas, marcadas.
  */
 
 import { useEffect, useState } from "react";
@@ -78,6 +79,12 @@ export default function ModulosClinica() {
             <span style={{ flex: 1 }}>
               <strong style={{ fontSize: 14.5 }}>{m.nombre}</strong>
               {m.tipo === "adicional" && <span className="etiqueta-adicional">Adicional</span>}
+              {m.fase === "prueba" && (
+                <span className="etiqueta-prueba"
+                      title="Solo la tienen las clínicas de prueba hasta que se publique para todas.">
+                  En prueba
+                </span>
+              )}
               <span style={{ display: "block", fontSize: 12.5, color: "var(--ink-soft)" }}>{m.descripcion}</span>
             </span>
             <span style={{ fontSize: 12, fontWeight: 600, minWidth: 64, textAlign: "right",

@@ -149,17 +149,32 @@ def _default_theme():
 
 class ClinicBranding(TenantAwareModel):
     """
-    Identidad visual de la clínica (Sprint 33): logotipo y tema de colores.
+    Identidad visual de la clínica (Sprint 33): logotipos, paleta y temas.
     Un registro por tenant; cada clínica personaliza sin afectar a las demás.
 
     theme = {
-      "preset":  "default" | nombre de tema predefinido | "auto" | "custom",
+      "preset":  "default" | nombre de tema predefinido | "auto" | "custom"
+                 | "clinica:<clave>" (uno de `temas`),
       "primary": "#rrggbb" (vacío = color del sistema),
       "secondary": "#rrggbb",
+      "nav": "#rrggbb" (opcional),
     }
+
+    `paleta` son los colores de su marca, el primero el principal, y
+    `temas` los que se generan con ellos (apps/configuration/temas_clinica.py):
+    el tema de la clínica puede ser uno de ellos, y cada profesional puede
+    elegirlos para su panel.
     """
 
     logo = models.ImageField(upload_to="branding/logos/", null=True, blank=True)
+    # Para el panel en modo oscuro: el logotipo de fondo claro suele
+    # perderse sobre gris oscuro. Vacío = se usa el de siempre.
+    logo_oscuro = models.ImageField(upload_to="branding/logos/", null=True, blank=True)
+    # Cuadrado, para donde no cabe el logotipo: la barra plegada, la
+    # cabecera del teléfono y la pestaña del navegador.
+    icono = models.ImageField(upload_to="branding/iconos/", null=True, blank=True)
+    paleta = models.JSONField(default=list, blank=True)
+    temas = models.JSONField(default=list, blank=True)
     theme = models.JSONField(default=_default_theme, blank=True)
     display_name = models.CharField(
         max_length=120, blank=True, help_text="Nombre comercial de la clínica."

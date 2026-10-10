@@ -398,6 +398,9 @@ class MeView(APIView):
             # `RequiereFuncionalidad`.
             "funcionalidades": _funcionalidades_de(u),
             "preferencias": normalizar_preferencias(u.preferencias),
+            # El panel lo enseña junto al nombre de la clínica: quien trabaja
+            # en ella ve funciones que las demás todavía no tienen.
+            "clinica_de_pruebas": bool(u.tenant_id and u.tenant.es_prueba),
         })
 
 
@@ -477,6 +480,13 @@ class PreferenciasView(APIView):
                 datos[clave] = validar_apariencia(clave, datos[clave])
             except ValueError as exc:
                 return Response({"detail": f"{clave}: {exc}."}, status=status.HTTP_400_BAD_REQUEST)
+        # Elegir tema propio es una función de la clínica (en prueba
+        # mientras no se publique): sin ella, solo se puede volver al de la
+        # clínica. Quitárselo siempre se puede.
+        if datos.get("tema") and not _funcionalidades_de(u).get("temas_personales"):
+            return Response(
+                {"detail": "Tu clínica todavía no tiene la elección de tema por persona."},
+                status=status.HTTP_403_FORBIDDEN)
         u.preferencias = {**normalizar_preferencias(u.preferencias), **datos}
         u.save(update_fields=["preferencias"])
         return self._respuesta(u)

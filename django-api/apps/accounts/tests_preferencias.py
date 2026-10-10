@@ -34,7 +34,7 @@ class PreferenciasTests(APITestCase):
         r = self.client.get(RUTA)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["preferencias"],
-                         {"odontograma_3d": True, "acento": "", "barra_oculta": []})
+                         {"odontograma_3d": True, "acento": "", "barra_oculta": [], "tema": ""})
         self.assertEqual(r.data["disponibles"], {"odontograma_3d": False})
         self.tenant.funcionalidades = normalizar({"odontograma_3d": True})
         self.tenant.save(update_fields=["funcionalidades"])
@@ -46,7 +46,7 @@ class PreferenciasTests(APITestCase):
         self.assertFalse(r.data["preferencias"]["odontograma_3d"])
         self.doctor.refresh_from_db()
         self.assertEqual(self.doctor.preferencias,
-                         {"odontograma_3d": False, "acento": "", "barra_oculta": []})
+                         {"odontograma_3d": False, "acento": "", "barra_oculta": [], "tema": ""})
         self.assertFalse(self.client.get("/api/v1/auth/me/").data["preferencias"]["odontograma_3d"])
 
     def test_no_toca_las_de_otro(self):
@@ -113,7 +113,51 @@ class AparienciaTests(APITestCase):
             self.assertEqual(self.client.patch(RUTA, cuerpo, format="json").status_code, 400, cuerpo)
 
     def test_lo_guardado_a_mano_y_roto_no_rompe_el_panel(self):
-        self.yo.preferencias = {"acento": {"x": 1}, "barra_oculta": "todo"}
+        self.yo.preferencias = {"acento": {"x": 1}, "barra_oculta": "todo", "tema": "<script>"}
         self.yo.save(update_fields=["preferencias"])
         prefs = self.client.get(RUTA).data["preferencias"]
-        self.assertEqual((prefs["acento"], prefs["barra_oculta"]), ("", []))
+        self.assertEqual((prefs["acento"], prefs["barra_oculta"], prefs["tema"]), ("", [], ""))
+
+
+class TemaDeCadaPersonaTests(APITestCase):
+    """
+    Elegir el tema del panel: función «temas_personales», en prueba.
+
+    Mientras no se publique, solo se puede en una clínica de prueba; en
+    las demás, solo volver al de la clínica.
+    """
+
+    def setUp(self):
+        self.prueba = Tenant.objects.create(name="Clínica de Pruebas Tema", es_prueba=True)
+        self.normal = Tenant.objects.create(name="Clínica Normal Tema")
+        self.de_prueba = User.objects.create_user(
+            email="p@tema.ec", password="clave-larga-8gatos", role="doctor", tenant=self.prueba)
+        self.de_normal = User.objects.create_user(
+            email="n@tema.ec", password="clave-larga-8gatos", role="doctor", tenant=self.normal)
+
+    def test_en_la_clinica_de_prueba_se_elige_y_lo_devuelve_auth_me(self):
+        self.client.force_authenticate(user=self.de_prueba)
+        for tema in ("clinube:bosque", "clinica:principal"):
+            r = self.client.patch(RUTA, {"tema": tema}, format="json")
+            self.assertEqual(r.status_code, 200, r.data)
+            self.assertEqual(self.client.get("/api/v1/auth/me/").data["preferencias"]["tema"], tema)
+
+    def test_en_una_clinica_normal_no_mientras_este_en_prueba(self):
+        self.client.force_authenticate(user=self.de_normal)
+        r = self.client.patch(RUTA, {"tema": "clinube:bosque"}, format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("tema", r.data["detail"])
+        # Volver al de la clínica sí se puede siempre.
+        self.assertEqual(self.client.patch(RUTA, {"tema": ""}, format="json").status_code, 200)
+
+    def test_publicada_la_tienen_todas(self):
+        from apps.common.funcionalidades import publicar
+
+        publicar("temas_personales", True)
+        self.client.force_authenticate(user=self.de_normal)
+        self.assertEqual(self.client.patch(RUTA, {"tema": "clinube:vino"}, format="json").status_code, 200)
+
+    def test_formas_no_validas(self):
+        self.client.force_authenticate(user=self.de_prueba)
+        for tema in ("bosque", "otro:bosque", "clinica:<b>", "clinube:" + "x" * 40, 7):
+            self.assertEqual(self.client.patch(RUTA, {"tema": tema}, format="json").status_code, 400, tema)

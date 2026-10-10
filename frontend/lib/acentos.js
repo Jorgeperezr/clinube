@@ -1,7 +1,8 @@
 /**
  * Colores de acento que cada persona puede elegir para SU panel
  * (Mis preferencias o el menú de su perfil), como el color de resalte de
- * macOS. "" = el de la clínica, que es lo normal.
+ * macOS. "" = el del tema (el de la clínica, o el que haya elegido esa
+ * persona), que es lo normal.
  *
  * Cambia el acento —botones, la píldora del menú, enlaces—, no la
  * identidad de la clínica: el logotipo, los documentos y lo que ven los
@@ -13,7 +14,7 @@
  */
 
 export const ACENTOS = [
-  { clave: "", nombre: "De la clínica", color: null },
+  { clave: "", nombre: "Del tema", color: null },
   { clave: "default", nombre: "Clinube", color: "#0e7490" },
   { clave: "oceano", nombre: "Océano", color: "#0f4c81" },
   { clave: "violeta", nombre: "Violeta", color: "#6d28d9" },

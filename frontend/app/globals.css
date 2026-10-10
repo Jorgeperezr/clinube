@@ -995,6 +995,90 @@ body.con-proxima-cita .panel-contenido { padding-bottom: 84px; }
   font-size: 11px; font-weight: 600; vertical-align: 2px;
   color: var(--petrol); background: color-mix(in srgb, var(--petrol) 12%, transparent);
 }
+/* Una función en prueba (solo en clínicas de prueba hasta publicarla),
+   y la clínica de pruebas en sí, junto a su nombre en la barra lateral. */
+.etiqueta-prueba {
+  display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; vertical-align: 2px; white-space: nowrap;
+  color: var(--amber); background: var(--amber-soft);
+}
+.lat-prueba { margin: 0; vertical-align: 1px; }
+
+/* ── Identidad de la clínica (lib/IdentidadClinica.js) ─────────────── */
+.identidad-ayuda { font-size: 12.5px; color: var(--ink-soft); margin: 4px 0 0; }
+.tema-rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tema-tarjeta {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; text-align: left;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--elev); color: var(--ink);
+  font: inherit; cursor: default;
+}
+button.tema-tarjeta { cursor: pointer; transition: border-color var(--dur-fast) var(--ease); }
+button.tema-tarjeta:hover { border-color: var(--line-strong); }
+.tema-tarjeta--activa, button.tema-tarjeta--activa:hover { border: 2px solid var(--petrol); padding: 7px; }
+.tema-muestra {
+  display: flex; height: 64px; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--paper);
+}
+.tema-muestra-lateral {
+  width: 34%; padding: 7px 5px; display: flex; flex-direction: column; gap: 5px;
+  background: var(--lat-solido); border-right: 1px solid var(--line);
+}
+.tema-muestra-pildora { height: 8px; border-radius: 999px; }
+.tema-muestra-linea { height: 5px; width: 80%; border-radius: 999px; background: var(--line-strong); }
+.tema-muestra-linea--corta { width: 55%; }
+.tema-muestra-lienzo { flex: 1; padding: 9px; display: flex; flex-direction: column; gap: 7px; }
+.tema-muestra-boton { width: 58%; height: 12px; border-radius: 6px; }
+.tema-muestra-chip { width: 30%; height: 10px; border-radius: 999px; }
+.tema-nombre { font-size: 13px; font-weight: 600; line-height: 1.25; }
+.tema-etiqueta {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px;
+  font-weight: 600; color: var(--petrol); background: color-mix(in srgb, var(--petrol) 12%, transparent);
+}
+.tema-descripcion { font-size: 11.5px; color: var(--ink-soft); line-height: 1.35; }
+
+.paleta-fila { display: flex; flex-wrap: wrap; gap: 8px; }
+.paleta-color {
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 5px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--elev);
+}
+.paleta-color input[type="color"] {
+  width: 30px; height: 30px; padding: 0; border: none; border-radius: 7px; background: none; cursor: pointer;
+}
+.paleta-codigo { font-size: 12.5px; color: var(--ink-soft); }
+.paleta-principal {
+  font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 999px;
+  color: var(--petrol); background: color-mix(in srgb, var(--petrol) 12%, transparent);
+}
+.paleta-quitar {
+  width: 22px; height: 22px; border: none; border-radius: 999px; background: transparent;
+  color: var(--ink-faint); font-size: 16px; line-height: 1; cursor: pointer;
+}
+.paleta-quitar:hover { background: var(--line); color: var(--ink); }
+.paleta-pegar { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.paleta-pegar input {
+  flex: 1 1 220px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--elev); color: var(--ink);
+}
+
+.logos-rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.logo-selector { display: flex; gap: 12px; align-items: flex-start; }
+.logo-caja {
+  flex: none; width: 96px; height: 64px; border-radius: 10px; border: 1px dashed var(--line-strong);
+  display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 6px;
+  background-color: #fff; color: #6b7280; font-size: 11px; text-align: center;
+  background-image: linear-gradient(45deg, #e5e9ee 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e9ee 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e9ee 75%), linear-gradient(-45deg, transparent 75%, #e5e9ee 75%);
+  background-size: 14px 14px; background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+}
+.logo-caja--oscura { background: #1e2026; color: #a1a1a6; border-color: #3a3d45; }
+.logo-caja img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* El logotipo para fondo oscuro, si la clínica lo tiene, sustituye al de
+   siempre en modo oscuro (app/panel/layout.js). */
+.logo-para-oscuro { display: none; }
+[data-theme="dark"] .logo-para-oscuro { display: block; }
+[data-theme="dark"] .logo-para-claro--con-oscuro { display: none; }
 
 /* ── Escáner de documentos (lib/DocumentScanner.js) ─────────────────
    A pantalla completa y oscuro, como la cámara de un teléfono. En

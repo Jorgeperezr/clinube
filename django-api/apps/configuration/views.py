@@ -195,9 +195,11 @@ class ClinicBrandingView(APIView):
          Lectura para cualquier usuario autenticado del tenant (el tema
          se aplica a toda la interfaz, no solo al administrador).
     PATCH /api/v1/config/branding/ — solo administrador. Acepta multipart
-         (logo) y/o JSON (theme). Con logo_clear=true elimina el logotipo.
-         Al subir un logo se devuelve además auto_palette con los colores
-         predominantes extraídos, para ofrecer el tema automático.
+         (logo, logo_oscuro, icono) y/o JSON (theme, paleta). Con
+         <campo>_clear=true se quita ese archivo. Al subir un logo se
+         devuelve además auto_palette con los colores predominantes
+         extraídos, para ofrecer el tema automático. Con `paleta` se
+         regeneran los temas de la clínica (apps/configuration/identidad.py).
     """
 
     permission_classes = [HasRole.for_roles("admin", "reception", "doctor", "auxiliary")]
@@ -213,6 +215,7 @@ class ClinicBrandingView(APIView):
         return Response(ClinicBrandingSerializer(obj, context={"request": request}).data)
 
     def patch(self, request):
+        from . import identidad
         from .branding import extract_palette
         from .serializers import ClinicBrandingSerializer
 
@@ -222,19 +225,12 @@ class ClinicBrandingView(APIView):
 
         obj = self._get_or_create(request)
         auto_palette = None
-
-        if str(request.data.get("logo_clear", "")).lower() in ("true", "1"):
-            if obj.logo:
-                obj.logo.delete(save=False)
-            obj.logo = None
+        try:
+            identidad.actualizar(obj, request.data, request.FILES)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
 
         if "logo" in request.FILES:
-            # Al reemplazar, el archivo anterior se borra del disco: evita
-            # acumular logotipos huérfanos de cada prueba y garantiza que
-            # no queden restos de la imagen previa.
-            if obj.logo:
-                obj.logo.delete(save=False)
-            obj.logo = request.FILES["logo"]
             try:
                 auto_palette = extract_palette(request.FILES["logo"])
             except Exception:
@@ -244,23 +240,38 @@ class ClinicBrandingView(APIView):
             if field in request.data:
                 setattr(obj, field, str(request.data.get(field) or "").strip()[:200])
 
-        theme = request.data.get("theme")
-        if theme is not None:
-            import json
-            if isinstance(theme, str):
-                try:
-                    theme = json.loads(theme)
-                except ValueError:
-                    return Response({"detail": "El tema no tiene un formato válido."}, status=400)
-            if not isinstance(theme, dict):
-                return Response({"detail": "El tema no tiene un formato válido."}, status=400)
-            obj.theme = theme
-
         obj.save()
         data = ClinicBrandingSerializer(obj, context={"request": request}).data
         if auto_palette is not None:
             data["auto_palette"] = auto_palette
         return Response(data)
+
+
+class TemasPrevisualizarView(APIView):
+    """
+    POST /api/v1/config/temas/previsualizar/ — los temas que saldrían de
+    una paleta, sin guardar nada. Si no viene paleta pero sí un `logo`
+    (multipart), la paleta sale de los colores del logotipo.
+
+    La usan el alta de clínicas (Plataforma) y Configuración → Identidad
+    visual, para enseñar los temas antes de crearlos.
+    """
+
+    permission_classes = [HasRole.for_roles("admin", "superadmin")]
+
+    def post(self, request):
+        from . import identidad
+        from .branding import extract_palette
+        from .temas_clinica import generar_temas
+
+        try:
+            paleta = identidad.leer_paleta(request.data) if "paleta" in request.data else []
+            if not paleta and "logo" in request.FILES:
+                identidad.validar_imagen(request.FILES["logo"], "El logotipo")
+                paleta = extract_palette(request.FILES["logo"]).get("colores", [])
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({"paleta": paleta, "temas": generar_temas(paleta)})
 
 
 class DocumentAppearanceView(APIView):
@@ -540,13 +551,18 @@ class ModulosClinicaView(APIView):
     permission_classes = [IsClinicAdmin]
 
     def _respuesta(self, tenant):
-        from apps.common.funcionalidades import CATALOGO, contratadas, efectivas
+        from apps.common.funcionalidades import CATALOGO, contratadas, efectivas, en_prueba
 
         contratado, efectivo = contratadas(tenant), efectivas(tenant)
+        # Lo que está en prueba no existe para una clínica que no es de
+        # prueba: ni se le ofrece ni se le nombra.
+        beta = en_prueba()
         return Response([
             {"clave": clave, "nombre": d["nombre"], "descripcion": d["descripcion"],
-             "tipo": d["tipo"], "contratado": contratado[clave], "activo": efectivo[clave]}
+             "tipo": d["tipo"], "fase": "prueba" if clave in beta else "estable",
+             "contratado": contratado[clave], "activo": efectivo[clave]}
             for clave, d in CATALOGO.items()
+            if clave not in beta or tenant.es_prueba
         ])
 
     def get(self, request):

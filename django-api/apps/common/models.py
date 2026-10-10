@@ -35,6 +35,18 @@ class Tenant(models.Model):
         default=dict, blank=True,
         verbose_name="Módulos que la clínica decide usar",
     )
+    # Donde se prueban las funciones nuevas antes de dárselas a las demás
+    # (`fase` en apps/common/funcionalidades.py). La primera clínica de
+    # una instalación —la que crea `bootstrap`— nace de pruebas; las que
+    # se dan de alta desde Plataforma, no, salvo que se marque.
+    es_prueba = models.BooleanField(
+        default=False, verbose_name="Clínica de pruebas",
+        help_text=(
+            "Recibe las funciones nuevas antes que las demás. Lo que se "
+            "prueba aquí no llega a otras clínicas hasta publicarlo desde "
+            "Plataforma."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -109,6 +121,11 @@ class PlatformConfiguration(models.Model):
     proveedor_correo = models.CharField(
         "Proveedor de correo", max_length=120, blank=True,
         help_text="El servicio que envía los correos (p. ej. «Brevo»). Sale en el aviso de privacidad.",
+    )
+    # Funciones que nacieron «en prueba» y que ya se publicaron para todas
+    # las clínicas (Plataforma → Funciones). Ver apps/common/funcionalidades.py.
+    funciones_publicadas = models.JSONField(
+        "Funciones publicadas", default=list, blank=True,
     )
     updated_at = models.DateTimeField(auto_now=True)
 

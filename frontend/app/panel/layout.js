@@ -20,7 +20,10 @@ import { useEffect, useRef, useState } from "react";
 import { api, currentUser, logout, RUTA_CONDICIONES, tieneFuncion } from "../../lib/api";
 import { ACENTOS, recordarAcento } from "../../lib/acentos";
 import { IconoClinube, LogoClinube, MARCA } from "../../lib/marca";
-import { applyBrandingChrome, applyTheme, initColorMode, logoSrc, onBrandingUpdated, readBrandingCache, saveBrandingCache } from "../../lib/theme";
+import {
+  applyBrandingChrome, applyTheme, initColorMode, logoSrc, onBrandingUpdated, readBrandingCache,
+  recordarTemaPersonal, saveBrandingCache,
+} from "../../lib/theme";
 import NavIcon from "../../lib/NavIcons";
 import ProximaCita from "../../lib/ProximaCita";
 import ThemeSwitch from "../../lib/ThemeSwitch";
@@ -96,6 +99,9 @@ export default function PanelLayout({ children }) {
         if (me.condiciones_pendientes) { window.location.href = RUTA_CONDICIONES; return; }
         setUser(me);
         recordarAcento(me.preferencias?.acento || "");
+        // El tema propio solo vale si la clínica tiene la función (en
+        // prueba, solo la clínica de pruebas): si no, el de la clínica.
+        recordarTemaPersonal(me.funcionalidades?.temas_personales ? (me.preferencias?.tema || "") : "");
         applyTheme(null);
       })
       .catch(() => {});
@@ -222,18 +228,26 @@ export default function PanelLayout({ children }) {
     else grupos.push({ seccion: item.seccion || null, items: [item] });
   }
 
-  const marcaClinica = branding?.logo_url ? (
+  const hayLogoPropio = Boolean(branding?.logo_url || branding?.icono_url);
+  // En la clínica de pruebas se ven funciones que las demás aún no tienen.
+  const etiquetaPrueba = user.clinica_de_pruebas && !plegada && (
+    <span className="etiqueta-prueba lat-prueba"
+          title="Clínica de pruebas: aquí se ven antes las funciones nuevas">Pruebas</span>
+  );
+  const marcaClinica = hayLogoPropio ? (
     <div className="lat-marca" style={{ justifyContent: plegada ? "center" : "flex-start" }}>
-      <img src={logoSrc(branding.logo_url, branding.updated_at)} alt="Logotipo de la clínica"
-           style={{ height: plegada ? 30 : 36, maxWidth: plegada ? 44 : 64, objectFit: "contain" }} />
-      {!plegada && <span className="lat-nombre">{nombreClinica || MARCA}</span>}
+      <LogoDeLaClinica branding={branding} compacto={plegada}
+                       alto={plegada ? 30 : 36} ancho={plegada ? 44 : 64} />
+      {!plegada && <span className="lat-nombre">{nombreClinica || MARCA}{etiquetaPrueba}</span>}
     </div>
   ) : (
     // Sin logotipo propio la clínica lleva el de Clinube, y su nombre
     // debajo: quien trabaja ahí sigue viendo en qué clínica está.
     <div className="lat-marca" style={{ flexDirection: "column", alignItems: plegada ? "center" : "flex-start", gap: 4 }}>
       {plegada ? <IconoClinube alto={24} titulo={MARCA} /> : <LogoClinube alto={22} />}
-      {!plegada && nombreClinica && <span className="lat-nombre lat-nombre--suave">{nombreClinica}</span>}
+      {!plegada && (nombreClinica || etiquetaPrueba) && (
+        <span className="lat-nombre lat-nombre--suave">{nombreClinica}{etiquetaPrueba}</span>
+      )}
     </div>
   );
 
@@ -246,9 +260,8 @@ export default function PanelLayout({ children }) {
                   aria-label="Abrir menú" title="Menú">
             <MenuIcon />
           </button>
-          {branding?.logo_url ? (
-            <img src={logoSrc(branding.logo_url, branding.updated_at)} alt=""
-                 style={{ height: 26, maxWidth: 40, objectFit: "contain" }} />
+          {hayLogoPropio ? (
+            <LogoDeLaClinica branding={branding} compacto alto={26} ancho={40} />
           ) : (
             <IconoClinube alto={22} />
           )}
@@ -327,7 +340,7 @@ export default function PanelLayout({ children }) {
           )}
         </nav>
 
-        <Perfil user={user} plegada={plegada} hayLogoPropio={Boolean(branding?.logo_url)}
+        <Perfil user={user} plegada={plegada} hayLogoPropio={hayLogoPropio}
                 puedeEditar={user.role !== "superadmin"}
                 alEditar={() => { setEditando(true); if (plegada) toggleCollapsed(); }} />
       </aside>
@@ -337,6 +350,30 @@ export default function PanelLayout({ children }) {
         {["admin", "reception", "doctor"].includes(user.role) && <ProximaCita />}
       </main>
     </div>
+  );
+}
+
+/**
+ * El logotipo de la clínica que toca en cada sitio: el ícono donde no
+ * cabe el logotipo (barra plegada, cabecera del teléfono) y, en modo
+ * oscuro, el de fondo oscuro si lo tiene. El cambio de modo lo resuelve
+ * el CSS (.logo-para-oscuro): se pintan los dos y se ve uno.
+ */
+function LogoDeLaClinica({ branding, compacto = false, alto, ancho }) {
+  const version = branding.updated_at;
+  const conIcono = Boolean(branding.icono_url) && (compacto || !branding.logo_url);
+  const principal = conIcono ? branding.icono_url : branding.logo_url;
+  const oscuro = conIcono ? null : branding.logo_oscuro_url;
+  const estilo = { height: alto, maxWidth: ancho, objectFit: "contain" };
+  return (
+    <>
+      <img src={logoSrc(principal, version)} alt="Logotipo de la clínica" style={estilo}
+           className={oscuro ? "logo-para-claro--con-oscuro" : undefined} />
+      {oscuro && (
+        <img src={logoSrc(oscuro, version)} alt="" aria-hidden="true" style={estilo}
+             className="logo-para-oscuro" />
+      )}
+    </>
   );
 }
 
@@ -406,6 +443,9 @@ function Perfil({ user, plegada, hayLogoPropio, puedeEditar, alEditar }) {
             </>
           )}
           <div className="lat-menu-opciones">
+            {puedeEditar && user.funcionalidades?.temas_personales && (
+              <a className="lat-menu-opcion" href="/panel/preferencias/#tema">Elegir tema…</a>
+            )}
             {puedeEditar && (
               <button type="button" className="lat-menu-opcion" onClick={() => { setAbierto(false); alEditar(); }}>
                 Editar barra lateral…

@@ -39,6 +39,18 @@ y, desde ese momento, Plataforma la ofrece a cualquier otra. Pasos:
      activa (`funciones`) y la app la esconda si no.
   5. Pruebas: que sin activarla la API responda 403 y que una clínica
      nueva no la tenga.
+
+**Funciones en prueba** (`fase`). Lo nuevo nace con `"fase": "prueba"`:
+mientras tanto solo existe en las clínicas de prueba (`Tenant.es_prueba`;
+la primera clínica de la instalación lo es). En las demás no aparece ni
+en el menú, ni en la API, ni en Configuración → Módulos, aunque esté
+marcada. Cuando se ha probado lo suficiente, el Super Administrador la
+publica en Plataforma → Funciones y desde ese momento se comporta según
+su tipo: una «incluida» llega encendida a todas, una «adicional» queda
+lista para agregarla a quien la pida. Publicar se puede deshacer: vuelve
+a quedar solo en las de prueba, sin borrar nada.
+
+Cuando ya no haga falta la marcha atrás, se le quita `fase` aquí.
 """
 
 CATALOGO = {
@@ -74,6 +86,14 @@ CATALOGO = {
         "descripcion": "Informes financieros y de producción.",
         "tipo": "incluida", "por_defecto": True,
     },
+    # En prueba: solo en las clínicas de prueba hasta que se publique.
+    "temas_personales": {
+        "nombre": "Tema de cada persona",
+        "descripcion": "Cada profesional elige el tema de su panel entre los de su clínica y "
+                       "los de Clinube. Los documentos y la app del paciente siguen con el "
+                       "tema de la clínica.",
+        "tipo": "incluida", "por_defecto": True, "fase": "prueba",
+    },
     # ── Adicionales: se agregan a pedido ─────────────────────────────
     "odontograma_3d": {
         "nombre": "Odontograma 3D",
@@ -97,12 +117,49 @@ TIPOS = {"incluida": "Incluidas", "adicional": "Adicionales"}
 # Lo que lleva una clínica recién creada si nadie dice otra cosa.
 POR_DEFECTO = {clave: d["por_defecto"] for clave, d in CATALOGO.items()}
 
+# Las que nacieron en prueba (se pueden publicar y volver a retirar).
+NACIDAS_EN_PRUEBA = frozenset(c for c, d in CATALOGO.items() if d.get("fase") == "prueba")
+
+
+def publicadas():
+    """Las nacidas en prueba que el Super Administrador ya dio a todas."""
+    from apps.common.models import PlatformConfiguration
+
+    guardadas = PlatformConfiguration.objects.values_list("funciones_publicadas", flat=True).first()
+    return {c for c in (guardadas or []) if c in NACIDAS_EN_PRUEBA}
+
+
+def en_prueba():
+    """Las que todavía solo existen en las clínicas de prueba."""
+    if not NACIDAS_EN_PRUEBA:
+        return set()  # lo normal: ni se consulta la base
+    return set(NACIDAS_EN_PRUEBA) - publicadas()
+
+
+def publicar(clave, publicada):
+    """Da una función nacida en prueba a todas las clínicas, o la retira."""
+    from apps.common.models import PlatformConfiguration
+
+    if clave not in NACIDAS_EN_PRUEBA:
+        raise ValueError("Esa función no está en prueba: ya la tienen todas las clínicas.")
+    config = PlatformConfiguration.get_solo()
+    lista = set(config.funciones_publicadas or []) & NACIDAS_EN_PRUEBA
+    if publicada:
+        lista.add(clave)
+    else:
+        lista.discard(clave)
+    config.funciones_publicadas = sorted(lista)
+    config.save(update_fields=["funciones_publicadas", "updated_at"])
+
 
 def catalogo_publico():
-    """El catálogo como lo pinta Plataforma: en orden, con su tipo y origen."""
+    """El catálogo como lo pinta Plataforma: en orden, con su tipo, fase y origen."""
+    beta = en_prueba()
     return [
         {"clave": clave, "nombre": d["nombre"], "descripcion": d["descripcion"],
-         "tipo": d["tipo"], "por_defecto": d["por_defecto"], "origen": d.get("origen", "")}
+         "tipo": d["tipo"], "por_defecto": d["por_defecto"], "origen": d.get("origen", ""),
+         "fase": "prueba" if clave in beta else "estable",
+         "nacio_en_prueba": clave in NACIDAS_EN_PRUEBA}
         for clave, d in CATALOGO.items()
     ]
 
@@ -125,8 +182,18 @@ def normalizar(valor):
 
 
 def contratadas(tenant):
-    """Lo que la plataforma le ha dado de alta a la clínica."""
-    return normalizar(getattr(tenant, "funcionalidades", None))
+    """
+    Lo que la plataforma le ha dado de alta a la clínica.
+
+    Una función en prueba solo cuenta en una clínica de prueba: en las
+    demás no existe todavía, la tengan marcada o no. Lo marcado se
+    conserva y vale en cuanto se publique.
+    """
+    datos = normalizar(getattr(tenant, "funcionalidades", None))
+    if not getattr(tenant, "es_prueba", False):
+        for clave in en_prueba():
+            datos[clave] = False
+    return datos
 
 
 def efectivas(tenant):

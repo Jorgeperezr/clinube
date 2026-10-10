@@ -33,7 +33,8 @@ IS_SUPERADMIN = HasRole.for_roles("superadmin")
 PLATFORM_ACTIONS = [
     "create_clinic", "update_clinic", "activate_clinic", "deactivate_clinic",
     "create_clinic_admin", "update_clinic_admin", "reset_clinic_admin_password",
-    "update_platform_config",
+    "update_platform_config", "update_clinic_identity",
+    "publish_feature", "unpublish_feature",
 ]
 
 
@@ -67,7 +68,8 @@ class ClinicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
         fields = ["id", "name", "ruc", "address", "phone", "email",
-                  "is_active", "admin", "condiciones", "funcionalidades", "created_at"]
+                  "is_active", "es_prueba", "admin", "condiciones", "funcionalidades",
+                  "created_at"]
         read_only_fields = ["id", "created_at"]
 
     def get_admin(self, obj):
@@ -213,12 +215,77 @@ class ClinicDetailView(generics.RetrieveUpdateAPIView):
 
     def perform_update(self, serializer):
         previous_active = serializer.instance.is_active
+        previous_prueba = serializer.instance.es_prueba
         tenant = serializer.save()
         if previous_active != tenant.is_active:
             action = "activate_clinic" if tenant.is_active else "deactivate_clinic"
         else:
             action = "update_clinic"
-        _audit_platform(self.request, action, "Tenant", tenant.id, {"name": tenant.name})
+        metadata = {"name": tenant.name}
+        if previous_prueba != tenant.es_prueba:
+            # Que conste quién convirtió una clínica en «de pruebas»: desde
+            # ese momento ve funciones que las demás todavía no tienen.
+            metadata["es_prueba"] = tenant.es_prueba
+        _audit_platform(self.request, action, "Tenant", tenant.id, metadata)
+
+
+# ─────────────────────── Identidad visual ───────────────────────
+
+class ClinicIdentidadView(APIView):
+    """
+    GET/PATCH /api/v1/platform/clinics/{pk}/identidad/ — logotipos, paleta
+    y temas de una clínica: se dan al crearla y se pueden cambiar después.
+
+    Es su imagen, no sus datos: no rompe el aislamiento de la plataforma
+    (no se ve ningún paciente, cita ni pago). Acepta lo mismo que
+    Configuración → Identidad visual, por el mismo camino
+    (apps/configuration/identidad.py): `logo`, `logo_oscuro`, `icono`,
+    `<campo>_clear`, `paleta` y `theme`. Con la paleta se generan los
+    temas de la clínica y, si aún tenía el de fábrica, se le pone el
+    principal.
+    """
+
+    permission_classes = [IS_SUPERADMIN]
+
+    def _branding(self, pk):
+        from apps.configuration.models import ClinicBranding
+
+        tenant = Tenant.objects.filter(pk=pk).first()
+        if tenant is None:
+            return None
+        branding, _ = ClinicBranding.objects.get_or_create(tenant=tenant)
+        return branding
+
+    def _respuesta(self, branding):
+        from apps.configuration.serializers import ClinicBrandingSerializer
+
+        datos = ClinicBrandingSerializer(branding).data
+        return Response({clave: datos[clave] for clave in (
+            "logo_url", "logo_oscuro_url", "icono_url", "theme", "paleta", "temas", "updated_at")})
+
+    def get(self, request, pk):
+        branding = self._branding(pk)
+        if branding is None:
+            return Response({"detail": "Clínica no encontrada."}, status=404)
+        return self._respuesta(branding)
+
+    def patch(self, request, pk):
+        from apps.configuration import identidad
+
+        branding = self._branding(pk)
+        if branding is None:
+            return Response({"detail": "Clínica no encontrada."}, status=404)
+        try:
+            identidad.actualizar(branding, request.data, request.FILES)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        branding.save()
+        cambios = sorted(set(request.FILES) | {
+            clave for clave in request.data
+            if clave in ("paleta", "theme") or clave.endswith("_clear")})
+        _audit_platform(request, "update_clinic_identity", "Tenant", branding.tenant_id,
+                        {"name": branding.tenant.name, "cambios": cambios})
+        return self._respuesta(branding)
 
 
 # ──────────────── Administradores de clínica ────────────────
@@ -408,9 +475,12 @@ class PlatformConfigSerializer(serializers.ModelSerializer):
 class FuncionalidadesView(APIView):
     """
     GET /api/v1/platform/funcionalidades/ — el catálogo de funciones, con
-    su tipo (incluida o adicional), si viene encendida en una clínica nueva
-    y de dónde salió. Plataforma lo pinta tal cual: una función nueva
-    aparece sola al desplegarla.
+    su tipo (incluida o adicional), su fase (en prueba o estable), si
+    viene encendida en una clínica nueva y de dónde salió. Plataforma lo
+    pinta tal cual: una función nueva aparece sola al desplegarla.
+
+    Trae también qué clínicas son de prueba, que son las únicas que ven
+    lo que está en prueba.
     """
 
     permission_classes = [IS_SUPERADMIN]
@@ -418,7 +488,41 @@ class FuncionalidadesView(APIView):
     def get(self, request):
         from apps.common.funcionalidades import TIPOS, catalogo_publico
 
-        return Response({"tipos": TIPOS, "funcionalidades": catalogo_publico()})
+        return Response({
+            "tipos": TIPOS,
+            "funcionalidades": catalogo_publico(),
+            "clinicas_de_prueba": [
+                {"id": str(t.id), "name": t.name}
+                for t in Tenant.objects.filter(es_prueba=True).order_by("name")
+            ],
+        })
+
+
+class FuncionalidadPublicacionView(APIView):
+    """
+    PATCH /api/v1/platform/funcionalidades/{clave}/ con {"publicada": true}
+    — da a todas las clínicas una función que estaba en prueba; con false
+    la devuelve a prueba (vuelve a verse solo en las clínicas de prueba).
+    Ni publicar ni retirar borra datos.
+    """
+
+    permission_classes = [IS_SUPERADMIN]
+
+    def patch(self, request, clave):
+        from apps.common.funcionalidades import CATALOGO, catalogo_publico, publicar
+
+        if clave not in CATALOGO:
+            return Response({"detail": "Esa función no existe."}, status=404)
+        publicada = request.data.get("publicada")
+        if not isinstance(publicada, bool):
+            return Response({"detail": "Indica publicada: verdadero o falso."}, status=400)
+        try:
+            publicar(clave, publicada)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        _audit_platform(request, "publish_feature" if publicada else "unpublish_feature",
+                        "Funcionalidad", clave, {"name": CATALOGO[clave]["nombre"]})
+        return Response(next(f for f in catalogo_publico() if f["clave"] == clave))
 
 
 class PlatformConfigView(APIView):

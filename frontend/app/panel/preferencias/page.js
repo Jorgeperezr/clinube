@@ -3,15 +3,21 @@
 /**
  * Mis preferencias: lo que cada profesional decide para sí mismo.
  *
- * Por ahora, usar o no el odontograma 3D. Lo que la clínica tiene
- * contratado lo decide el dueño de la plataforma; aquí solo se elige,
- * dentro de eso, lo que cada cual quiere ver. El odontograma clásico no
- * se apaga nunca: es el del formulario oficial.
+ * Usar o no el odontograma 3D y, si la clínica tiene la función, el tema
+ * de su panel. Lo que la clínica tiene contratado lo decide el dueño de
+ * la plataforma; aquí solo se elige, dentro de eso, lo que cada cual
+ * quiere ver. El odontograma clásico no se apaga nunca: es el del
+ * formulario oficial.
  */
 
 import { useEffect, useState } from "react";
 import { api, currentUser } from "../../../lib/api";
 import { instalar, useInstalacion } from "../../../lib/AppInstalable";
+import { TarjetaTema } from "../../../lib/IdentidadClinica";
+import { opcionesDeTema } from "../../../lib/temas.mjs";
+import {
+  applyTheme, PRESETS, readBrandingCache, recordarTemaPersonal, resolveTheme, saveBrandingCache,
+} from "../../../lib/theme";
 
 const OPCIONES = [
   {
@@ -107,6 +113,11 @@ export default function PreferenciasPage() {
         );
       })}
 
+      {datos && currentUser()?.funcionalidades?.temas_personales && (
+        <TemaDelPanel elegido={datos.preferencias?.tema || ""}
+                      alGuardar={(d) => { setDatos(d); recordar(d.preferencias); }} />
+      )}
+
       <div className="card" style={{ marginTop: 16 }}>
         <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>Color de acento y barra lateral</h3>
         <p style={{ margin: 0, fontSize: 13.5, color: "var(--ink-soft)" }}>
@@ -117,6 +128,70 @@ export default function PreferenciasPage() {
       </div>
 
       <InstalarApp />
+    </div>
+  );
+}
+
+/**
+ * El tema de TU panel: el de la clínica (lo normal), uno de los generados
+ * con la paleta de la clínica o uno de Clinube. Solo cambia lo que ves tú;
+ * los documentos y la app del paciente siguen con el de la clínica.
+ */
+function TemaDelPanel({ elegido, alGuardar }) {
+  const [branding, setBranding] = useState(() => readBrandingCache());
+  const [guardando, setGuardando] = useState("");
+  const [error, setError] = useState("");
+
+  // Los temas de la clínica pueden haber cambiado desde que se guardó la
+  // caché (la administración cambió la paleta): se piden de nuevo.
+  useEffect(() => {
+    api("/config/branding/").then((r) => (r.ok ? r.json() : null)).then((b) => {
+      if (b) { setBranding(b); saveBrandingCache(b); }
+    }).catch(() => {});
+  }, []);
+
+  async function elegir(clave) {
+    if (guardando || clave === elegido) return;
+    setGuardando(clave || "clinica"); setError("");
+    // Se pinta ya; si no se guarda, se vuelve al anterior.
+    recordarTemaPersonal(clave); applyTheme(null);
+    try {
+      const r = await api("/auth/me/preferencias/", { method: "PATCH", body: JSON.stringify({ tema: clave }) });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(d?.detail || `No se pudo guardar (error ${r.status}).`);
+      alGuardar(d);
+    } catch (e) {
+      setError(e.message);
+      recordarTemaPersonal(elegido); applyTheme(null);
+    } finally { setGuardando(""); }
+  }
+
+  const deLaClinica = resolveTheme(branding?.theme);
+  const grupos = opcionesDeTema({ presets: PRESETS, temasClinica: branding?.temas || [] });
+  return (
+    <div className="card" id="tema" style={{ marginTop: 16 }}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>Tema de tu panel</h3>
+      <p style={{ margin: "0 0 12px", fontSize: 13.5, color: "var(--ink-soft)" }}>
+        Solo lo ves tú. Los documentos y la app de los pacientes siguen con el tema de la clínica.
+        El modo claro u oscuro y «Sin color» se eligen aparte, en tu perfil.
+      </p>
+      {error && <div className="error-box">{error}</div>}
+      <div className="tema-rejilla" style={{ marginBottom: 14 }}>
+        <TarjetaTema tema={{ nombre: "El de la clínica", descripcion: "El que eligió tu clínica.",
+                             primary: deLaClinica.primary, secondary: deLaClinica.secondary }}
+                     activo={!elegido} onClick={() => elegir("")} />
+      </div>
+      {grupos.map((g) => (
+        <div key={g.grupo} style={{ marginBottom: 14 }}>
+          <div className="lat-menu-titulo" style={{ margin: "0 0 8px", color: "var(--ink-soft)" }}>{g.titulo}</div>
+          <div className="tema-rejilla">
+            {g.temas.map((t) => (
+              <TarjetaTema key={t.clave} tema={t} activo={elegido === t.clave}
+                           onClick={() => elegir(t.clave)} />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

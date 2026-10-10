@@ -36,10 +36,17 @@ POR_DEFECTO = {clave: d["por_defecto"] for clave, d in CATALOGO.items()}
 #   · barra_oculta: las secciones que esa persona quitó de su barra
 #     lateral. Ocultar no quita permisos: la página sigue funcionando
 #     si se entra por su dirección.
+#   · tema: el tema de su panel. "" = el de la clínica; «clinica:<clave>»
+#     es uno de los generados con la paleta de su clínica y
+#     «clinube:<clave>», uno de los de Clinube (frontend/lib/theme.js).
+#     Solo se puede elegir si la clínica tiene la función
+#     «temas_personales» (eso lo comprueba la vista, que conoce la
+#     clínica); aquí, la forma.
 import re  # noqa: E402
 
-APARIENCIA = {"acento": "", "barra_oculta": []}
+APARIENCIA = {"acento": "", "barra_oculta": [], "tema": ""}
 _CLAVE = re.compile(r"^[a-z_]{1,30}$")
+_TEMA = re.compile(r"^(clinica|clinube):[a-z0-9_]{1,30}$")
 MAX_OCULTAS = 20
 
 
@@ -48,6 +55,10 @@ def validar_apariencia(clave, valor):
     if clave == "acento":
         if not isinstance(valor, str) or (valor and not _CLAVE.match(valor)):
             raise ValueError("el acento tiene que ser el nombre de un color")
+        return valor
+    if clave == "tema":
+        if not isinstance(valor, str) or (valor and not _TEMA.match(valor)):
+            raise ValueError("el tema tiene que ser uno de los de la clínica o de Clinube")
         return valor
     if clave == "barra_oculta":
         if not isinstance(valor, list) or len(valor) > MAX_OCULTAS or \

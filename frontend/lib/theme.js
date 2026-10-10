@@ -2,6 +2,7 @@
 
 import { apiBase } from "./api";
 import { leerAcento } from "./acentos";
+import { colorHex, resolverTemaPersonal } from "./temas.mjs";
 
 /**
  * Motor de temas por clínica (Sprint 33).
@@ -110,11 +111,13 @@ export function resolveTheme(theme) {
   if (!theme || !theme.preset || theme.preset === "default") return { ...DEFAULT };
   const preset = PRESETS.find((p) => p.key === theme.preset);
   if (preset) return { ...preset };
-  // "auto" (del logotipo) o "custom": usa los colores guardados
+  // "auto" (del logotipo), "custom" o uno de los temas de la clínica
+  // («clinica:<clave>», generados con su paleta): los colores guardados.
   return {
     key: theme.preset,
     primary: theme.primary || DEFAULT.primary,
     secondary: theme.secondary || DEFAULT.secondary,
+    nav: colorHex(theme.nav) || undefined,
   };
 }
 
@@ -162,14 +165,18 @@ export function applyTheme(theme, mode) {
   if (typeof document === "undefined") return;
   if (theme) lastTheme = theme;
   const effective = theme || lastTheme;
-  // «Sin color» elegido por la persona manda sobre el tema de la clínica,
-  // pero solo en su pantalla: no toca lo que ven los demás.
-  // Y el acento personal (lib/acentos.js) sobre el color de la clínica:
-  // cambia los resaltes, no el segundo color de su marca.
+  // «Sin color» elegido por la persona manda sobre todo, pero solo en su
+  // pantalla: no toca lo que ven los demás. Después, el tema que eligió
+  // esa persona (lib/temas.mjs) y, si no eligió, el de la clínica. El
+  // acento personal (lib/acentos.js) cambia encima los resaltes, no el
+  // segundo color.
   const acento = leerAcento();
+  const temaBase = resolverTemaPersonal(leerTemaPersonal(), {
+    presets: PRESETS, temasClinica: readBrandingCache()?.temas || [],
+  }) || resolveTheme(effective);
   const tema = readSinColor() ? { ...SIN_COLOR }
-    : acento ? { ...resolveTheme(effective), primary: acento, nav: undefined }
-    : resolveTheme(effective);
+    : acento ? { ...temaBase, primary: acento, nav: undefined }
+    : temaBase;
   const { primary, secondary } = tema;
   const root = document.documentElement;
   const isDark = (mode || root.getAttribute("data-theme")) === "dark";
@@ -289,6 +296,24 @@ export function onSinColorChanged(handler) {
   return () => window.removeEventListener(SIN_COLOR_EVENT, fn);
 }
 
+/* ═══════════ Tema de cada persona (función «temas_personales») ═══════════
+   La copia buena está en su cuenta (preferencia «tema»); esta es la de
+   este navegador, para pintar al instante. El panel la borra si la
+   clínica no tiene la función (app/panel/layout.js). */
+
+const TEMA_PERSONAL_KEY = "temaPersonal";
+
+export function leerTemaPersonal() {
+  try { return localStorage.getItem(TEMA_PERSONAL_KEY) || ""; } catch { return ""; }
+}
+
+export function recordarTemaPersonal(clave) {
+  try {
+    if (clave) localStorage.setItem(TEMA_PERSONAL_KEY, clave);
+    else localStorage.removeItem(TEMA_PERSONAL_KEY);
+  } catch { /* modo privado: vale para esta visita */ }
+}
+
 /** Restablece las variables al tema del sistema. */
 export function resetTheme() {
   applyTheme({ preset: "default" });
@@ -321,14 +346,16 @@ export function applyBrandingChrome(branding) {
   if (typeof document === "undefined" || !branding) return;
   const name = branding.display_name || branding.nombre_clinica || "Clinube";
   document.title = name;
-  if (branding.logo_url) {
+  // En la pestaña, mejor el ícono cuadrado que el logotipo apretado.
+  const icono = branding.icono_url || branding.logo_url;
+  if (icono) {
     let link = document.querySelector("link[rel='icon']");
     if (!link) {
       link = document.createElement("link");
       link.rel = "icon";
       document.head.appendChild(link);
     }
-    link.href = logoSrc(branding.logo_url, branding.updated_at);
+    link.href = logoSrc(icono, branding.updated_at);
   }
 }
 
