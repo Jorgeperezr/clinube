@@ -30,6 +30,11 @@
 # ─────────────────────────────────────────────────────────────────────
 set -uo pipefail
 
+# Donde deja la CLI el instalador oficial de Oracle, por si la terminal
+# (o launchd) todavía no tiene esa carpeta en el PATH.
+PATH="${PATH}:${HOME}/bin:${HOME}/lib/oracle-cli/bin"
+export PATH
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GUION="${DIR}/crear-instancia-oracle.sh"
 USO="bash scripts/oracle-local.sh"
@@ -161,15 +166,11 @@ comprobar_cli() {
     return 0
   fi
   rojo "No está instalada la CLI de Oracle (oci)."
-  if command -v brew >/dev/null 2>&1; then
-    echo "    Instálala con:"
-    echo "    brew install oci-cli"
-  elif [ "$(uname)" = "Darwin" ]; then
-    echo "    Instala Homebrew (https://brew.sh) y después:"
-    echo "    brew install oci-cli"
-  else
-    echo "    Instrucciones: https://docs.oracle.com/iaas/Content/API/SDKDocs/cliinstall.htm"
-  fi
+  # El instalador oficial y no Homebrew: en los Mac con Intel, Homebrew
+  # ya no tiene paquetes hechos y compila LLVM y Rust, horas de espera.
+  echo "    Instálala con el instalador oficial de Oracle (unos minutos):"
+  echo '    bash -c "$(curl -fsSL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -s --accept-all-defaults'
+  echo "    Instrucciones: https://docs.oracle.com/iaas/Content/API/SDKDocs/cliinstall.htm"
   return 1
 }
 

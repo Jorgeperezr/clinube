@@ -151,10 +151,12 @@ git pull
 
 Una sola vez:
 
-1. La CLI de Oracle:
+1. La CLI de Oracle, con el instalador oficial (no con Homebrew: en los
+   Mac con Intel compila LLVM y Rust, horas). Acepta todo lo que pregunta
+   y después abre una ventana nueva de la Terminal:
 
    ```sh
-   brew install oci-cli
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -s --accept-all-defaults
    ```
 
 2. La clave de API en el Mac. El guion crea una nueva —la privada no
