@@ -31,7 +31,13 @@ sistema sea crítico para la operación. El código es idéntico en ambas.
    git clone https://github.com/Jorgeperezr/clinube.git
    cd clinube
    ```
-3. **Configurar el entorno:**
+3. **Configurar el entorno.** Lo más sencillo, con el dominio comprado:
+   ```bash
+   bash scripts/configurar-produccion.sh clinube.com
+   ```
+   Crea el `.env` con claves nuevas generadas en el propio servidor y el
+   panel en `app.clinube.com`, y enseña UNA vez la clave de las copias de
+   seguridad para guardarla fuera. A mano, sería:
    ```bash
    cp .env.production.example .env
    nano .env   # completar TODOS los CAMBIAR- y el dominio real
