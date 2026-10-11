@@ -93,6 +93,18 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
+# En una VM recién creada, Ubuntu instala sus propias actualizaciones
+# nada más arrancar y tiene «cogido» apt unos minutos. Sin esto, el guion
+# fallaba con «Could not get lock /var/lib/dpkg/lock-frontend»; así
+# espera a que termine (hasta 15 minutos). También vale para el
+# instalador de Docker, que usa apt por su cuenta.
+ESPERA_APT=/etc/apt/apt.conf.d/99clinube-esperar-apt
+echo 'DPkg::Lock::Timeout "900";' > "${ESPERA_APT}"
+trap 'rm -f "${ESPERA_APT}"' EXIT
+if pgrep -x apt >/dev/null 2>&1 || pgrep -x apt-get >/dev/null 2>&1 || pgrep -f unattended-upgrade >/dev/null 2>&1; then
+    echo "Ubuntu está instalando sus actualizaciones; se espera a que termine (puede tardar unos minutos)…"
+fi
+
 paso "Parches pendientes"
 apt-get update -q
 apt-get -y -q full-upgrade
