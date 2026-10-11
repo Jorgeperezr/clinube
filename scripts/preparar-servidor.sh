@@ -43,8 +43,10 @@ comprobar() {
     local fallos=0 abiertos
 
     paso "Actualizaciones automáticas"
+    # Sin -q: con pipefail, grep -q sale al primer acierto, apt-config
+    # recibe SIGPIPE y la tubería entera «falla» justo cuando SÍ está.
     if dpkg -s unattended-upgrades >/dev/null 2>&1 \
-        && apt-config dump 2>/dev/null | grep -q 'APT::Periodic::Unattended-Upgrade "1"'; then
+        && apt-config dump 2>/dev/null | grep 'APT::Periodic::Unattended-Upgrade "1"' >/dev/null; then
         verde "unattended-upgrades instalado y activado"
     else
         rojo "unattended-upgrades no está activado"
@@ -69,6 +71,7 @@ comprobar() {
         rojo "hay servicios escuchando hacia fuera:"
         printf '      %s\n' ${abiertos}
         echo "    Si es Nginx: NGINX_PUERTO en el .env debe ser 127.0.0.1:80."
+        echo "    Si es el 111 (rpcbind): sudo bash scripts/preparar-servidor.sh lo apaga."
         fallos=$((fallos + 1))
     fi
 
@@ -125,6 +128,19 @@ Unattended-Upgrade::Remove-Unused-Dependencies "true";
 CONF
 systemctl enable --now unattended-upgrades >/dev/null
 verde "activadas (registro en /var/log/unattended-upgrades/)"
+
+paso "Servicios que no hacen falta"
+# La imagen de Ubuntu de Oracle trae rpcbind escuchando en el puerto 111
+# de todas las interfaces. Es para discos de red (NFS), que Clinube no
+# usa; el cortafuegos de Oracle lo tapa, pero lo que no se usa, apagado.
+if systemctl list-unit-files rpcbind.service >/dev/null 2>&1 \
+    && ! findmnt -t nfs,nfs4 >/dev/null 2>&1; then
+    systemctl disable --now rpcbind.socket rpcbind.service >/dev/null 2>&1 || true
+    systemctl mask rpcbind.socket rpcbind.service >/dev/null 2>&1 || true
+    verde "rpcbind (puerto 111) apagado"
+else
+    verde "nada que apagar"
+fi
 
 paso "Docker"
 if command -v docker >/dev/null 2>&1; then
