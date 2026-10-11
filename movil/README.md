@@ -101,6 +101,23 @@ El aviso de privacidad es público, sin token:
 curl -s http://localhost/api/v1/legal/privacidad/ -o test/fixtures/legal-privacidad.json
 ```
 
+El canal del código también es público. `otp-canal-whatsapp` se captura
+con Plataforma → Configuración en WhatsApp; los otros dos, con el canal en
+«Correo electrónico» y un paciente activado con su correo (el código, con
+el correo de la plataforma sin configurar, sale en el registro de Django):
+
+```sh
+curl -s http://localhost/api/v1/auth/otp/canal/ -o test/fixtures/otp-canal-whatsapp.json
+```
+
+```sh
+curl -s http://localhost/api/v1/auth/otp/canal/ -o test/fixtures/otp-canal-correo.json
+```
+
+```sh
+curl -s -X POST http://localhost/api/v1/auth/otp/request/ -H "Content-Type: application/json" -d '{"email":"CORREO_DEL_PACIENTE"}' -o test/fixtures/otp-pedido-correo.json
+```
+
 `solicitudes-cita` y `mensajes` necesitan algo dentro para valer:
 antes de capturar, pide desde la app (o con `curl -X POST` a esas mismas
 rutas) al menos tres citas y dos mensajes, y desde la «Bandeja de la

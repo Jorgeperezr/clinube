@@ -287,12 +287,12 @@ APP_REVISION_CODIGO = config("APP_REVISION_CODIGO", default="")
 # No había ninguna configuración: Django intentaba un SMTP en localhost,
 # que en el contenedor no existe, y como el envío era silencioso el
 # correo de recuperación no llegaba nunca sin que nadie se enterase.
-# Sin EMAIL_HOST, el correo se escribe en el registro (útil en
-# desarrollo; en producción, configurar un SMTP: Gmail/Workspace,
-# Microsoft 365, Brevo, Amazon SES…).
+# El servidor se elige en cada envío (apps/common/correo.py): primero el
+# de Plataforma → Configuración, si lo tiene; si no, este del entorno.
+# Sin ninguno, el correo se escribe en el registro (útil en desarrollo;
+# en producción, un SMTP: Gmail/Workspace, Microsoft 365, Brevo, SES…).
 EMAIL_HOST = config("EMAIL_HOST", default="")
-EMAIL_BACKEND = ("django.core.mail.backends.smtp.EmailBackend" if EMAIL_HOST
-                 else "django.core.mail.backends.console.EmailBackend")
+EMAIL_BACKEND = "apps.common.correo.CorreoBackend"
 EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")

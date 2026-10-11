@@ -266,22 +266,48 @@ class ClienteApi {
 
   // ── Entrada por OTP ──────────────────────────────────────────────
 
-  /// Pide el código que llega por WhatsApp.
-  Future<void> pedirCodigo(String telefono) async {
+  /// Por dónde llega el código: `'correo'` o `'whatsapp'`. Lo decide la
+  /// plataforma, y la pantalla de ingreso pide el correo o el teléfono
+  /// según esto. Si no se puede preguntar (sin red, un servidor viejo),
+  /// WhatsApp: es como funcionaba la app antes de existir la opción.
+  Future<String> canalDelCodigo() async {
+    try {
+      final r = await _red(() => _http.get(_uri('/auth/otp/canal/'),
+          headers: const {'Content-Type': 'application/json'}));
+      if (r.statusCode >= 400) return 'whatsapp';
+      final datos = _json(r);
+      return datos is Map && datos['canal'] == 'correo' ? 'correo' : 'whatsapp';
+    } catch (_) {
+      return 'whatsapp';
+    }
+  }
+
+  /// Pide el código. [dato] es el teléfono o, con [porCorreo], el correo.
+  /// Devuelve el mensaje del servidor («Te enviamos el código a
+  /// an***@gmail.com…») para enseñarlo tal cual, o null si no trae.
+  Future<String?> pedirCodigo(String dato, {bool porCorreo = false}) async {
     final r = await _red(() => _http.post(
           _uri('/auth/otp/request/'),
           headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({'phone': telefono}),
+          body: jsonEncode({porCorreo ? 'email' : 'phone': dato}),
         ));
     if (r.statusCode >= 400) throw _error(r);
+    try {
+      final datos = _json(r);
+      final detalle = datos is Map ? datos['detail'] : null;
+      return detalle is String && detalle.isNotEmpty ? detalle : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Canjea el código por los tokens y los deja guardados.
-  Future<void> verificarCodigo(String telefono, String codigo) async {
+  Future<void> verificarCodigo(String dato, String codigo,
+      {bool porCorreo = false}) async {
     final r = await _red(() => _http.post(
           _uri('/auth/otp/verify/'),
           headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({'phone': telefono, 'code': codigo}),
+          body: jsonEncode({porCorreo ? 'email' : 'phone': dato, 'code': codigo}),
         ));
     if (r.statusCode >= 400) throw _error(r);
     final datos = _json(r) as Map<String, dynamic>;

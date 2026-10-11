@@ -766,16 +766,56 @@ cd frontend && npm audit --omit=dev
 pip install pip-audit && pip-audit -r django-api/requirements.txt -r whatsapp-gateway/requirements.txt
 ```
 
+## Correo con Gmail
+
+El correo de la plataforma —recuperar la contraseña del equipo y, si se
+elige, el código para entrar en la app del paciente— se configura en
+**Plataforma → Configuración → Correo saliente**. Lo de ese formulario
+manda sobre `EMAIL_HOST` del `.env`, que queda como respaldo.
+
+1. En la cuenta de Gmail que va a enviar (mejor una solo para esto, p. ej.
+   `clinube.notificaciones@gmail.com`): **Cuenta de Google → Seguridad →
+   Verificación en dos pasos**, activarla si no lo está.
+2. En esa misma página, **Contraseñas de aplicaciones** → nombre «Clinube»
+   → **Crear**. Gmail enseña 16 letras una sola vez: es la contraseña que
+   va en el formulario. La contraseña normal de Gmail **no** sirve.
+3. En Plataforma: servidor `smtp.gmail.com`, puerto `587`, usuario la
+   dirección completa, la contraseña de aplicación → **Guardar**.
+4. **Enviar correo de prueba**. Si falla, el mensaje dice qué tocar.
+
+La contraseña se guarda cifrada con `DJANGO_SECRET_KEY`: si se cambia esa
+clave, hay que volver a escribirla. Gmail permite unos 500 correos al
+día; si alguna vez no alcanza, el formulario vale igual para Brevo,
+Amazon SES o un Google Workspace con el dominio.
+
+### Código de la app del paciente: WhatsApp o correo
+
+En la misma página, **Código para entrar en la app del paciente**:
+
+- **WhatsApp** (como hasta ahora): necesita la cuenta de Meta con la
+  plantilla `otp_login` aprobada.
+- **Correo electrónico**: solo necesita el correo de arriba funcionando.
+  No deja elegirlo sin correo configurado.
+
+Cambiar de uno a otro no obliga a volver a activar a nadie: la app
+pregunta el canal al abrirse y pide el teléfono o el correo, y una app
+antigua que aún pide el teléfono recibe el código en el correo de su
+ficha. Con correo, la ficha tiene que tener el correo del paciente, y
+cada correo da acceso a una sola ficha (igual que cada teléfono).
+
 ## Pendientes ANTES de pacientes reales
 
 - [ ] Cambiar TODAS las contraseñas de desarrollo (Jorge2025 no va a producción).
-- [ ] **Ingreso a la app del paciente:** llega por WhatsApp con la cuenta de
-      la PLATAFORMA (`META_ACCESS_TOKEN` y `META_PHONE_NUMBER_ID` en el
-      `.env`) y una plantilla aprobada por Meta en la categoría
-      «Autenticación»: `otp_login`, con el código como variable `{{1}}`. Sin eso el envío queda simulado y **nadie puede
-      entrar a la app**.
-- [ ] **Correo** (`EMAIL_HOST` y compañía): sin él, la recuperación de
-      contraseña del personal no sale.
+- [ ] **Ingreso a la app del paciente:** elegir el canal en Plataforma →
+      Configuración (ver «Correo con Gmail»). Con WhatsApp hace falta la
+      cuenta de la PLATAFORMA (`META_ACCESS_TOKEN` y `META_PHONE_NUMBER_ID`
+      en el `.env`) y una plantilla aprobada por Meta en la categoría
+      «Autenticación»: `otp_login`, con el código como variable `{{1}}`;
+      sin eso el envío queda simulado y **nadie puede entrar a la app**.
+      Con correo, basta el correo de la plataforma.
+- [ ] **Correo** (Plataforma → Configuración, o `EMAIL_HOST` en el `.env`):
+      sin él, la recuperación de contraseña del personal no sale. Probar
+      con «Enviar correo de prueba».
 - [ ] Dominio con HTTPS: la app móvil se compila apuntando a esa dirección
       (`--dart-define=API_URL=https://app.clinube.com`) y no se puede
       cambiar sin publicar otra versión.

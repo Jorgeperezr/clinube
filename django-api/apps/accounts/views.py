@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from apps.accounts import acceso_paciente
 from apps.accounts.funciones import funciones_de
 from apps.accounts.models import (
     AuditLog,
@@ -56,12 +57,27 @@ class StaffLoginView(TokenObtainPairView):
     serializer_class = StaffLoginSerializer
 
 
+class OTPCanalView(APIView):
+    """
+    GET /api/v1/auth/otp/canal/ — por dónde llega hoy el código: la app lo
+    pregunta para pedir el teléfono («whatsapp») o el correo («correo»).
+    """
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        return Response({"canal": acceso_paciente.canal_codigo()})
+
+
 class OTPRequestView(APIView):
     """
     POST /api/v1/auth/otp/request/ — RF-USR-02, RF-WSP-01.
 
-    Django decide *cuándo/qué* enviar; el microservicio FastAPI decide
-    *cómo* llega a Meta (Arquitectura v1.2, sección 2).
+    El paciente manda {"phone": …} o {"email": …}; el código le llega por
+    el canal que elija la plataforma (ver apps/accounts/acceso_paciente.py).
+    Para WhatsApp, Django decide *cuándo/qué* enviar y el microservicio
+    FastAPI *cómo* llega a Meta (Arquitectura v1.2, sección 2).
     """
 
     permission_classes = [permissions.AllowAny]
@@ -71,12 +87,9 @@ class OTPRequestView(APIView):
     def post(self, request):
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        phone = normalizar_telefono(serializer.validated_data["phone"])
-        if not phone:
-            return Response({"detail": "Escribe tu número de teléfono completo, por ejemplo 099 123 4567."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        canal = acceso_paciente.canal_codigo()
 
-        revisor = self._paciente_de_revision(phone)
+        revisor = self._paciente_de_revision(serializer.validated_data)
         if revisor is not None:
             OTPCode.objects.create(
                 user=revisor,
@@ -85,65 +98,110 @@ class OTPRequestView(APIView):
                 expires_at=timezone.now() + timedelta(minutes=OTP_TTL_MINUTES),
             )
             logging.getLogger(__name__).info("Acceso de revisión de tienda usado (paciente %s).", revisor.id)
-            return Response({"detail": "Código enviado por WhatsApp."}, status=status.HTTP_202_ACCEPTED)
+            return Response({"detail": self._enviado(canal, revisor)}, status=status.HTTP_202_ACCEPTED)
 
-        # Solo un número con acceso activado desde la ficha (ver
+        # Solo una cuenta con acceso activado desde la ficha (ver
         # apps/patients/acceso_app.py). Antes se creaba una cuenta para
         # cualquier número —en la primera clínica— y se le enviaba un
         # WhatsApp: cualquiera podía gastar los mensajes de la clínica, y
         # el paciente real se quedaba con una cuenta «sin enlazar».
-        user = (
-            User.objects.filter(phone=phone, role=User.Role.PATIENT, is_active=True,
-                                patient_profile__isnull=False)
-            .select_related("tenant").first()
-        )
+        user, motivo = acceso_paciente.identificar(serializer.validated_data)
+        if motivo:
+            return Response({"detail": motivo}, status=status.HTTP_400_BAD_REQUEST)
         if user is None:
+            dato = "correo" if serializer.validated_data.get("email") else "número"
             return Response(
-                {"detail": "Este número no tiene acceso a la app. Pide en la recepción de tu "
+                {"detail": f"Este {dato} no tiene acceso a la app. Pide en la recepción de tu "
                            "clínica que lo activen en tu ficha."},
                 status=status.HTTP_400_BAD_REQUEST)
         if not (user.tenant and user.tenant.is_active and activa(user.tenant, "app_paciente")):
             return Response(
                 {"detail": "Tu clínica no tiene activa la app en este momento."},
                 status=status.HTTP_400_BAD_REQUEST)
-        self._issue_and_send_otp(user, phone, OTPCode.Purpose.LOGIN)
-        return Response({"detail": "Código enviado por WhatsApp."}, status=status.HTTP_202_ACCEPTED)
+
+        if canal == acceso_paciente.CORREO:
+            if not acceso_paciente.correo_de(user):
+                return Response(
+                    {"detail": "Tu ficha no tiene correo electrónico. Pide en la recepción de tu "
+                               "clínica que lo añadan: el código llega por correo."},
+                    status=status.HTTP_400_BAD_REQUEST)
+        elif not user.phone:
+            return Response(
+                {"detail": "Tu ficha no tiene un teléfono móvil. Pide en la recepción de tu "
+                           "clínica que lo añadan: el código llega por WhatsApp."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        if not self._issue_and_send_otp(user, canal):
+            return Response(
+                {"detail": "No se pudo enviar el correo con tu código. Inténtalo en unos minutos; "
+                           "si sigue fallando, avisa a tu clínica."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"detail": self._enviado(canal, user)}, status=status.HTTP_202_ACCEPTED)
 
     @staticmethod
-    def _paciente_de_revision(phone):
+    def _enviado(canal, user):
+        if canal == acceso_paciente.CORREO:
+            oculto = acceso_paciente.ocultar(acceso_paciente.correo_de(user))
+            return (f"Te enviamos el código a {oculto}. Si no lo ves, mira en «Spam»."
+                    if oculto else "Te enviamos el código por correo.")
+        return "Código enviado por WhatsApp."
+
+    @staticmethod
+    def _paciente_de_revision(datos):
         """
-        El paciente de prueba para la revisión de las tiendas, si este es
-        su teléfono y el acceso está configurado (APP_REVISION_* en
-        settings). Solo una cuenta que ya existe: nunca crea ninguna.
+        El paciente de prueba para la revisión de las tiendas, si se
+        identifica con su teléfono o su correo y el acceso está configurado
+        (APP_REVISION_* en settings). Solo una cuenta que ya existe: nunca
+        crea ninguna.
         """
         telefono = normalizar_telefono(settings.APP_REVISION_TELEFONO)
         codigo = settings.APP_REVISION_CODIGO or ""
-        if not telefono or not (len(codigo) == 6 and codigo.isdigit()) or phone != telefono:
+        if not telefono or not (len(codigo) == 6 and codigo.isdigit()):
             return None
-        return User.objects.filter(phone=telefono, role=User.Role.PATIENT, is_active=True).first()
+        revisor = User.objects.filter(phone=telefono, role=User.Role.PATIENT, is_active=True).first()
+        if revisor is None:
+            return None
+        if datos.get("email"):
+            correo = acceso_paciente.normalizar_correo(datos["email"])
+            return revisor if correo and correo == acceso_paciente.correo_de(revisor) else None
+        return revisor if normalizar_telefono(datos.get("phone") or "") == telefono else None
 
     @staticmethod
-    def _issue_and_send_otp(user, phone, purpose):
+    def _issue_and_send_otp(user, canal):
+        """Crea el código y lo manda. False si el correo no salió."""
         code = f"{secrets.randbelow(1_000_000):06d}"
-        OTPCode.objects.create(
+        otp = OTPCode.objects.create(
             user=user,
             code_hash=_hash_value(code),
-            purpose=purpose,
+            purpose=OTPCode.Purpose.LOGIN,
             expires_at=timezone.now() + timedelta(minutes=OTP_TTL_MINUTES),
         )
+        if canal == acceso_paciente.CORREO:
+            try:
+                acceso_paciente.enviar_codigo_por_correo(user, code, OTP_TTL_MINUTES)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "No se pudo enviar el código por correo (revisar el correo en Plataforma)",
+                    extra={"user_id": str(user.id)},
+                )
+                # Un código que no llegó no debe quedar vivo.
+                otp.delete()
+                return False
+            return True
         # Una sola plantilla: el paciente entra siempre con un código nuevo,
         # así que «recuperar el acceso» es lo mismo que volver a entrar.
         send_whatsapp_template(
-            to_phone=phone,
+            to_phone=user.phone,
             template_name="otp_login",
             language="es",
             variables={"1": code},
             patient_id=str(user.id),
         )
+        return True
 
 
 class OTPVerifyView(APIView):
-    """POST /api/v1/auth/otp/verify/ — RF-USR-02"""
+    """POST /api/v1/auth/otp/verify/ — RF-USR-02. Teléfono o correo, y el código."""
 
     permission_classes = [permissions.AllowAny]
     throttle_classes = [ScopedRateThrottle]
@@ -152,13 +210,17 @@ class OTPVerifyView(APIView):
     def post(self, request):
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        phone = normalizar_telefono(serializer.validated_data["phone"])
         code = serializer.validated_data["code"]
 
-        try:
-            user = User.objects.get(phone=phone, role=User.Role.PATIENT, is_active=True)
-        except User.DoesNotExist:
-            return self._invalid()
+        user, _motivo = acceso_paciente.identificar(serializer.validated_data)
+        if user is None and not serializer.validated_data.get("email"):
+            # El revisor de las tiendas puede no tener ficha enlazada.
+            telefono = normalizar_telefono(serializer.validated_data.get("phone") or "")
+            user = User.objects.filter(phone=telefono, role=User.Role.PATIENT,
+                                       is_active=True).first() if telefono else None
+        por_correo = bool(serializer.validated_data.get("email"))
+        if user is None:
+            return self._invalid(por_correo)
 
         otp = (
             OTPCode.objects.filter(user=user, used_at__isnull=True)
@@ -166,7 +228,7 @@ class OTPVerifyView(APIView):
             .first()
         )
         if not otp or not otp.is_valid or otp.code_hash != _hash_value(code):
-            return self._invalid()
+            return self._invalid(por_correo)
 
         otp.used_at = timezone.now()
         otp.save(update_fields=["used_at"])
@@ -182,9 +244,10 @@ class OTPVerifyView(APIView):
         )
 
     @staticmethod
-    def _invalid():
+    def _invalid(por_correo=False):
+        dato = "Correo" if por_correo else "Teléfono"
         return Response(
-            {"detail": "Teléfono o código inválido."}, status=status.HTTP_400_BAD_REQUEST
+            {"detail": f"{dato} o código inválido."}, status=status.HTTP_400_BAD_REQUEST
         )
 
 
@@ -239,7 +302,7 @@ class StaffRecoveryRequestView(APIView):
             )
         except Exception:
             logging.getLogger(__name__).exception(
-                "No se pudo enviar el correo de recuperación (revisar EMAIL_HOST y compañía)",
+                "No se pudo enviar el correo de recuperación (revisar el correo en Plataforma → Configuración o EMAIL_HOST)",
                 extra={"user_id": str(user.id)},
             )
         return Response({"detail": "Si el correo existe, recibirás instrucciones."})

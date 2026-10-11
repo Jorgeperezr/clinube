@@ -11,6 +11,7 @@ urlpatterns = [
     path("auth/me/preferencias/", views.PreferenciasView.as_view(), name="auth-me-preferencias"),
     path("auth/change-password/", password_views.CambiarMiContrasenaView.as_view(),
          name="auth-change-password"),
+    path("auth/otp/canal/", views.OTPCanalView.as_view(), name="otp-canal"),
     path("auth/otp/request/", views.OTPRequestView.as_view(), name="otp-request"),
     path("auth/otp/verify/", views.OTPVerifyView.as_view(), name="otp-verify"),
     path("auth/recovery/request/", views.StaffRecoveryRequestView.as_view(), name="recovery-request"),

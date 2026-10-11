@@ -34,7 +34,7 @@ PLATFORM_ACTIONS = [
     "create_clinic", "update_clinic", "activate_clinic", "deactivate_clinic",
     "create_clinic_admin", "update_clinic_admin", "reset_clinic_admin_password",
     "update_platform_config", "update_clinic_identity",
-    "publish_feature", "unpublish_feature",
+    "publish_feature", "unpublish_feature", "test_email",
 ]
 
 
@@ -459,17 +459,49 @@ class PlatformAuditView(APIView):
 class PlatformConfigSerializer(serializers.ModelSerializer):
     smtp_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     smtp_password_set = serializers.SerializerMethodField()
+    # Por dónde sale hoy el correo: «plataforma» (lo de este formulario),
+    # «entorno» (EMAIL_HOST del .env) o vacío (no sale).
+    correo_origen = serializers.SerializerMethodField()
 
     class Meta:
         model = PlatformConfiguration
         fields = ["platform_name", "logo_url", "smtp_host", "smtp_port", "smtp_user",
-                  "smtp_password", "smtp_password_set", "timezone", "currency",
+                  "smtp_password", "smtp_password_set", "correo_origen", "timezone", "currency",
                   "titular_nombre", "titular_ruc", "titular_correo", "proveedor_correo",
-                  "updated_at"]
+                  "canal_codigo_paciente", "updated_at"]
         read_only_fields = ["updated_at"]
 
     def get_smtp_password_set(self, obj):
         return bool(obj.smtp_password)
+
+    def get_correo_origen(self, obj):
+        from apps.common.correo import datos_smtp
+
+        datos = datos_smtp()
+        return datos["origen"] if datos else ""
+
+    def validate_smtp_password(self, valor):
+        # Cifrada, como los tokens de WhatsApp: un volcado de la base no
+        # debe entregar la contraseña del correo.
+        from apps.common.secretos import cifrar
+
+        return cifrar(valor)
+
+    def validate_smtp_host(self, valor):
+        return (valor or "").strip()
+
+    def validate(self, datos):
+        # Pasar a correo sin correo configurado dejaría a todos los
+        # pacientes sin poder entrar: se dice antes de guardar.
+        from apps.common.correo import datos_smtp
+
+        if datos.get("canal_codigo_paciente") == PlatformConfiguration.CANAL_CORREO:
+            host = datos.get("smtp_host", self.instance.smtp_host if self.instance else "")
+            if not (host or "").strip() and datos_smtp() is None:
+                raise serializers.ValidationError({"canal_codigo_paciente": (
+                    "Para mandar el código por correo, primero configura el correo saliente "
+                    "y comprueba con «Enviar correo de prueba» que llega.")})
+        return datos
 
 
 class FuncionalidadesView(APIView):
@@ -539,3 +571,29 @@ class PlatformConfigView(APIView):
         _audit_platform(request, "update_platform_config", "PlatformConfiguration",
                         config.id, {"fields": list(request.data.keys())})
         return Response(PlatformConfigSerializer(config).data)
+
+
+class CorreoDePruebaView(APIView):
+    """
+    POST /api/v1/platform/config/correo-de-prueba/ {"destino": "…"} — manda
+    un correo con la configuración guardada y dice si salió o qué falta.
+    Sin destino, va al correo de quien lo pide.
+    """
+
+    permission_classes = [IS_SUPERADMIN]
+
+    def post(self, request):
+        from django.core.exceptions import ValidationError as ErrorDeValidacion
+        from django.core.validators import validate_email
+
+        from apps.common.correo import enviar_prueba
+
+        destino = (request.data.get("destino") or request.user.email or "").strip()
+        try:
+            validate_email(destino)
+        except ErrorDeValidacion:
+            return Response({"detail": "Escribe un correo de destino válido."}, status=400)
+        ok, texto = enviar_prueba(destino)
+        _audit_platform(request, "test_email", "PlatformConfiguration",
+                        PlatformConfiguration.get_solo().id, {"destino": destino, "ok": ok})
+        return Response({"detail": texto}, status=200 if ok else 400)

@@ -49,15 +49,26 @@ def _datos_titular():
 
 
 def _encargados(d):
+    from apps.accounts.acceso_paciente import CORREO, canal_codigo
+
     correo = d["proveedor_correo"] or "El proveedor de correo de la plataforma"
+    # Quién envía el código de la app depende del canal elegido en
+    # Plataforma: el aviso tiene que decir el que se usa de verdad.
+    if canal_codigo() == CORREO:
+        meta = "Meta Platforms (WhatsApp): envía, a quien lo autorizó, los recordatorios de citas y pagos."
+        envios = (f"{correo}: envía los correos del sistema: los códigos para entrar en la app y "
+                  "los de recuperar una contraseña.")
+    else:
+        meta = ("Meta Platforms (WhatsApp): envía los códigos para entrar en la app y, a quien lo "
+                "autorizó, los recordatorios de citas y pagos.")
+        envios = f"{correo}: envía los correos del sistema, como los de recuperar una contraseña."
     return [
         "Oracle Cloud Infrastructure: aloja el servidor, en la región de Santiago de Chile.",
         "Cloudflare: por su red pasan, cifradas, las conexiones entre el navegador o la app y "
         "el servidor, y guarda las copias de seguridad, que van cifradas antes de salir y no "
         "puede leer.",
-        "Meta Platforms (WhatsApp): envía los códigos para entrar en la app y, a quien lo "
-        "autorizó, los recordatorios de citas y pagos.",
-        f"{correo}: envía los correos del sistema, como los de recuperar una contraseña.",
+        meta,
+        envios,
     ]
 
 

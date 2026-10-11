@@ -983,6 +983,8 @@ function ConfigTab() {
   const [smtpPassword, setSmtpPassword] = useState("");
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
+  const [destinoPrueba, setDestinoPrueba] = useState("");
+  const [prueba, setPrueba] = useState(null);   // {ok, texto} | "enviando"
 
   useEffect(() => {
     api("/platform/config/")
@@ -999,24 +1001,45 @@ function ConfigTab() {
     try {
       const body = { ...config };
       delete body.smtp_password_set;
+      delete body.correo_origen;
       delete body.updated_at;
       if (smtpPassword) body.smtp_password = smtpPassword;
       const resp = await api("/platform/config/", { method: "PATCH", body: JSON.stringify(body) });
+      if (!resp.ok) throw new Error(await apiErrorMessage(resp));
       const data = await resp.json();
-      if (!resp.ok) throw new Error(`No se pudo guardar (error ${resp.status}).`);
       setConfig(data);
       setSmtpPassword("");
       setOkMsg("Configuración guardada.");
     } catch (err) { setError(err.message); }
   }
 
-  const fld = (k, label, type = "text") => (
+  const fld = (k, label, type = "text", placeholder = "") => (
     <div className="field" style={{ marginBottom: 0 }}>
       <label>{label}</label>
-      <input type={type} value={config[k] ?? ""}
+      <input type={type} value={config[k] ?? ""} placeholder={placeholder}
              onChange={(e) => setConfig({ ...config, [k]: e.target.value })} />
     </div>
   );
+
+  /** Manda un correo con lo GUARDADO: lo que falte se dice tal cual. */
+  async function probarCorreo() {
+    setPrueba("enviando");
+    try {
+      const resp = await api("/platform/config/correo-de-prueba/", {
+        method: "POST", body: JSON.stringify(destinoPrueba ? { destino: destinoPrueba } : {}),
+      });
+      const data = await resp.json().catch(() => null);
+      setPrueba({ ok: resp.ok, texto: data?.detail || data?.error?.message
+                                      || (resp.ok ? "Enviado." : `No se pudo enviar (error ${resp.status}).`) });
+    } catch {
+      setPrueba({ ok: false, texto: "No se pudo contactar con el servidor." });
+    }
+  }
+
+  const origen = {
+    plataforma: "Ahora el correo sale por el servidor de este formulario.",
+    entorno: "Ahora el correo sale por el servidor del archivo .env del servidor (EMAIL_HOST). Si rellenas este formulario, se usará este.",
+  }[config.correo_origen] || "Ahora no sale ningún correo: rellena el servidor y guarda.";
 
   return (
     <form onSubmit={save}>
@@ -1051,19 +1074,73 @@ function ConfigTab() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginBottom: 4 }}>Correo saliente (SMTP)</h3>
-        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-          Para notificaciones por correo de la plataforma.
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 6 }}>
+          Por aquí salen la recuperación de contraseñas del equipo y, si lo eliges abajo, el código
+          para entrar en la app del paciente. {origen}
           {config.smtp_password_set && " Hay una contraseña guardada (no se muestra)."}
         </p>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
+          Con Gmail: servidor <code>smtp.gmail.com</code>, puerto <code>587</code>, usuario la
+          dirección completa y, como contraseña, una <strong>contraseña de aplicación</strong> de 16
+          letras (Cuenta de Google → Seguridad → Verificación en dos pasos → Contraseñas de
+          aplicaciones). La contraseña normal de Gmail no sirve.
+        </p>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "12px 14px" }}>
-          {fld("smtp_host", "Servidor SMTP")}
+          {fld("smtp_host", "Servidor SMTP", "text", "smtp.gmail.com")}
           {fld("smtp_port", "Puerto", "number")}
-          {fld("smtp_user", "Usuario")}
+          {fld("smtp_user", "Usuario", "text", "tu.cuenta@gmail.com")}
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Contraseña {config.smtp_password_set ? "(dejar vacío para no cambiar)" : ""}</label>
-            <input type="password" value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)} />
+            <input type="password" value={smtpPassword} autoComplete="new-password"
+                   onChange={(e) => setSmtpPassword(e.target.value)} />
           </div>
         </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap", marginTop: 14 }}>
+          <div className="field" style={{ marginBottom: 0, flex: "1 1 240px" }}>
+            <label>Enviar un correo de prueba a</label>
+            <input type="email" value={destinoPrueba} placeholder="Tu correo (si lo dejas vacío)"
+                   onChange={(e) => setDestinoPrueba(e.target.value)} />
+          </div>
+          <button type="button" className="btn btn-ghost" disabled={prueba === "enviando"}
+                  onClick={probarCorreo}>
+            {prueba === "enviando" ? "Enviando…" : "Enviar correo de prueba"}
+          </button>
+        </div>
+        <p style={{ fontSize: 12.5, color: "var(--ink-soft)", margin: "6px 0 0" }}>
+          Usa lo guardado: si cambias algo arriba, guarda antes de probar.
+        </p>
+        {prueba && prueba !== "enviando" && (
+          <p style={{ fontSize: 13, margin: "8px 0 0", color: prueba.ok ? "var(--ink)" : "var(--red)" }}>
+            {prueba.ok ? "✓ " : ""}{prueba.texto}
+          </p>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginBottom: 4 }}>Código para entrar en la app del paciente</h3>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
+          Cómo le llega al paciente el código de 6 cifras con el que entra en la app. Es para
+          todas las clínicas. Al cambiarlo nadie tiene que volver a activar su acceso: la app
+          pide el teléfono o el correo según lo que elijas aquí.
+        </p>
+        {[
+          { valor: "whatsapp", titulo: "WhatsApp",
+            texto: "Al teléfono de la ficha. Necesita la cuenta de WhatsApp de la plataforma en Meta con la plantilla «otp_login» aprobada; sin ella el código no llega." },
+          { valor: "correo", titulo: "Correo electrónico",
+            texto: "Al correo de la ficha. Solo necesita el correo saliente de arriba funcionando: prueba antes con «Enviar correo de prueba». Las fichas sin correo no podrán entrar hasta que se les añada." },
+        ].map((o) => (
+          <label key={o.valor} style={{ display: "flex", gap: 10, alignItems: "flex-start",
+                                        marginBottom: 10, cursor: "pointer" }}>
+            <input type="radio" name="canal_codigo_paciente" value={o.valor}
+                   checked={(config.canal_codigo_paciente || "whatsapp") === o.valor}
+                   onChange={() => setConfig({ ...config, canal_codigo_paciente: o.valor })}
+                   style={{ marginTop: 3 }} />
+            <span>
+              <strong style={{ fontSize: 14 }}>{o.titulo}</strong>
+              <span style={{ display: "block", fontSize: 13, color: "var(--ink-soft)" }}>{o.texto}</span>
+            </span>
+          </label>
+        ))}
       </div>
 
       <button className="btn btn-primary">Guardar configuración</button>

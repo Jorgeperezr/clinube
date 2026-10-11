@@ -188,7 +188,11 @@ class PlatformConfigTests(PlatformBase):
         self.assertNotIn("smtp_password", resp.data)
         self.assertTrue(resp.data["smtp_password_set"])
         config = PlatformConfiguration.get_solo()
-        self.assertEqual(config.smtp_password, "secretisimo")
+        # Se guarda cifrada (como los tokens de WhatsApp) y se puede usar.
+        from apps.common.secretos import descifrar
+
+        self.assertNotIn("secretisimo", config.smtp_password)
+        self.assertEqual(descifrar(config.smtp_password), "secretisimo")
 
 
 class HealthCheckTests(APITestCase):

@@ -109,7 +109,10 @@ class PlatformConfiguration(models.Model):
     smtp_host = models.CharField(max_length=255, blank=True)
     smtp_port = models.PositiveIntegerField(default=587)
     smtp_user = models.CharField(max_length=255, blank=True)
-    smtp_password = models.CharField(max_length=255, blank=True)  # nunca se expone en la API
+    # Cifrada (apps/common/secretos.py) y nunca se expone en la API. La usa
+    # apps/common/correo.py, que da preferencia a este servidor sobre el
+    # EMAIL_HOST del entorno.
+    smtp_password = models.CharField(max_length=255, blank=True)
     timezone = models.CharField(max_length=64, default="America/Guayaquil")
     currency = models.CharField(max_length=8, default="USD")
     # Quién opera la plataforma, para el aviso de privacidad y las
@@ -121,6 +124,16 @@ class PlatformConfiguration(models.Model):
     proveedor_correo = models.CharField(
         "Proveedor de correo", max_length=120, blank=True,
         help_text="El servicio que envía los correos (p. ej. «Brevo»). Sale en el aviso de privacidad.",
+    )
+    # Por dónde le llega al paciente el código para entrar en la app.
+    # WhatsApp necesita la cuenta de Meta con la plantilla «otp_login»
+    # aprobada; el correo, solo el correo saliente de arriba.
+    CANAL_WHATSAPP = "whatsapp"
+    CANAL_CORREO = "correo"
+    CANALES_CODIGO = [(CANAL_WHATSAPP, "WhatsApp"), (CANAL_CORREO, "Correo electrónico")]
+    canal_codigo_paciente = models.CharField(
+        "Canal del código de la app del paciente", max_length=10,
+        choices=CANALES_CODIGO, default=CANAL_WHATSAPP,
     )
     # Funciones que nacieron «en prueba» y que ya se publicaron para todas
     # las clínicas (Plataforma → Funciones). Ver apps/common/funcionalidades.py.

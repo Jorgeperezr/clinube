@@ -1,4 +1,8 @@
-/// Entrada del paciente: teléfono y código por WhatsApp.
+/// Entrada del paciente: teléfono o correo, y el código que le llega.
+///
+/// Por dónde llega el código lo decide la plataforma (WhatsApp o correo)
+/// y se pregunta al abrir la pantalla: con WhatsApp se pide el teléfono,
+/// con correo, el correo.
 ///
 /// No hay contraseña a propósito. Un paciente entra en su app dos veces
 /// al año, y una contraseña que se usa dos veces al año es una
@@ -44,6 +48,22 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
   bool _ocupado = false;
   String? _error;
 
+  /// `'correo'` o `'whatsapp'`; WhatsApp mientras no se sepa.
+  String _canal = 'whatsapp';
+
+  /// Lo que contestó el servidor al pedir el código (adónde lo mandó).
+  String? _enviado;
+
+  bool get _porCorreo => _canal == 'correo';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.canalDelCodigo().then((canal) {
+      if (mounted && !_codigoPedido) setState(() => _canal = canal);
+    });
+  }
+
   @override
   void dispose() {
     _telefono.dispose();
@@ -71,12 +91,18 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
   }
 
   Future<void> _pedir() => _ejecutar(() async {
-        await widget.api.pedirCodigo(_telefono.text.trim());
-        if (mounted) setState(() => _codigoPedido = true);
+        final enviado = await widget.api
+            .pedirCodigo(_telefono.text.trim(), porCorreo: _porCorreo);
+        if (mounted) {
+          setState(() {
+            _codigoPedido = true;
+            _enviado = enviado;
+          });
+        }
       });
 
   /// Al llegar al sexto dígito se envía solo: es lo que espera quien
-  /// copia el código de WhatsApp y lo pega.
+  /// copia el código del WhatsApp o del correo y lo pega.
   void _alCambiarCodigo(String valor) {
     if (valor.length == 6 && !_ocupado) {
       FocusScope.of(context).unfocus();
@@ -85,8 +111,9 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
   }
 
   Future<void> _verificar() => _ejecutar(() async {
-        await widget.api
-            .verificarCodigo(_telefono.text.trim(), _codigo.text.trim());
+        await widget.api.verificarCodigo(
+            _telefono.text.trim(), _codigo.text.trim(),
+            porCorreo: _porCorreo);
         widget.alEntrar();
       });
 
@@ -112,33 +139,46 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
                     Text(widget.marca.nombre,
                         style: tema.textTheme.headlineMedium),
                     const SizedBox(height: 6),
-                    Text(
-                      _codigoPedido
-                          ? 'Te enviamos un código por WhatsApp al $_telefonoVisible.'
-                          : 'Ingresa con tu número de teléfono. Te enviaremos un '
-                              'código por WhatsApp.',
-                      style: tema.textTheme.bodyMedium,
-                    ),
+                    Text(_explicacion, style: tema.textTheme.bodyMedium),
                     const SizedBox(height: 22),
                     if (_error != null) ...[
                       _Aviso(texto: _error!),
                       const SizedBox(height: 14),
                     ],
                     TextField(
+                      // Otra clave por canal: si cambia mientras se
+                      // escribe, el teclado y los filtros se rehacen.
+                      key: ValueKey('dato-$_canal'),
                       controller: _telefono,
                       enabled: !_codigoPedido && !_ocupado,
-                      keyboardType: TextInputType.phone,
+                      keyboardType: _porCorreo
+                          ? TextInputType.emailAddress
+                          : TextInputType.phone,
                       textInputAction: TextInputAction.send,
-                      autofillHints: const [AutofillHints.telephoneNumber],
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[0-9+ ]')),
-                        LengthLimitingTextInputFormatter(20),
+                      autocorrect: false,
+                      autofillHints: [
+                        _porCorreo
+                            ? AutofillHints.email
+                            : AutofillHints.telephoneNumber
                       ],
+                      inputFormatters: _porCorreo
+                          ? [
+                              FilteringTextInputFormatter.deny(RegExp(r'\s')),
+                              LengthLimitingTextInputFormatter(254),
+                            ]
+                          : [
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9+ ]')),
+                              LengthLimitingTextInputFormatter(20),
+                            ],
                       onSubmitted: (_) => _ocupado ? null : _pedir(),
-                      decoration: const InputDecoration(
-                        labelText: 'Teléfono',
-                        hintText: '+593 99 911 1222',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText:
+                            _porCorreo ? 'Correo electrónico' : 'Teléfono',
+                        hintText: _porCorreo
+                            ? 'nombre@gmail.com'
+                            : '+593 99 911 1222',
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     if (_codigoPedido) ...[
@@ -182,9 +222,11 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
                             ? null
                             : () => setState(() {
                                   _codigoPedido = false;
+                                  _enviado = null;
                                   _codigo.clear();
                                 }),
-                        child: const Text('Usar otro número'),
+                        child: Text(
+                            _porCorreo ? 'Usar otro correo' : 'Usar otro número'),
                       ),
                     const SizedBox(height: 18),
                     // Antes de dar el número, que se pueda saber qué se
@@ -204,6 +246,19 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
         ),
       ),
     );
+  }
+
+  String get _explicacion {
+    if (_codigoPedido) {
+      if (_porCorreo && _enviado != null) return _enviado!;
+      return _porCorreo
+          ? 'Te enviamos un código a tu correo. Si no lo ves, mira en «Spam».'
+          : 'Te enviamos un código por WhatsApp al $_telefonoVisible.';
+    }
+    return _porCorreo
+        ? 'Ingresa con tu correo electrónico. Te enviaremos un código.'
+        : 'Ingresa con tu número de teléfono. Te enviaremos un código por '
+            'WhatsApp.';
   }
 
   String get _telefonoVisible {

@@ -16,6 +16,13 @@ Un mismo número da acceso a UNA sola ficha: la cuenta es por teléfono y
 `User.phone` es único. Si ya entra con otra ficha (otro paciente, u otra
 clínica), se dice en vez de moverla en silencio.
 
+Si la plataforma manda el código por correo (Plataforma → Configuración),
+lo que hace falta es el correo de la ficha, y vale la misma regla: cada
+correo, una sola ficha (`User.email` también es único). El teléfono
+entonces es opcional. Con WhatsApp, el correo se guarda igualmente en la
+cuenta si está libre: así pasar de un canal a otro no obliga a volver a
+activar a nadie.
+
 Requiere la función «App del paciente» activa en la clínica.
 """
 
@@ -25,6 +32,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.acceso_paciente import CORREO, canal_codigo, normalizar_correo
 from apps.accounts.models import AuditLog, User
 from apps.common.funcionalidades import activa
 from apps.common.permisos_funcionalidad import RequiereFuncionalidad
@@ -36,6 +44,7 @@ from apps.patients.models import Patient
 def _estado(paciente):
     cuenta = paciente.user if paciente.user_id and paciente.user.is_active else None
     telefono = normalizar_telefono(paciente.phone)
+    correo = normalizar_correo(paciente.email)
     return {
         "activo": cuenta is not None,
         "telefono": cuenta.phone if cuenta else telefono,
@@ -43,6 +52,10 @@ def _estado(paciente):
         # el paciente cambió de número y hay que volver a activar.
         "telefono_ficha": telefono,
         "telefono_valido": bool(telefono),
+        "correo": (cuenta.email or correo) if cuenta else correo,
+        "correo_valido": bool(correo),
+        # Por dónde le llega el código: el panel lo explica con esto.
+        "canal": canal_codigo(),
         "ultimo_ingreso": cuenta.last_login if cuenta else None,
         "funcion_activa": activa(paciente.tenant, "app_paciente"),
     }
@@ -74,52 +87,98 @@ class AccesoAppView(APIView):
                 status=status.HTTP_403_FORBIDDEN)
         paciente = self._paciente(request, pk)
         telefono = normalizar_telefono(paciente.phone)
-        if not telefono:
+        correo = normalizar_correo(paciente.email)
+        por_correo = canal_codigo() == CORREO
+        if por_correo and not correo:
+            return Response(
+                {"detail": "La ficha no tiene un correo electrónico válido. Corrígelo en los "
+                           "datos del paciente: es adonde le llegará el código para entrar."},
+                status=status.HTTP_400_BAD_REQUEST)
+        if not por_correo and not telefono:
             return Response(
                 {"detail": "La ficha no tiene un teléfono móvil válido. Corrígelo en los "
                            "datos del paciente: es el número con el que entrará a la app."},
                 status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            cuenta = User.objects.select_for_update().filter(phone=telefono).first()
-            if cuenta is not None and cuenta.role != User.Role.PATIENT:
-                return Response(
-                    {"detail": "Ese teléfono es el de una persona del equipo. Cada número "
-                               "entra a una sola cuenta: usa otro para el paciente."},
-                    status=status.HTTP_409_CONFLICT)
+            cuenta = None
+            if telefono:
+                cuenta = User.objects.select_for_update().filter(phone=telefono).first()
+                if cuenta is not None and cuenta.role != User.Role.PATIENT:
+                    if not por_correo:
+                        return Response(
+                            {"detail": "Ese teléfono es el de una persona del equipo. Cada número "
+                                       "entra a una sola cuenta: usa otro para el paciente."},
+                            status=status.HTTP_409_CONFLICT)
+                    # Por correo el teléfono no hace falta: la cuenta va sin él.
+                    cuenta, telefono = None, None
+            if cuenta is None and por_correo:
+                cuenta = User.objects.select_for_update().filter(email__iexact=correo).first()
+                if cuenta is not None and cuenta.role != User.Role.PATIENT:
+                    return Response(
+                        {"detail": "Ese correo es el de una persona del equipo. Cada correo "
+                                   "entra a una sola cuenta: usa otro para el paciente."},
+                        status=status.HTTP_409_CONFLICT)
+            if cuenta is None and por_correo and paciente.user_id:
+                # La misma ficha, que ya tenía cuenta (con otro teléfono o sin él).
+                cuenta = paciente.user
             otra = (Patient.objects.filter(user=cuenta).exclude(pk=paciente.pk).first()
                     if cuenta is not None else None)
             if otra is not None and otra.is_active:
+                dato = "correo" if por_correo else "teléfono"
                 return Response(
-                    {"detail": "Ese teléfono ya da acceso a la app a otra ficha (de otro "
-                               "paciente o de otra clínica). Cada número entra a una sola "
-                               "ficha: revisa el teléfono de las dos."},
+                    {"detail": f"Ese {dato} ya da acceso a la app a otra ficha (de otro "
+                               "paciente o de otra clínica). Cada uno entra a una sola "
+                               f"ficha: revisa el {dato} de las dos."},
                     status=status.HTTP_409_CONFLICT)
+            if por_correo:
+                ocupado = (User.objects.filter(email__iexact=correo)
+                           .exclude(pk=getattr(cuenta, "pk", None)).exists())
+                if ocupado:
+                    return Response(
+                        {"detail": "Ese correo ya da acceso a la app a otra ficha (de otro "
+                                   "paciente o de otra clínica). Cada uno entra a una sola "
+                                   "ficha: revisa el correo de las dos."},
+                        status=status.HTTP_409_CONFLICT)
             if otra is not None:
-                # La otra ficha está borrada: el número queda libre.
+                # La otra ficha está borrada: la cuenta queda libre.
                 otra.user = None
                 otra.save(update_fields=["user"])
 
-            # Si la ficha ya tenía una cuenta con otro número (cambió de
-            # teléfono), esa se desactiva: el acceso va con el número nuevo.
+            # Si la ficha ya tenía otra cuenta (cambió de teléfono), esa se
+            # desactiva: el acceso va con la nueva.
             anterior = paciente.user if paciente.user_id and paciente.user_id != getattr(cuenta, "id", None) else None
             if anterior is not None:
                 anterior.is_active = False
                 anterior.save(update_fields=["is_active"])
 
+            # El correo va en la cuenta si nadie más lo tiene: con él puede
+            # entrar también cuando el código llegue por correo.
+            correo_libre = correo if correo and not User.objects.filter(email__iexact=correo).exclude(
+                pk=getattr(cuenta, "pk", None)).exists() else None
             if cuenta is None:
                 cuenta = User.objects.create_user(
-                    phone=telefono, role=User.Role.PATIENT, tenant=paciente.tenant,
+                    phone=telefono or None, email=correo_libre, role=User.Role.PATIENT,
+                    tenant=paciente.tenant,
                     full_name=f"{paciente.first_name} {paciente.last_name}".strip(),
                 )
             else:
                 cuenta.tenant = paciente.tenant
                 cuenta.is_active = True
-                cuenta.save(update_fields=["tenant", "is_active"])
+                campos = ["tenant", "is_active"]
+                if correo_libre and cuenta.email != correo_libre:
+                    cuenta.email = correo_libre
+                    campos.append("email")
+                if por_correo and telefono and cuenta.phone != telefono and not User.objects.filter(
+                        phone=telefono).exclude(pk=cuenta.pk).exists():
+                    cuenta.phone = telefono
+                    campos.append("phone")
+                cuenta.save(update_fields=campos)
             paciente.user = cuenta
             paciente.save(update_fields=["user"])
 
-        _auditar(request, paciente, "grant_app_access", telefono=telefono)
+        _auditar(request, paciente, "grant_app_access", telefono=telefono or "",
+                 correo=correo if por_correo else "")
         return Response(_estado(paciente))
 
     def delete(self, request, pk):

@@ -842,8 +842,9 @@ function PatientAgreement({ patient, canEdit, onChanged }) {
  * Sin esto la app no servía: el paciente entraba con su código y se
  * encontraba con «tu cuenta aún no está enlazada», porque nadie podía
  * enlazarla. La recepción activa el acceso con el teléfono de la ficha y
- * el paciente entra con ese número. Si la clínica no tiene la app, no se
- * enseña nada.
+ * el paciente entra con ese número. Si la plataforma manda el código por
+ * correo (estado.canal), lo que cuenta es el correo de la ficha. Si la
+ * clínica no tiene la app, no se enseña nada.
  */
 function AccesoApp({ patient }) {
   const [confirmar, ConfirmUI] = useConfirm();
@@ -855,14 +856,19 @@ function AccesoApp({ patient }) {
 
   useEffect(() => {
     api(url).then(readObject).then(setEstado).catch(() => setEstado(null));
-  }, [url, patient.phone]);
+  }, [url, patient.phone, patient.email]);
+
+  const porCorreo = estado?.canal === "correo";
 
   async function cambiar(activar) {
     const nombre = patient.first_name || patient.full_name;
+    const como = porCorreo
+      ? `con su correo ${estado.correo}: le llegará un código por correo`
+      : `con el número ${estado.telefono_ficha}: le llegará un código por WhatsApp`;
     const ok = await confirmar(activar ? {
       title: "Acceso a la app",
-      message: `${nombre} podrá entrar en la app Clinube con el número ${estado.telefono_ficha}: ` +
-        "le llegará un código por WhatsApp. Verá sus citas, su saldo y las indicaciones que se le compartan.",
+      message: `${nombre} podrá entrar en la app Clinube ${como}. ` +
+        "Verá sus citas, su saldo y las indicaciones que se le compartan.",
       confirmLabel: "Activar acceso",
     } : {
       title: "Quitar el acceso a la app",
@@ -882,7 +888,9 @@ function AccesoApp({ patient }) {
   if (!estado || !estado.funcion_activa) return null;
   const enlace = { background: "transparent", border: "none", padding: 0, color: "var(--petrol)",
                    fontSize: 13, cursor: "pointer" };
-  const otroNumero = estado.activo && estado.telefono_ficha && estado.telefono_ficha !== estado.telefono;
+  const otroNumero = !porCorreo && estado.activo && estado.telefono_ficha && estado.telefono_ficha !== estado.telefono;
+  const puedeActivar = porCorreo ? estado.correo_valido : estado.telefono_valido;
+  const conQue = porCorreo ? (estado.correo || estado.telefono) : (estado.telefono || estado.correo);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
                   fontSize: 13, color: "var(--ink-soft)", marginBottom: 4 }}>
@@ -890,7 +898,7 @@ function AccesoApp({ patient }) {
       {estado.activo ? (
         <>
           <strong style={{ color: "var(--ink)" }}>
-            Activa con {estado.telefono}
+            Activa con {conQue}
             <span style={{ fontWeight: 400 }}>
               {" · "}{estado.ultimo_ingreso
                 ? `último ingreso el ${new Date(estado.ultimo_ingreso).toLocaleDateString("es-EC")}`
@@ -907,19 +915,22 @@ function AccesoApp({ patient }) {
           <button type="button" className="enlace-accion" style={{ ...enlace, color: "var(--red)" }}
                   disabled={ocupado} onClick={() => cambiar(false)}>Quitar acceso</button>
         </>
-      ) : estado.telefono_valido ? (
+      ) : puedeActivar ? (
         <>
           <strong style={{ color: "var(--ink)" }}>Sin acceso</strong>
           <button type="button" className="enlace-accion" style={enlace} disabled={ocupado}
                   onClick={() => cambiar(true)}>Activar acceso</button>
         </>
       ) : (
-        <strong style={{ color: "var(--ink)" }}>Añade un teléfono móvil a la ficha para darle acceso</strong>
+        <strong style={{ color: "var(--ink)" }}>
+          {porCorreo ? "Añade un correo electrónico a la ficha para darle acceso"
+                     : "Añade un teléfono móvil a la ficha para darle acceso"}
+        </strong>
       )}
       {recienActivado && estado.activo && (
         <span style={{ flexBasis: "100%", color: "var(--ink-soft)" }}>
           Dile que descargue Clinube desde <a href="/descargar/" target="_blank" rel="noopener">clinube.com/descargar</a> y
-          entre con su número: le llegará un código por WhatsApp.
+          entre con su {porCorreo ? "correo: le llegará un código por correo" : "número: le llegará un código por WhatsApp"}.
         </span>
       )}
       {error && <span style={{ color: "var(--red)" }}>{error}</span>}

@@ -33,11 +33,18 @@ class StaffLoginSerializer(TokenObtainPairSerializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    phone = serializers.CharField(max_length=20)
+    """El paciente se identifica con su teléfono o con su correo."""
+
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    email = serializers.CharField(max_length=254, required=False, allow_blank=True)
+
+    def validate(self, datos):
+        if not (datos.get("phone") or "").strip() and not (datos.get("email") or "").strip():
+            raise serializers.ValidationError({"detail": "Escribe tu teléfono o tu correo."})
+        return datos
 
 
-class OTPVerifySerializer(serializers.Serializer):
-    phone = serializers.CharField(max_length=20)
+class OTPVerifySerializer(OTPRequestSerializer):
     code = serializers.CharField(max_length=10)
 
 

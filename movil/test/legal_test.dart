@@ -51,7 +51,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(PantallaAvisoPrivacidad), findsOneWidget);
-    expect(pedidas, ['/api/v1/legal/privacidad/']);
+    // La primera la hace el ingreso al abrirse: por dónde llega el código.
+    expect(pedidas, ['/api/v1/auth/otp/canal/', '/api/v1/legal/privacidad/']);
     expect(find.text('Quién trata tus datos'), findsOneWidget);
     // Las acentuadas llegan bien aunque la API no diga el juego de caracteres.
     expect(find.textContaining('la clínica o el consultorio'), findsOneWidget);
