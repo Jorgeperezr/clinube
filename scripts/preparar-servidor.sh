@@ -133,11 +133,18 @@ paso "Servicios que no hacen falta"
 # La imagen de Ubuntu de Oracle trae rpcbind escuchando en el puerto 111
 # de todas las interfaces. Es para discos de red (NFS), que Clinube no
 # usa; el cortafuegos de Oracle lo tapa, pero lo que no se usa, apagado.
-if systemctl list-unit-files rpcbind.service >/dev/null 2>&1 \
-    && ! findmnt -t nfs,nfs4 >/dev/null 2>&1; then
+# Se mira quién tiene el puerto, no si existe la unidad: en la imagen de
+# Oracle, preguntar a systemctl por la unidad daba «no» y el 111 seguía
+# abierto.
+if ss -tlnH 'sport = :111' 2>/dev/null | grep -q . && ! findmnt -t nfs,nfs4 >/dev/null 2>&1; then
     systemctl disable --now rpcbind.socket rpcbind.service >/dev/null 2>&1 || true
     systemctl mask rpcbind.socket rpcbind.service >/dev/null 2>&1 || true
-    verde "rpcbind (puerto 111) apagado"
+    if ss -tlnH 'sport = :111' 2>/dev/null | grep -q .; then
+        rojo "el puerto 111 sigue abierto; quién lo tiene:"
+        ss -tlnpH 'sport = :111' | sed 's/^/      /'
+    else
+        verde "rpcbind (puerto 111) apagado"
+    fi
 else
     verde "nada que apagar"
 fi
