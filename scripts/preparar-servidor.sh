@@ -136,7 +136,9 @@ paso "Servicios que no hacen falta"
 # Se mira quién tiene el puerto, no si existe la unidad: en la imagen de
 # Oracle, preguntar a systemctl por la unidad daba «no» y el 111 seguía
 # abierto.
-if ss -tlnH 'sport = :111' 2>/dev/null | grep -q . && ! findmnt -t nfs,nfs4 >/dev/null 2>&1; then
+# Por la salida y no por el código de salida: findmnt devuelve 0 aunque
+# no haya ningún montaje NFS, y entonces nunca se apagaba nada.
+if ss -tlnH 'sport = :111' 2>/dev/null | grep -q . && [ -z "$(findmnt -n -t nfs,nfs4 2>/dev/null)" ]; then
     systemctl disable --now rpcbind.socket rpcbind.service >/dev/null 2>&1 || true
     systemctl mask rpcbind.socket rpcbind.service >/dev/null 2>&1 || true
     if ss -tlnH 'sport = :111' 2>/dev/null | grep -q .; then
