@@ -92,6 +92,23 @@ class ArranqueReal(SimpleTestCase):
     def test_en_desarrollo_no_se_exige(self):
         self.assertEqual(self.cargar().returncode, 0)
 
+    def test_la_comprobacion_de_salud_de_docker_entra_por_localhost(self):
+        # Con solo el dominio en DJANGO_ALLOWED_HOSTS, la petición de Docker
+        # a localhost recibía un 400 y el contenedor quedaba «unhealthy».
+        codigo = ("import django; django.setup(); from django.test import Client; "
+                  "c = Client(); "
+                  "print(c.get('/api/v1/health/', HTTP_HOST='localhost:8000').status_code, "
+                  "c.get('/api/v1/health/', HTTP_HOST='app.clinube.com').status_code, "
+                  "c.get('/api/v1/health/', HTTP_HOST='otro.com').status_code)")
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("DJANGO_", "POSTGRES_", "INTERNAL_"))}
+        env.update(DJANGO_ENTORNO="produccion", DJANGO_DEBUG="False", DJANGO_SECRET_KEY=BUENA,
+                   INTERNAL_SERVICE_TOKEN=BUENA, POSTGRES_PASSWORD="una-clave-de-base-larga",
+                   DJANGO_ALLOWED_HOSTS="app.clinube.com", DJANGO_SETTINGS_MODULE="config.settings")
+        r = subprocess.run([sys.executable, "-c", codigo], cwd=Path(__file__).resolve().parents[2],
+                           env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip().splitlines()[-1], "200 200 400")
+
 
 class EsquemaDeLaApi(SimpleTestCase):
     """

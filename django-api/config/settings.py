@@ -21,6 +21,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config("DJANGO_SECRET_KEY", default="dev-only-insecure-key-change-me-never-use-in-production")
 DEBUG = config("DJANGO_DEBUG", default=False, cast=bool)
 ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1", cast=Csv())
+# La propia máquina siempre: la comprobación de salud de Docker y el
+# `curl http://localhost/api/v1/ready/` de DEPLOY.md llegan con ese
+# nombre. Con solo «app.clinube.com», Django las rechazaba (400), Docker
+# daba el contenedor por caído y Nginx no llegaba a arrancar. Desde fuera
+# no se puede llegar así: el túnel de Cloudflare solo entrega las
+# peticiones de app.clinube.com.
+ALLOWED_HOSTS += [h for h in ("localhost", "127.0.0.1") if h not in ALLOWED_HOSTS]
 
 # Orígenes confiables para CSRF. Necesario cuando el sitio se sirve
 # detrás de un proxy TLS externo (Codespaces, Cloudflare Tunnel, etc.)
