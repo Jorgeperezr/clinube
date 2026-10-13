@@ -44,6 +44,8 @@ const NAV = [
   { seccion: "Gestión", clave: "pagos", href: "/panel/pagos/", label: "Pagos", iconName: "pagos", roles: ["admin", "reception", "doctor", "auxiliary"], funcion: "cobros" },
   { seccion: "Gestión", clave: "inventario", href: "/panel/inventario/", label: "Inventario", iconName: "inventario", roles: ["admin", "reception", "doctor", "auxiliary"], funcionalidad: "inventario", funcion: "inventario" },
   { seccion: "Gestión", clave: "reportes", href: "/panel/reportes/", label: "Reportes", iconName: "reportes", roles: ["admin", "reception", "doctor", "auxiliary"], funcionalidad: "reportes", funcion: "reportes" },
+  // Sueldos y honorarios de todo el equipo: solo con la función «finanzas».
+  { seccion: "Gestión", clave: "finanzas", href: "/panel/finanzas/", label: "Finanzas", iconName: "finanzas", roles: ["admin", "reception", "doctor", "auxiliary"], funcionalidad: "finanzas", funcion: "finanzas" },
   { seccion: "Gestión", clave: "configuracion", href: "/panel/configuracion/", label: "Configuración", iconName: "configuracion", roles: ["admin"] },
   { seccion: "Mi espacio", clave: "firma", href: "/panel/firma/", label: "Mi firma", iconName: "firma", roles: ["doctor"] },
   // La copia de los pacientes de cada profesional. La administración

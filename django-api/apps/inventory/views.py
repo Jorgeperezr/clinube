@@ -62,6 +62,8 @@ class BatchListCreateView(generics.ListCreateAPIView):
         product = generics.get_object_or_404(
             Product, pk=self.kwargs["pk"], tenant=self.request.tenant
         )
+        compra = {k: serializer.validated_data.pop(k, None)
+                  for k in ("costo_total", "proveedor", "proveedor_ruc", "numero_factura", "forma_pago")}
         batch = serializer.save(tenant=self.request.tenant, product=product)
         # Registrar el ingreso como movimiento de entrada
         InventoryMovement.objects.create(
@@ -69,6 +71,24 @@ class BatchListCreateView(generics.ListCreateAPIView):
             movement_type=InventoryMovement.MovementType.IN,
             quantity=batch.quantity, reason=InventoryMovement.Reason.PURCHASE,
         )
+        self._apuntar_egreso(product, batch, compra)
+
+    def _apuntar_egreso(self, product, batch, compra):
+        """Con costo y Finanzas activa, la compra queda como egreso de insumos."""
+        from apps.common.funcionalidades import activa
+        from apps.finanzas.models import Egreso, FormaPago, categoria
+
+        if not compra.get("costo_total") or not activa(self.request.tenant, "finanzas"):
+            return
+        forma = compra.get("forma_pago") if compra.get("forma_pago") in FormaPago.values else FormaPago.EFECTIVO
+        Egreso.objects.create(
+            tenant=self.request.tenant, fecha=timezone.localdate(),
+            categoria=categoria(self.request.tenant, "insumos"),
+            concepto=f"Compra: {product.name} — lote {batch.batch_number} ({batch.quantity} {product.unit})",
+            monto=compra["costo_total"], forma_pago=forma, proveedor=compra.get("proveedor") or "",
+            proveedor_ruc=(compra.get("proveedor_ruc") or "").strip(),
+            numero_factura=compra.get("numero_factura") or "", origen="inventario",
+            registrado_por=self.request.user)
 
 
 class LowStockAlertView(APIView):

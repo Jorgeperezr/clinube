@@ -141,6 +141,17 @@ function Respaldo(p) {
   );
 }
 
+function Finanzas(p) {
+  // libro de cuentas con una línea que sube
+  return (
+    <svg {...base} {...p}>
+      <rect x="4" y="3.5" width="16" height="17" rx="1.8" />
+      <path d="M7.5 16l3-3.5 2.5 2 3.5-4.5" />
+      <path d="M8 7h8" />
+    </svg>
+  );
+}
+
 const ICONS = {
   plataforma: Plataforma,
   inicio: Inicio,
@@ -150,6 +161,7 @@ const ICONS = {
   pagos: Pagos,
   inventario: Inventario,
   reportes: Reportes,
+  finanzas: Finanzas,
   configuracion: Configuracion,
   preferencias: Preferencias,
   bandeja: Bandeja,

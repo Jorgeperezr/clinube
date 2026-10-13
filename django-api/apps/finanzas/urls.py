@@ -1,0 +1,37 @@
+from django.urls import path
+
+from apps.finanzas import views
+
+urlpatterns = [
+    path("finanzas/resumen/", views.ResumenView.as_view(), name="finanzas-resumen"),
+    path("finanzas/configuracion/", views.ConfiguracionView.as_view(), name="finanzas-configuracion"),
+    path("finanzas/categorias/", views.CategoriasView.as_view(), name="finanzas-categorias"),
+    path("finanzas/categorias/<uuid:pk>/", views.CategoriaView.as_view(), name="finanzas-categoria"),
+    path("finanzas/egresos/", views.EgresosView.as_view(), name="finanzas-egresos"),
+    path("finanzas/egresos/<uuid:pk>/", views.EgresoView.as_view(), name="finanzas-egreso"),
+    path("finanzas/egresos/<uuid:pk>/anular/", views.AnularEgresoView.as_view(), name="finanzas-egreso-anular"),
+    path("finanzas/egresos/<uuid:pk>/pagar/", views.PagarEgresoView.as_view(), name="finanzas-egreso-pagar"),
+    path("finanzas/egresos/<uuid:pk>/comprobante/", views.ComprobanteEgresoView.as_view(),
+         name="finanzas-egreso-comprobante"),
+    path("finanzas/caja/", views.CajaView.as_view(), name="finanzas-caja"),
+    path("finanzas/equipo/", views.EquipoView.as_view(), name="finanzas-equipo"),
+    path("finanzas/equipo/<uuid:pk>/", views.PerfilView.as_view(), name="finanzas-perfil"),
+    path("finanzas/liquidaciones/", views.LiquidacionesView.as_view(), name="finanzas-liquidaciones"),
+    path("finanzas/liquidaciones/previa/", views.LiquidacionPreviaView.as_view(), name="finanzas-liquidacion-previa"),
+    path("finanzas/liquidaciones/<uuid:pk>/pagar/", views.PagarLiquidacionView.as_view(),
+         name="finanzas-liquidacion-pagar"),
+    path("finanzas/liquidaciones/<uuid:pk>/anular/", views.AnularLiquidacionView.as_view(),
+         name="finanzas-liquidacion-anular"),
+    path("finanzas/liquidaciones/<uuid:pk>/pdf/", views.LiquidacionPdfView.as_view(), name="finanzas-liquidacion-pdf"),
+    path("finanzas/roles/", views.RolesView.as_view(), name="finanzas-roles"),
+    path("finanzas/roles/previa/", views.RolPreviaView.as_view(), name="finanzas-rol-previa"),
+    path("finanzas/roles/generar/", views.GenerarRolesView.as_view(), name="finanzas-roles-generar"),
+    path("finanzas/roles/<uuid:pk>/pagar/", views.PagarRolView.as_view(), name="finanzas-rol-pagar"),
+    path("finanzas/roles/<uuid:pk>/anular/", views.AnularRolView.as_view(), name="finanzas-rol-anular"),
+    path("finanzas/roles/<uuid:pk>/pdf/", views.RolPdfView.as_view(), name="finanzas-rol-pdf"),
+    path("finanzas/cobros/", views.CobrosView.as_view(), name="finanzas-cobros"),
+    path("finanzas/cobros/<uuid:pk>/", views.CobrosView.as_view(), name="finanzas-cobro"),
+    path("finanzas/cobros/<uuid:pk>/comprobante/", views.ComprobanteCobroView.as_view(),
+         name="finanzas-comprobante-cobro"),
+    path("finanzas/exportar/", views.ExportarView.as_view(), name="finanzas-exportar"),
+]

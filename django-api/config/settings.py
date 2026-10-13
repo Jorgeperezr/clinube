@@ -96,6 +96,7 @@ INSTALLED_APPS = [
     "apps.app_paciente",
     "apps.configuration",
     "apps.logros",
+    "apps.finanzas",
 ]
 
 AUTH_USER_MODEL = "accounts.User"

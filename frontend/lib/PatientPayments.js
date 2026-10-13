@@ -13,7 +13,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { api, readList } from "./api";
+import { api, currentUser, readList } from "./api";
+import { abrirPdf } from "./finanzas/comunes";
 import { hoyISO } from "./fechas.mjs";
 
 const METHODS = { cash: "Efectivo", transfer: "Transferencia", card: "Tarjeta" };
@@ -22,8 +23,9 @@ export default function PatientPayments({ patientId, role, puedeCobrar }) {
   const [rows, setRows] = useState([]);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({
-    amount: "", method: "cash", date: hoyISO(),
+    amount: "", method: "cash", date: hoyISO(), profesional: "",
   });
+  const [doctores, setDoctores] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [okMsg, setOkMsg] = useState("");
@@ -31,6 +33,22 @@ export default function PatientPayments({ patientId, role, puedeCobrar }) {
   // La función «cobros» de quien mira (ver lib/api.js → tieneFuncion). Si
   // no se pasa, se mira el rol, que es lo que hacía antes.
   const canCharge = puedeCobrar ?? ["admin", "reception"].includes(role);
+  // Con Finanzas, cada cobro se atribuye a un profesional (de ahí salen
+  // sus honorarios) y se puede imprimir el comprobante para el paciente.
+  const conFinanzas = Boolean(currentUser()?.funcionalidades?.finanzas);
+
+  useEffect(() => {
+    if (!canCharge || !conFinanzas) return;
+    api("/doctors/").then(readList).then((ds) => setDoctores(ds.filter((d) => d.is_active))).catch(() => {});
+  }, [canCharge, conFinanzas]);
+
+  async function comprobante(r) {
+    setError("");
+    try {
+      await abrirPdf(`/finanzas/cobros/${r.id}/comprobante/`);
+      if (!r.numero_comprobante) load();
+    } catch (err) { setError(err.message); }
+  }
 
   const load = useCallback(async () => {
     if (!canCharge) return;
@@ -51,11 +69,11 @@ export default function PatientPayments({ patientId, role, puedeCobrar }) {
     setSaving(true);
     try {
       const resp = await api(`/patients/${patientId}/payments/`, {
-        method: "POST", body: JSON.stringify({ ...form, amount: form.amount }),
+        method: "POST", body: JSON.stringify({ ...form, amount: form.amount, profesional: form.profesional || null }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.detail || `No se pudo registrar (error ${resp.status}).`);
-      setForm({ amount: "", method: "cash", date: hoyISO() });
+      setForm({ amount: "", method: "cash", date: hoyISO(), profesional: "" });
       setAdding(false);
       setOkMsg("Cobro registrado.");
       load();
@@ -111,6 +129,16 @@ export default function PatientPayments({ patientId, role, puedeCobrar }) {
             <input type="date" value={form.date}
                    onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </div>
+          {conFinanzas && (
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Atendió</label>
+              <select value={form.profesional}
+                      onChange={(e) => setForm({ ...form, profesional: e.target.value })}>
+                <option value="">El de su última cita</option>
+                {doctores.map((d) => <option key={d.id} value={d.user}>{d.full_name}</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary" disabled={saving}>
               {saving ? "Guardando…" : "Guardar"}
@@ -127,15 +155,25 @@ export default function PatientPayments({ patientId, role, puedeCobrar }) {
         <div className="empty">Sin cobros registrados para este paciente.</div>
       ) : (
         <table>
-          <thead><tr><th>Fecha</th><th>Método</th><th style={{ textAlign: "right" }}>Monto</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Método</th>{conFinanzas && <th>Atendió</th>}
+            <th style={{ textAlign: "right" }}>Monto</th>{conFinanzas && <th />}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id}>
                 <td className="tabular">{(r.date || "").slice(0, 10)}</td>
                 <td>{METHODS[r.method] || r.method}</td>
+                {conFinanzas && <td>{r.profesional_nombre || "—"}</td>}
                 <td className="tabular" style={{ textAlign: "right", fontWeight: 600 }}>
                   ${Number(r.amount).toFixed(2)}
                 </td>
+                {conFinanzas && (
+                  <td style={{ textAlign: "right" }}>
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 12 }}
+                            onClick={() => comprobante(r)}>
+                      {r.numero_comprobante ? "Comprobante" : "Emitir comprobante"}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

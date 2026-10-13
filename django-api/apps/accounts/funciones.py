@@ -55,6 +55,12 @@ CATALOGO = {
         "descripcion": "Ingresos, pacientes nuevos y resumen de citas de toda la clínica.",
         "funcionalidad": "reportes",
     },
+    "finanzas": {
+        "etiqueta": "Finanzas",
+        "descripcion": "Egresos, caja, utilidad del mes, honorarios y rol de pagos del equipo. "
+                       "Ve lo que cobra y lo que gana cada persona: dalo solo a quien lleva las cuentas.",
+        "funcionalidad": "finanzas",
+    },
     "whatsapp": {
         "etiqueta": "Configurar WhatsApp",
         "descripcion": "Conectar la cuenta de WhatsApp de la clínica y encender los recordatorios.",

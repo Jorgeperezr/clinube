@@ -155,6 +155,20 @@ class PaymentPlanInstallmentsView(generics.ListAPIView):
         ).order_by("number")
 
 
+def profesional_habitual(paciente):
+    """
+    El profesional de la última cita atendida (o, si no hay, la última
+    agendada) del paciente: el que se propone al cobrar si no se dice otro.
+    """
+    from apps.agenda.models import Appointment
+
+    citas = Appointment.objects.filter(patient=paciente, doctor__isnull=False).select_related("doctor__user")
+    cita = (citas.filter(status=Appointment.Status.COMPLETED).order_by("-scheduled_start").first()
+            or citas.filter(scheduled_start__lte=timezone.now()).order_by("-scheduled_start").first()
+            or citas.order_by("scheduled_start").first())
+    return cita.doctor.user if cita else None
+
+
 class PayInstallmentView(APIView):
     """
     POST /api/v1/installments/{id}/pay/ — RF-TRP-03.
@@ -168,7 +182,7 @@ class PayInstallmentView(APIView):
         installment = generics.get_object_or_404(
             Installment, pk=pk, tenant=request.tenant
         )
-        serializer = PayInstallmentSerializer(data=request.data)
+        serializer = PayInstallmentSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
 
         amount = serializer.validated_data["amount"]
@@ -180,6 +194,8 @@ class PayInstallmentView(APIView):
             method=serializer.validated_data["method"],
             date=serializer.validated_data.get("date") or timezone.localdate(),
             registered_by=request.user,
+            profesional=(serializer.validated_data.get("profesional")
+                         or profesional_habitual(installment.patient)),
         )
 
         # Si el saldo llega a cero (o menos), la cuota queda pagada.
@@ -571,6 +587,7 @@ class PatientPaymentListCreateView(generics.ListCreateAPIView):
         serializer.save(
             tenant=self.request.tenant, patient=patient,
             registered_by=self.request.user,
+            profesional=serializer.validated_data.get("profesional") or profesional_habitual(patient),
         )
 
 

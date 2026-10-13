@@ -94,6 +94,13 @@ CATALOGO = {
                        "tema de la clínica.",
         "tipo": "incluida", "por_defecto": True, "fase": "prueba",
     },
+    "finanzas": {
+        "nombre": "Finanzas",
+        "descripcion": "Lo que entra y lo que sale: egresos, caja diaria, utilidad del mes, "
+                       "liquidaciones de honorarios, rol de pagos, comprobantes de cobro y el "
+                       "Excel para el contador.",
+        "tipo": "incluida", "por_defecto": True, "fase": "prueba",
+    },
     # ── Adicionales: se agregan a pedido ─────────────────────────────
     "odontograma_3d": {
         "nombre": "Odontograma 3D",

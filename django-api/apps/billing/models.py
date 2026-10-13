@@ -162,6 +162,14 @@ class Payment(TenantAwareModel):
     registered_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, related_name="+"
     )
+    # Quién atendió lo que se cobra: con esto se calculan los honorarios
+    # por porcentaje de lo cobrado (apps/finanzas). Si no se indica, se
+    # propone el profesional de la última cita del paciente.
+    profesional = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    # Número del comprobante de cobro, asignado al emitirlo la primera vez.
+    numero_comprobante = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

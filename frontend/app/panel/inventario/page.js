@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, readList } from "../../../lib/api";
+import { api, apiErrorMessage, currentUser, readList } from "../../../lib/api";
 
 const money = (v) => Number(v || 0).toFixed(2);
 
@@ -160,8 +160,13 @@ function ProductForm({ onSaved }) {
 }
 
 function BatchForm({ product, onClose, onSaved }) {
-  const [form, setForm] = useState({ batch_number: "", quantity: "", expiration_date: "" });
+  const [form, setForm] = useState({
+    batch_number: "", quantity: "", expiration_date: "",
+    costo_total: "", proveedor: "", proveedor_ruc: "", numero_factura: "", forma_pago: "efectivo",
+  });
   const [error, setError] = useState("");
+  // Con Finanzas, lo que costó la compra queda también como egreso.
+  const conFinanzas = Boolean(currentUser()?.funcionalidades?.finanzas);
 
   async function submit(e) {
     e.preventDefault();
@@ -169,10 +174,13 @@ function BatchForm({ product, onClose, onSaved }) {
     try {
       const body = { ...form, product: product.id };
       if (!body.expiration_date) delete body.expiration_date;
+      if (!conFinanzas || !body.costo_total) {
+        for (const k of ["costo_total", "proveedor", "proveedor_ruc", "numero_factura", "forma_pago"]) delete body[k];
+      }
       const resp = await api(`/products/${product.id}/batches/`, {
         method: "POST", body: JSON.stringify(body),
       });
-      if (!resp.ok) throw new Error(`No se pudo registrar el lote (error ${resp.status}).`);
+      if (!resp.ok) throw new Error(await apiErrorMessage(resp));
       onSaved();
     } catch (err) { setError(err.message); }
   }
@@ -195,6 +203,34 @@ function BatchForm({ product, onClose, onSaved }) {
           <input type="date" value={form.expiration_date}
                  onChange={(e) => setForm({ ...form, expiration_date: e.target.value })} /></div>
       </div>
+      {conFinanzas && (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-soft)", marginBottom: 8 }}>
+            Compra (opcional): con el costo, queda como egreso de insumos en Finanzas
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0 14px" }}>
+            <div className="field"><label>Costo total (USD)</label>
+              <input type="number" step="0.01" min="0" value={form.costo_total}
+                     onChange={(e) => setForm({ ...form, costo_total: e.target.value })} /></div>
+            <div className="field"><label>Proveedor</label>
+              <input maxLength={150} value={form.proveedor}
+                     onChange={(e) => setForm({ ...form, proveedor: e.target.value })} /></div>
+            <div className="field"><label>RUC</label>
+              <input inputMode="numeric" maxLength={13} value={form.proveedor_ruc}
+                     onChange={(e) => setForm({ ...form, proveedor_ruc: e.target.value })} /></div>
+            <div className="field"><label>N.º de factura</label>
+              <input maxLength={20} value={form.numero_factura}
+                     onChange={(e) => setForm({ ...form, numero_factura: e.target.value })} /></div>
+            <div className="field"><label>Forma de pago</label>
+              <select value={form.forma_pago} onChange={(e) => setForm({ ...form, forma_pago: e.target.value })}>
+                <option value="efectivo">Efectivo</option>
+                <option value="transferencia">Transferencia</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="cheque">Cheque</option>
+              </select></div>
+          </div>
+        </>
+      )}
       <button className="btn btn-primary">Registrar lote (entrada)</button>
     </form>
   );

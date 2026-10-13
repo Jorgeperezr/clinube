@@ -81,16 +81,43 @@ class GeneratePaymentPlanSerializer(serializers.Serializer):
     first_due_date = serializers.DateField()
 
 
+def _profesional_de_la_clinica(valor, request):
+    """El profesional tiene que ser alguien del equipo de ESTA clínica."""
+    from apps.accounts.models import User
+
+    if valor in (None, ""):
+        return None
+    usuario = User.objects.filter(pk=valor, tenant=request.tenant, is_active=True).exclude(
+        role__in=("patient", "superadmin")).first()
+    if usuario is None:
+        raise serializers.ValidationError("Ese profesional no es de esta clínica.")
+    return usuario
+
+
 class PaymentSerializer(serializers.ModelSerializer):
     method_display = serializers.CharField(source="get_method_display", read_only=True)
+    profesional = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    profesional_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = [
             "id", "installment", "patient", "amount",
             "method", "method_display", "date", "created_at",
+            "profesional", "profesional_nombre", "numero_comprobante",
         ]
-        read_only_fields = ["id", "created_at", "patient"]
+        read_only_fields = ["id", "created_at", "patient", "numero_comprobante"]
+
+    def to_representation(self, instancia):
+        datos = super().to_representation(instancia)
+        datos["profesional"] = str(instancia.profesional_id) if instancia.profesional_id else None
+        return datos
+
+    def get_profesional_nombre(self, obj):
+        return obj.profesional.full_name if obj.profesional_id else ""
+
+    def validate_profesional(self, valor):
+        return _profesional_de_la_clinica(valor, self.context["request"])
 
 
 class PayInstallmentSerializer(serializers.Serializer):
@@ -99,6 +126,10 @@ class PayInstallmentSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0.01"))
     method = serializers.ChoiceField(choices=Payment.Method.choices)
     date = serializers.DateField(required=False)
+    profesional = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+
+    def validate_profesional(self, valor):
+        return _profesional_de_la_clinica(valor, self.context["request"])
 
 
 class DoctorFeeSerializer(serializers.ModelSerializer):
