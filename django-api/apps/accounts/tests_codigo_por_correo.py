@@ -107,7 +107,7 @@ class CodigoPorCorreoTests(Base):
 
     def test_si_el_correo_no_sale_se_dice_y_el_codigo_no_queda_vivo(self):
         self.activar()
-        with mock.patch("apps.accounts.acceso_paciente.send_mail", side_effect=smtplib.SMTPException("caído")), \
+        with mock.patch("apps.accounts.correos_paciente.EmailMultiAlternatives.send", side_effect=smtplib.SMTPException("caído")), \
                 self.assertLogs("apps.accounts.views", level="ERROR"):
             r = self.client.post(PEDIR, {"email": "ana.vela@gmail.com"})
         self.assertEqual(r.status_code, 503)
@@ -148,6 +148,7 @@ class CodigoPorCorreoTests(Base):
 class ConWhatsAppTests(Base):
     def test_identificarse_con_el_correo_manda_el_whatsapp_a_su_numero(self):
         self.activar()
+        mail.outbox.clear()   # la bienvenida
         with mock.patch("apps.accounts.views.send_whatsapp_template") as whatsapp:
             r = self.client.post(PEDIR, {"email": "ana.vela@gmail.com"})
         self.assertEqual(r.status_code, 202, r.data)
@@ -225,3 +226,90 @@ class AvisoDePrivacidadTests(Base):
         texto = str(self.client.get("/api/v1/legal/privacidad/").data)
         self.assertNotIn("WhatsApp): envía los códigos", texto)
         self.assertIn("los códigos para entrar en la app y los de recuperar una contraseña", texto)
+
+
+class CorreosConLaCaraDeLaClinicaTests(Base):
+    def setUp(self):
+        super().setUp()
+        from apps.configuration.models import ClinicBranding
+
+        ClinicBranding.objects.update_or_create(tenant=self.tenant, defaults={
+            "display_name": "Sonrisa Sana", "email": "recepcion@sonrisa.ec", "phone": "07 258 0000",
+            "theme": {"preset": "custom", "primary": "#7c3aed", "secondary": "#f59e0b"},
+        })
+
+    def test_el_codigo_en_html_con_su_nombre_su_color_y_respuestas_a_la_clinica(self):
+        self.canal("correo")
+        self.activar()
+        mail.outbox.clear()
+        self.client.post(PEDIR, {"email": "ana.vela@gmail.com"})
+        correo = mail.outbox[-1]
+        codigo = _codigo_del_correo()
+        self.assertTrue(correo.subject.startswith(codigo))
+        self.assertIn("Sonrisa Sana", correo.subject)
+        self.assertEqual(correo.reply_to, ["recepcion@sonrisa.ec"])
+        html, tipo = correo.alternatives[0]
+        self.assertEqual(tipo, "text/html")
+        self.assertIn("#7c3aed", html)
+        self.assertIn("Sonrisa Sana", html)
+        for cifra in codigo:
+            self.assertIn(f">{cifra}</td>", html)
+
+    def test_al_activar_llega_la_bienvenida_con_los_pasos(self):
+        r = self.activar()
+        self.assertEqual(r.data["bienvenida"], "enviada")
+        correo = mail.outbox[-1]
+        self.assertEqual(correo.to, ["ana.vela@gmail.com"])
+        self.assertIn("Sonrisa Sana", correo.subject)
+        # Con WhatsApp entra con el teléfono, y así se lo dice.
+        self.assertIn("+593991234567", correo.body)
+        self.assertIn("por WhatsApp", correo.body)
+        html = correo.alternatives[0][0]
+        self.assertIn("Cómo entrar", html)
+        self.assertIn("+593991234567", html)
+
+    def test_con_correo_le_dice_que_entre_con_el_correo(self):
+        self.canal("correo")
+        self.activar()
+        self.assertIn("Entra con tu correo: ana.vela@gmail.com", mail.outbox[-1].body.replace("2. ", ""))
+        self.assertIn("por correo", mail.outbox[-1].body)
+
+    def test_sin_correo_en_la_ficha_no_se_envia_nada(self):
+        self.paciente.email = ""
+        self.paciente.save()
+        r = self.activar()
+        self.assertEqual((r.status_code, r.data["bienvenida"]), (200, "sin_correo"))
+        self.assertEqual(mail.outbox, [])
+
+    def test_si_la_bienvenida_falla_el_acceso_queda_activado(self):
+        with mock.patch("apps.accounts.correos_paciente.EmailMultiAlternatives.send",
+                        side_effect=smtplib.SMTPException("caído")), \
+                self.assertLogs("apps.patients.acceso_app", level="ERROR"):
+            r = self.activar()
+        self.assertEqual((r.status_code, r.data["activo"], r.data["bienvenida"]), (200, True, "fallo"))
+
+    def test_el_logotipo_solo_con_direccion_publica(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        from apps.accounts.correos_paciente import marca_de
+        from apps.configuration.models import ClinicBranding
+
+        b = ClinicBranding.objects.get(tenant=self.tenant)
+        b.logo = SimpleUploadedFile("logo.png", b"x", content_type="image/png")
+        b.save()
+        with override_settings(PANEL_URL=""):
+            self.assertEqual(marca_de(self.tenant)["logo"], "")
+        with override_settings(PANEL_URL="https://app.clinube.com"):
+            self.assertTrue(marca_de(self.tenant)["logo"].startswith("https://app.clinube.com/media/branding/"))
+        b.logo.delete()
+
+
+class ColorLegibleTests(Base):
+    def test_un_color_claro_se_oscurece_hasta_leerse_con_blanco(self):
+        from apps.accounts.correos_paciente import _contraste_con_blanco, color_legible
+
+        for claro in ("#fde047", "#67e8f9", "#ffffff"):
+            self.assertGreaterEqual(_contraste_con_blanco(color_legible(claro)), 4.5, claro)
+        self.assertEqual(color_legible("#0e7490"), "#0e7490")
+        self.assertEqual(color_legible("azul"), "#0E7490")

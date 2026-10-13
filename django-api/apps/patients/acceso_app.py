@@ -26,6 +26,8 @@ activar a nadie.
 Requiere la función «App del paciente» activa en la clínica.
 """
 
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import generics, status
@@ -179,7 +181,8 @@ class AccesoAppView(APIView):
 
         _auditar(request, paciente, "grant_app_access", telefono=telefono or "",
                  correo=correo if por_correo else "")
-        return Response(_estado(paciente))
+        return Response({**_estado(paciente), "bienvenida": _dar_la_bienvenida(paciente, cuenta, correo,
+                                                                              telefono, por_correo)})
 
     def delete(self, request, pk):
         paciente = self._paciente(request, pk)
@@ -193,6 +196,26 @@ class AccesoAppView(APIView):
                 _cerrar_sesiones(cuenta)
             _auditar(request, paciente, "revoke_app_access", telefono=cuenta.phone)
         return Response(_estado(paciente))
+
+
+def _dar_la_bienvenida(paciente, cuenta, correo, telefono, por_correo):
+    """
+    El correo «Ya puedes usar la app», si la ficha tiene correo. Devuelve
+    «enviada», «sin_correo» o «fallo»; un fallo no deshace la activación:
+    la recepción puede explicárselo en persona.
+    """
+    from apps.accounts.correos_paciente import enviar_bienvenida
+
+    if not correo:
+        return "sin_correo"
+    try:
+        enviar_bienvenida(cuenta, correo, CORREO if por_correo else "whatsapp",
+                          correo if por_correo else (telefono or paciente.phone))
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "No se pudo enviar la bienvenida a la app", extra={"patient_id": str(paciente.id)})
+        return "fallo"
+    return "enviada"
 
 
 def _cerrar_sesiones(cuenta):

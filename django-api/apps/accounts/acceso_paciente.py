@@ -17,9 +17,7 @@ por el correo de su ficha.
 
 import logging
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
 from django.core.validators import validate_email
 
 from apps.accounts.models import User
@@ -110,17 +108,6 @@ def correo_de(cuenta):
 
 def enviar_codigo_por_correo(cuenta, codigo, minutos):
     """Manda el código. Lanza si el correo no sale: quien llama lo dice."""
-    nombre = (cuenta.full_name or "").split(" ")[0]
-    clinica = getattr(cuenta.tenant, "name", "") or settings.MARCA
-    send_mail(
-        subject=f"Tu código para entrar en {settings.MARCA}: {codigo}",
-        message=(
-            f"Hola{', ' + nombre if nombre else ''}:\n\n"
-            f"Tu código para entrar en la app de {clinica} es:\n\n"
-            f"    {codigo}\n\n"
-            f"Vale durante {minutos} minutos y una sola vez.\n"
-            "Si no lo pediste tú, ignora este correo: nadie puede entrar sin el código.\n"
-        ),
-        from_email=None,
-        recipient_list=[correo_de(cuenta)],
-    )
+    from apps.accounts.correos_paciente import enviar_codigo
+
+    enviar_codigo(cuenta, codigo, minutos, correo_de(cuenta))

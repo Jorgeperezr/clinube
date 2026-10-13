@@ -929,6 +929,8 @@ function AccesoApp({ patient }) {
       )}
       {recienActivado && estado.activo && (
         <span style={{ flexBasis: "100%", color: "var(--ink-soft)" }}>
+          {estado.bienvenida === "enviada" && <>Le enviamos a {estado.correo} un correo con los pasos para entrar. </>}
+          {estado.bienvenida === "fallo" && <>No se pudo enviar el correo de bienvenida. </>}
           Dile que descargue Clinube desde <a href="/descargar/" target="_blank" rel="noopener">clinube.com/descargar</a> y
           entre con su {porCorreo ? "correo: le llegará un código por correo" : "número: le llegará un código por WhatsApp"}.
         </span>
