@@ -104,7 +104,14 @@ def resumen(tenant, desde, hasta):
         "por_pagar_vencido": str(_suma(cuentas.filter(vence__lt=timezone.localdate()))),
         "honorarios_pendientes": str(honorarios_pendientes),
         "roles_pendientes": str(roles_pendientes),
+        "obligaciones": obligaciones_pendientes(tenant, desde),
     }
+
+
+def obligaciones_pendientes(tenant, inicio):
+    """IESS y SRI sin pagar del mes anterior (vencen en este) y del mes en curso."""
+    anterior = date(inicio.year - 1, 12, 1) if inicio.month == 1 else date(inicio.year, inicio.month - 1, 1)
+    return [o for m in (anterior, inicio) for o in obligaciones(tenant, m) if not o["pagado"]]
 
 
 def serie(tenant, hasta, meses=6):
@@ -154,6 +161,31 @@ def caja(tenant, dia):
 
 # ── Honorarios ───────────────────────────────────────────────────────
 
+def ya_liquidado(tenant, usuario):
+    """
+    Lo que ya entró en alguna liquidación vigente del profesional: los
+    ids de cobros y de descuentos, y desde cuándo se le liquida en Clinube.
+    Las liquidaciones antiguas sin ids se cubren por su rango de fechas.
+    """
+    from apps.finanzas.models import Liquidacion
+
+    cobros_ids, descuentos_ids, rangos, inicio = set(), set(), [], None
+    for liq in Liquidacion.objects.filter(tenant=tenant, profesional=usuario).exclude(
+            estado=Liquidacion.Estado.ANULADA):
+        d = liq.detalle or {}
+        if any("id" in c for c in d.get("cobros", [])) or "cobros_ids" in d:
+            cobros_ids.update(d.get("cobros_ids") or [c["id"] for c in d.get("cobros", []) if "id" in c])
+            descuentos_ids.update(d.get("descuentos_ids") or [x["id"] for x in d.get("descuentos", []) if "id" in x])
+        else:
+            rangos.append((liq.desde, liq.hasta))
+        inicio = liq.desde if inicio is None or liq.desde < inicio else inicio
+    return cobros_ids, descuentos_ids, rangos, inicio
+
+
+def _fuera(fecha, rangos):
+    return not any(a <= fecha <= b for a, b in rangos)
+
+
 def liquidacion(tenant, usuario, desde, hasta, ajustes=CERO):
     """
     Lo que le toca a un profesional por honorarios en un período:
@@ -163,27 +195,48 @@ def liquidacion(tenant, usuario, desde, hasta, ajustes=CERO):
       ± ajustes    = bonos o anticipos puestos a mano
       − retención  = Impuesto a la Renta, si factura a la clínica
       = a pagar
+
+    Entran los cobros y descuentos del período y, además, los de fechas
+    anteriores que no entraron en ninguna liquidación (un cobro registrado
+    tarde con la fecha de un mes ya liquidado no se pierde).
     """
-    from apps.finanzas.models import ConfiguracionFinanzas, Egreso, PerfilLaboral
+    from apps.billing.models import Payment
+    from apps.finanzas.models import ORIGENES_CALCULADOS, ConfiguracionFinanzas, Egreso, PerfilLaboral
 
     perfil = PerfilLaboral.objects.filter(usuario=usuario).first() or PerfilLaboral(usuario=usuario)
     config = ConfiguracionFinanzas.de(tenant)
     ajustes = centavos(ajustes)
+    hechos_c, hechos_d, rangos, inicio = ya_liquidado(tenant, usuario)
 
-    pagos = cobros(tenant, desde, hasta).filter(profesional=usuario).select_related("patient")
+    def pendientes(qs, campo, hechos):
+        filas = []
+        for x in qs:
+            f = getattr(x, campo)
+            if str(x.id) in hechos or not _fuera(f, rangos):
+                continue
+            # Antes del período, solo lo que ya caía bajo liquidaciones de Clinube.
+            if f < desde and (inicio is None or f < inicio):
+                continue
+            filas.append(x)
+        return filas
+
+    piso = min(desde, inicio) if inicio else desde
+    pagos = pendientes(Payment.objects.filter(tenant=tenant, profesional=usuario, date__gte=piso, date__lte=hasta)
+                       .select_related("patient").order_by("date"), "date", hechos_c)
+    gastos = pendientes(Egreso.objects.filter(
+        tenant=tenant, profesional=usuario, descontar_al_profesional=True, anulado=False,
+        fecha__gte=piso, fecha__lte=hasta).exclude(origen__in=ORIGENES_CALCULADOS).order_by("fecha"),
+        "fecha", hechos_d)
+
     if perfil.base_honorarios == PerfilLaboral.BaseHonorarios.FIJO:
         base = CERO
         porcentaje = CERO
         honorario = centavos(perfil.monto_fijo)
     else:
-        base = _suma(pagos, "amount")
+        base = centavos(sum((p.amount for p in pagos), CERO))
         porcentaje = perfil.porcentaje
         honorario = pct(base, porcentaje)
-
-    gastos = Egreso.objects.filter(
-        tenant=tenant, profesional=usuario, descontar_al_profesional=True, anulado=False,
-        fecha__gte=desde, fecha__lte=hasta).exclude(origen__in=("liquidacion", "rol"))
-    descuentos = _suma(gastos)
+    descuentos = centavos(sum((e.monto for e in gastos), CERO))
 
     # Se retiene sobre lo que factura: su honorario y los bonos. Un
     # anticipo ya pagado no cambia lo que factura.
@@ -198,11 +251,13 @@ def liquidacion(tenant, usuario, desde, hasta, ajustes=CERO):
         "retencion_porcentaje": retencion_pct, "retencion": retencion, "a_pagar": a_pagar,
         "detalle": {
             "modalidad": perfil.base_honorarios,
-            "cobros": [{"fecha": p.date.isoformat(), "paciente": p.patient.full_name,
-                        "forma": FORMAS_COBRO.get(p.method, p.method), "monto": str(p.amount)}
-                       for p in pagos.order_by("date")],
-            "descuentos": [{"fecha": e.fecha.isoformat(), "concepto": e.concepto,
-                            "monto": str(e.monto)} for e in gastos.order_by("fecha")],
+            "cobros": [{"id": str(p.id), "fecha": p.date.isoformat(), "paciente": p.patient.full_name,
+                        "forma": FORMAS_COBRO.get(p.method, p.method), "monto": str(p.amount),
+                        "atrasado": p.date < desde} for p in pagos],
+            "descuentos": [{"id": str(e.id), "fecha": e.fecha.isoformat(), "concepto": e.concepto,
+                            "monto": str(e.monto), "atrasado": e.fecha < desde} for e in gastos],
+            "cobros_ids": [str(p.id) for p in pagos],
+            "descuentos_ids": [str(e.id) for e in gastos],
         },
     }
 
@@ -220,13 +275,16 @@ def _cumplio_un_anio(fecha_ingreso, fin_mes):
 
 
 def rol(tenant, empleado, mes, dias_trabajados=30, horas_extra=CERO, otros_ingresos=CERO,
-        anticipos=CERO, prestamos_iess=CERO, otros_descuentos=CERO):
+        anticipos=CERO, prestamos_iess=CERO, otros_descuentos=CERO,
+        horas_suplementarias=CERO, horas_extraordinarias=CERO):
     """
     El rol de pagos de un mes, con el formato de siempre en Ecuador:
 
-      INGRESOS: sueldo (proporcional a los días), horas extra, bonos y, si
-      el trabajador lo pidió, décimos y fondos de reserva cada mes.
-      DESCUENTOS: aporte personal al IESS, anticipos, préstamos.
+      INGRESOS: sueldo (proporcional a los días), horas suplementarias
+      (+50 %) y extraordinarias (+100 %) sobre el valor hora (sueldo/240),
+      bonos y, si el trabajador lo pidió, décimos y fondos de reserva.
+      DESCUENTOS: aporte personal al IESS, anticipos (los apuntados como
+      egreso para descontárselos y los puestos a mano), préstamos.
       NETO A RECIBIR = ingresos − descuentos.
 
     Y aparte, lo que le cuesta a la clínica: aporte patronal y lo que se
@@ -241,8 +299,13 @@ def rol(tenant, empleado, mes, dias_trabajados=30, horas_extra=CERO, otros_ingre
 
     sueldo = centavos(Decimal(perfil.sueldo) * dias / 30)
     horas_extra, otros_ingresos = centavos(horas_extra), centavos(otros_ingresos)
+    # Valor hora: sueldo mensual / 240 (30 días de 8 horas).
+    valor_hora = Decimal(perfil.sueldo) / 240
+    h50, h100 = Decimal(horas_suplementarias or 0), Decimal(horas_extraordinarias or 0)
+    suplementarias = centavos(valor_hora * h50 * (CIEN + Decimal(config.recargo_suplementarias)) / CIEN)
+    extraordinarias = centavos(valor_hora * h100 * (CIEN + Decimal(config.recargo_extraordinarias)) / CIEN)
     # Lo que aporta al IESS: sueldo, horas extra y bonos.
-    aportable = sueldo + horas_extra + otros_ingresos
+    aportable = sueldo + suplementarias + extraordinarias + horas_extra + otros_ingresos
 
     decimo_tercero = centavos(aportable / 12)
     decimo_cuarto = centavos(Decimal(config.salario_basico) / 12 * dias / 30)
@@ -250,8 +313,14 @@ def rol(tenant, empleado, mes, dias_trabajados=30, horas_extra=CERO, otros_ingre
     fondos = pct(aportable, config.fondos_reserva) if con_fondos else CERO
 
     ingresos = [("Sueldo" + (f" ({dias} días)" if dias < 30 else ""), sueldo)]
+    if suplementarias:
+        ingresos.append((f"Horas suplementarias ({_n(h50)} h al {_p(config.recargo_suplementarias)})",
+                         suplementarias))
+    if extraordinarias:
+        ingresos.append((f"Horas extraordinarias ({_n(h100)} h al {_p(config.recargo_extraordinarias)})",
+                         extraordinarias))
     if horas_extra:
-        ingresos.append(("Horas extra", horas_extra))
+        ingresos.append(("Otras horas extra", horas_extra))
     if otros_ingresos:
         ingresos.append(("Bonos y comisiones", otros_ingresos))
     provisiones = []
@@ -267,7 +336,10 @@ def rol(tenant, empleado, mes, dias_trabajados=30, horas_extra=CERO, otros_ingre
 
     aporte_personal = pct(aportable, config.aporte_personal_iess)
     descuentos = [("Aporte personal IESS " + _p(config.aporte_personal_iess), aporte_personal)]
-    for nombre, valor in (("Anticipos", anticipos), ("Préstamos IESS", prestamos_iess),
+    entregados = anticipos_entregados(tenant, empleado, inicio, fin)
+    if entregados:
+        descuentos.append(("Anticipos entregados en el mes", entregados))
+    for nombre, valor in (("Otros anticipos", anticipos), ("Préstamos IESS", prestamos_iess),
                           ("Otros descuentos", otros_descuentos)):
         if centavos(valor):
             descuentos.append((nombre, centavos(valor)))
@@ -298,8 +370,162 @@ def rol(tenant, empleado, mes, dias_trabajados=30, horas_extra=CERO, otros_ingre
         "total_provisiones": str(total_provisiones),
         "costo_empleador": str(costo),
         "fondos_reserva_desde": None if con_fondos else "Desde el segundo año de trabajo",
+        # Lo que se le debe al IESS por este rol (planilla del mes):
+        "iess": {
+            "aporte_personal": str(aporte_personal),
+            "aporte_patronal": str(aporte_patronal),
+            "fondos_reserva": str(fondos if not perfil.fondos_reserva_mensual else CERO),
+            "prestamos": str(centavos(prestamos_iess)),
+        },
+        # Lo que se acumula para pagarle después (si no se mensualiza):
+        "acumula": {
+            "decimo_tercero": str(CERO if perfil.decimo_tercero_mensual else decimo_tercero),
+            "decimo_cuarto": str(CERO if perfil.decimo_cuarto_mensual else decimo_cuarto),
+        },
     }
+
+
+def anticipos_entregados(tenant, empleado, desde, hasta):
+    """Egresos del mes marcados para descontárselos (anticipos, préstamos de la clínica)."""
+    from apps.finanzas.models import ORIGENES_CALCULADOS, Egreso
+
+    return _suma(Egreso.objects.filter(
+        tenant=tenant, profesional=empleado, descontar_al_profesional=True, anulado=False,
+        fecha__gte=desde, fecha__lte=hasta).exclude(origen__in=ORIGENES_CALCULADOS))
+
+
+def _n(valor):
+    return f"{Decimal(valor).normalize():f}".replace(".", ",")
 
 
 def _p(valor):
     return f"{Decimal(valor).normalize():f} %".replace(".", ",")
+
+
+# ── Obligaciones: lo que se paga a terceros ──────────────────────────
+
+def _siguiente_mes(inicio, dia):
+    anio, mes = (inicio.year + 1, 1) if inicio.month == 12 else (inicio.year, inicio.month + 1)
+    return date(anio, mes, min(dia, monthrange(anio, mes)[1]))
+
+
+def _de_calculo(calculo, grupo, clave, lista, prefijo):
+    """Valor del cálculo de un rol; los guardados antes de tener `grupo` se leen de la lista."""
+    if grupo in calculo:
+        return Decimal(calculo[grupo].get(clave) or 0)
+    return sum((Decimal(f["valor"]) for f in calculo.get(lista, []) if f["concepto"].startswith(prefijo)),
+               CERO)
+
+
+def _pago_registrado(tenant, origen, periodo, profesional=None):
+    from apps.finanzas.models import Egreso
+
+    qs = Egreso.objects.filter(tenant=tenant, origen=origen, periodo=periodo, anulado=False)
+    if profesional is not None:
+        qs = qs.filter(profesional=profesional)
+    return qs.first()
+
+
+def obligaciones(tenant, inicio):
+    """
+    Lo que la clínica debe pagar por el mes que empieza en `inicio`:
+
+      · Planilla del IESS: aporte personal (que se descontó en el rol) +
+        aporte patronal + fondos de reserva no mensualizados + préstamos
+        descontados. Vence el 15 del mes siguiente.
+      · Retenciones al SRI: lo retenido a los profesionales en las
+        liquidaciones pagadas ese mes (formulario 103). Vence el mes
+        siguiente, el día que toque por el noveno dígito del RUC.
+    """
+    from apps.finanzas.models import Liquidacion, RolPagos
+
+    fin = mes_de(inicio.strftime("%Y-%m"))[1]
+    resultado = []
+
+    roles = RolPagos.objects.filter(tenant=tenant, mes=inicio).exclude(
+        estado=RolPagos.Estado.ANULADO).select_related("empleado")
+    personal = patronal = fondos = prestamos = CERO
+    for r in roles:
+        c = r.calculo or {}
+        personal += _de_calculo(c, "iess", "aporte_personal", "descuentos", "Aporte personal")
+        patronal += Decimal(c.get("aporte_patronal") or 0)
+        fondos += _de_calculo(c, "iess", "fondos_reserva", "provisiones", "Fondos de reserva")
+        prestamos += _de_calculo(c, "iess", "prestamos", "descuentos", "Préstamos IESS")
+    total = centavos(personal + patronal + fondos + prestamos)
+    if total:
+        resultado.append(_obligacion(tenant, "iess", "Planilla del IESS", inicio, total,
+                                     _siguiente_mes(inicio, 15), [
+                                         ("Aporte personal (descontado en los roles)", personal),
+                                         ("Aporte patronal e IECE/SECAP", patronal),
+                                         ("Fondos de reserva no mensualizados", fondos),
+                                         ("Préstamos IESS descontados", prestamos),
+                                     ], f"{roles.count()} rol{'es' if roles.count() != 1 else ''}"))
+
+    liqs = Liquidacion.objects.filter(tenant=tenant, estado=Liquidacion.Estado.PAGADA,
+                                      egreso__fecha__gte=inicio, egreso__fecha__lte=fin, retencion__gt=0) \
+        .select_related("profesional")
+    retenido = centavos(sum((q.retencion for q in liqs), CERO))
+    if retenido:
+        resultado.append(_obligacion(tenant, "sri", "Retenciones en la fuente al SRI", inicio, retenido,
+                                     _siguiente_mes(inicio, 28),
+                                     [(f"{q.profesional.full_name} — liquidación N.º {q.numero:05d}", q.retencion)
+                                      for q in liqs],
+                                     "Formulario 103; la fecha exacta depende del noveno dígito del RUC"))
+    return resultado
+
+
+def _obligacion(tenant, tipo, nombre, inicio, monto, vence, detalle, nota):
+    pago = _pago_registrado(tenant, tipo, inicio)
+    return {
+        "tipo": tipo, "nombre": nombre, "periodo": inicio.strftime("%Y-%m"), "monto": str(monto),
+        "vence": vence.isoformat(), "nota": nota,
+        "detalle": [{"concepto": n, "valor": str(centavos(v))} for n, v in detalle if centavos(v)],
+        "pagado": pago is not None, "egreso": str(pago.id) if pago else None,
+        "fecha_pago": pago.fecha.isoformat() if pago else None,
+        "diferencia": str(centavos(monto - pago.monto)) if pago else None,
+    }
+
+
+# ── Décimos acumulados ───────────────────────────────────────────────
+
+def periodo_decimo(tipo, anio, region="sierra"):
+    """(desde, hasta, vence) del décimo tercero o cuarto que se paga en `anio`."""
+    if tipo == "tercero":
+        return date(anio - 1, 12, 1), date(anio, 11, 30), date(anio, 12, 24)
+    if region == "costa":
+        return date(anio - 1, 3, 1), date(anio, 2, monthrange(anio, 2)[1]), date(anio, 3, 15)
+    return date(anio - 1, 8, 1), date(anio, 7, 31), date(anio, 8, 15)
+
+
+def decimos(tenant, tipo, anio):
+    """
+    Lo acumulado de un décimo para cada persona que no lo cobra cada mes,
+    sumando lo provisionado en sus roles del período legal.
+    """
+    from apps.finanzas.models import ConfiguracionFinanzas, RolPagos
+
+    region = ConfiguracionFinanzas.de(tenant).region
+    desde, hasta, vence = periodo_decimo(tipo, anio, region)
+    nombre = "Décimo tercer sueldo" if tipo == "tercero" else "Décimo cuarto sueldo"
+    por_persona = {}
+    for r in RolPagos.objects.filter(tenant=tenant, mes__gte=desde, mes__lte=hasta).exclude(
+            estado=RolPagos.Estado.ANULADO).select_related("empleado"):
+        valor = _de_calculo(r.calculo or {}, "acumula", f"decimo_{tipo}", "provisiones", nombre)
+        if not valor:
+            continue
+        fila = por_persona.setdefault(r.empleado_id, {"empleado": r.empleado, "meses": 0, "monto": CERO})
+        fila["meses"] += 1
+        fila["monto"] += valor
+    filas = []
+    periodo = date(anio, 1, 1)
+    for f in sorted(por_persona.values(), key=lambda x: x["empleado"].full_name):
+        pago = _pago_registrado(tenant, f"decimo_{tipo}", periodo, f["empleado"])
+        filas.append({"empleado": str(f["empleado"].id), "nombre": f["empleado"].full_name,
+                      "meses": f["meses"], "monto": str(centavos(f["monto"])),
+                      "pagado": pago is not None, "egreso": str(pago.id) if pago else None,
+                      "fecha_pago": pago.fecha.isoformat() if pago else None})
+    total = centavos(sum((Decimal(f["monto"]) for f in filas), CERO))
+    pendiente = centavos(sum((Decimal(f["monto"]) for f in filas if not f["pagado"]), CERO))
+    return {"tipo": tipo, "nombre": nombre, "anio": anio, "region": region,
+            "desde": desde.isoformat(), "hasta": hasta.isoformat(), "vence": vence.isoformat(),
+            "filas": filas, "total": str(total), "pendiente": str(pendiente)}

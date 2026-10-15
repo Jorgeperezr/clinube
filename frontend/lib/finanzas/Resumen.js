@@ -39,7 +39,9 @@ export default function Resumen({ mes, irA }) {
   if (!datos) return <div className="card"><div className="empty">Cargando…</div></div>;
 
   const utilidad = Number(datos.utilidad);
-  const pendientePersonal = Number(datos.honorarios_pendientes) + Number(datos.roles_pendientes);
+  const obligaciones = datos.obligaciones || [];
+  const pendientePersonal = Number(datos.honorarios_pendientes) + Number(datos.roles_pendientes)
+    + obligaciones.reduce((s, o) => s + Number(o.monto), 0);
 
   return (
     <div>
@@ -73,6 +75,12 @@ export default function Resumen({ mes, irA }) {
               Honorarios: <span className="tabular" style={{ marginLeft: 4 }}>{dinero(datos.honorarios_pendientes)}</span>
             </button>
           )}
+          {obligaciones.map((o) => (
+            <button key={`${o.tipo}-${o.periodo}`} type="button" className="btn btn-ghost" onClick={() => irA("obligaciones")}>
+              {o.tipo === "iess" ? "IESS" : "SRI"} {mesCorto(o.periodo)}:
+              <span className="tabular" style={{ marginLeft: 4 }}>{dinero(o.monto)}</span>
+            </button>
+          ))}
           {Number(datos.roles_pendientes) > 0 && (
             <button type="button" className="btn btn-ghost" onClick={() => irA("roles")}>
               Sueldos: <span className="tabular" style={{ marginLeft: 4 }}>{dinero(datos.roles_pendientes)}</span>

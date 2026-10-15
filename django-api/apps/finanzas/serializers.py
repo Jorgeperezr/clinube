@@ -20,13 +20,19 @@ class ConfiguracionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConfiguracionFinanzas
         fields = ["salario_basico", "aporte_personal_iess", "aporte_patronal_iess", "aporte_iece_secap",
-                  "fondos_reserva", "retencion_honorarios", "siguiente_comprobante"]
+                  "fondos_reserva", "retencion_honorarios", "siguiente_comprobante", "region",
+                  "recargo_suplementarias", "recargo_extraordinarias"]
 
     def validate(self, datos):
         for campo in ("aporte_personal_iess", "aporte_patronal_iess", "aporte_iece_secap",
                       "fondos_reserva", "retencion_honorarios"):
             if campo in datos and not (Decimal("0") <= datos[campo] <= Decimal("100")):
                 raise serializers.ValidationError({campo: "Un porcentaje entre 0 y 100."})
+        for campo in ("recargo_suplementarias", "recargo_extraordinarias"):
+            if campo in datos and not (Decimal("0") <= datos[campo] <= Decimal("300")):
+                raise serializers.ValidationError({campo: "Un recargo entre 0 y 300 %."})
+        if "salario_basico" in datos and datos["salario_basico"] <= 0:
+            raise serializers.ValidationError({"salario_basico": "El salario básico tiene que ser mayor que cero."})
         return datos
 
 
@@ -48,8 +54,8 @@ class EgresoSerializer(serializers.ModelSerializer):
         fields = ["id", "fecha", "categoria", "categoria_nombre", "concepto", "monto", "forma_pago",
                   "forma_pago_nombre", "estado", "vence", "proveedor", "proveedor_ruc", "numero_factura",
                   "comprobante", "tiene_comprobante", "profesional", "profesional_nombre",
-                  "descontar_al_profesional", "origen", "anulado", "motivo_anulacion", "created_at"]
-        read_only_fields = ["id", "origen", "anulado", "motivo_anulacion", "created_at"]
+                  "descontar_al_profesional", "origen", "periodo", "anulado", "motivo_anulacion", "created_at"]
+        read_only_fields = ["id", "origen", "periodo", "anulado", "motivo_anulacion", "created_at"]
         extra_kwargs = {"comprobante": {"write_only": True, "required": False}}
 
     def get_profesional_nombre(self, obj):
@@ -143,6 +149,7 @@ class RolSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RolPagos
-        fields = ["id", "empleado", "empleado_nombre", "mes", "dias_trabajados", "horas_extra",
+        fields = ["id", "empleado", "empleado_nombre", "mes", "dias_trabajados", "horas_suplementarias",
+                  "horas_extraordinarias", "horas_extra",
                   "otros_ingresos", "anticipos", "prestamos_iess", "otros_descuentos", "calculo",
                   "neto", "costo_empleador", "estado", "estado_nombre", "created_at"]

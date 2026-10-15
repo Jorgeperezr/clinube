@@ -102,6 +102,10 @@ def libro_del_mes(tenant, desde, hasta):
                  ["Egresos pagados", float(r["egresos"])], ["Utilidad", float(r["utilidad"])],
                  ["Por cobrar a pacientes", float(r["por_cobrar"])], ["Por pagar", float(r["por_pagar"])]):
         resumen.append(fila)
+    # Lo que se debe al IESS y al SRI por este mes, y si ya se pagó.
+    for o in calculos.obligaciones(tenant, desde):
+        resumen.append([f"{o['nombre']} ({'pagada' if o['pagado'] else 'vence ' + o['vence']})",
+                        float(o["monto"])])
     resumen.column_dimensions["A"].width = 28
     resumen.column_dimensions["B"].width = 16
     for c in resumen["B"][1:]:

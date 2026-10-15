@@ -167,15 +167,18 @@ def liquidacion(tenant, liq):
         if cobros:
             partes += [style.section_flowable("Cobros a sus pacientes", 1),
                        _tabla(style, ["Fecha", "Paciente", "Forma", "Monto"],
-                              [[fecha_documento(c["fecha"]), c["paciente"], c["forma"], dinero(c["monto"])]
-                               for c in cobros],
+                              [[fecha_documento(c["fecha"]) + (" *" if c.get("atrasado") else ""),
+                                c["paciente"], c["forma"], dinero(c["monto"])] for c in cobros],
                               [0.16, 0.48, 0.16, 0.20], totales=["", "Total cobrado", "", dinero(liq.base)])]
         descuentos = detalle.get("descuentos") or []
         if descuentos:
             partes += [style.section_flowable("Descuentos", 2 if cobros else 1),
                        _tabla(style, ["Fecha", "Concepto", "Monto"],
-                              [[fecha_documento(d["fecha"]), d["concepto"], dinero(d["monto"])]
-                               for d in descuentos], [0.16, 0.64, 0.20])]
+                              [[fecha_documento(d["fecha"]) + (" *" if d.get("atrasado") else ""),
+                                d["concepto"], dinero(d["monto"])] for d in descuentos], [0.16, 0.64, 0.20])]
+        if any(x.get("atrasado") for x in cobros + descuentos):
+            partes.append(Paragraph("* De antes del período: se registró después de liquidarlo.",
+                                    ss["DocSmall"]))
 
         if detalle.get("modalidad") == "fijo":
             linea_honorario = "Honorario fijo del período"

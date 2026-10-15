@@ -21,7 +21,12 @@ const VACIO = {
   proveedor: "", proveedor_ruc: "", numero_factura: "", profesional: "", descontar_al_profesional: false,
 };
 
-const ORIGEN = { liquidacion: "Liquidación", rol: "Rol de pagos", inventario: "Compra de inventario" };
+const ORIGEN = {
+  liquidacion: "Liquidación", rol: "Rol de pagos", inventario: "Compra de inventario",
+  iess: "Planilla del IESS", sri: "Retenciones al SRI", decimo_tercero: "Décimo tercero", decimo_cuarto: "Décimo cuarto",
+};
+// Los crea Clinube al registrar un pago: no se corrigen a mano.
+const CALCULADOS = ["liquidacion", "rol", "iess", "sri", "decimo_tercero", "decimo_cuarto"];
 
 export default function Egresos({ mes, equipo, categorias }) {
   const [confirmar, ConfirmUI] = useConfirm();
@@ -284,7 +289,9 @@ export default function Egresos({ mes, equipo, categorias }) {
                         )}
                         {!e.anulado && !["liquidacion", "rol"].includes(e.origen) && (
                           <>
-                            <button type="button" className="btn btn-ghost" style={botonFila} onClick={() => editar(e)}>Corregir</button>
+                            {!CALCULADOS.includes(e.origen) && (
+                              <button type="button" className="btn btn-ghost" style={botonFila} onClick={() => editar(e)}>Corregir</button>
+                            )}
                             <button type="button" className="btn btn-ghost" style={{ ...botonFila, color: "var(--red)" }}
                                     onClick={() => setAnulando({ id: e.id, concepto: e.concepto, motivo: "" })}>Anular</button>
                           </>

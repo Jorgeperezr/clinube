@@ -73,6 +73,25 @@ export default function Ajustes({ categorias, alCambiarCategorias }) {
                 </div>
               ))}
               <div className="field">
+                <label>Región (décimo cuarto)</label>
+                <select value={config.region} onChange={(e) => setConfig({ ...config, region: e.target.value })}>
+                  <option value="sierra">Sierra y Amazonía: se paga hasta el 15 de agosto</option>
+                  <option value="costa">Costa y Galápagos: se paga hasta el 15 de marzo</option>
+                </select>
+              </div>
+              <div style={rejillaFormulario}>
+                <div className="field">
+                  <label>Recargo horas suplementarias (%)</label>
+                  <input type="number" step="0.01" min="0" value={config.recargo_suplementarias}
+                         onChange={(e) => setConfig({ ...config, recargo_suplementarias: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Recargo horas extraordinarias (%)</label>
+                  <input type="number" step="0.01" min="0" value={config.recargo_extraordinarias}
+                         onChange={(e) => setConfig({ ...config, recargo_extraordinarias: e.target.value })} />
+                </div>
+              </div>
+              <div className="field">
                 <label>Próximo comprobante de cobro</label>
                 <input type="number" step="1" min="1" value={config.siguiente_comprobante}
                        onChange={(e) => setConfig({ ...config, siguiente_comprobante: e.target.value })} />

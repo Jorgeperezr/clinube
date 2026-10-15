@@ -222,7 +222,8 @@ function Previa({ previa, alGuardar }) {
           <summary style={{ cursor: "pointer", color: "var(--ink-soft)" }}>Cobros incluidos ({previa.detalle.cobros.length})</summary>
           {previa.detalle.cobros.map((c, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0" }}>
-              <span>{fecha(c.fecha)} · {c.paciente} · {c.forma}</span><span className="tabular">{dinero(c.monto)}</span>
+              <span>{fecha(c.fecha)} · {c.paciente} · {c.forma}{c.atrasado ? " · de antes del período" : ""}</span>
+              <span className="tabular">{dinero(c.monto)}</span>
             </div>
           ))}
         </details>

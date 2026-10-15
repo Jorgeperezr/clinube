@@ -33,6 +33,11 @@ class FormaPago(models.TextChoices):
     CHEQUE = "cheque", "Cheque"
 
 
+class Region(models.TextChoices):
+    SIERRA = "sierra", "Sierra y Amazonía (décimo cuarto hasta el 15 de agosto)"
+    COSTA = "costa", "Costa y Galápagos (décimo cuarto hasta el 15 de marzo)"
+
+
 class ConfiguracionFinanzas(TenantAwareModel):
     """Valores de ley y de la clínica. Uno por clínica; se crea al primer uso."""
 
@@ -55,6 +60,15 @@ class ConfiguracionFinanzas(TenantAwareModel):
         help_text="Impuesto a la Renta que se retiene al profesional que factura a la clínica.")
     siguiente_comprobante = models.PositiveIntegerField(
         "Siguiente número de comprobante de cobro", default=1)
+    # El décimo cuarto no se paga igual en todo el país.
+    region = models.CharField(
+        "Región para el décimo cuarto", max_length=6, choices=Region.choices, default=Region.SIERRA)
+    recargo_suplementarias = models.DecimalField(
+        "Recargo de horas suplementarias (%)", max_digits=5, decimal_places=2, default=Decimal("50.00"),
+        help_text="Hasta las 24:00 y en días laborables. 50 % según el Código del Trabajo.")
+    recargo_extraordinarias = models.DecimalField(
+        "Recargo de horas extraordinarias (%)", max_digits=5, decimal_places=2, default=Decimal("100.00"),
+        help_text="Fines de semana, feriados y de 24:00 a 06:00. 100 %.")
 
     class Meta:
         verbose_name = "Configuración de finanzas"
@@ -117,6 +131,14 @@ def categoria(tenant, clave):
     return categorias_de(tenant).filter(clave=clave).first()
 
 
+# Egresos que crea un cálculo (una liquidación, un rol o el pago de una
+# obligación): no se corrigen a mano ni se descuentan a nadie.
+ORIGENES_CALCULADOS = ("liquidacion", "rol", "iess", "sri", "decimo_tercero", "decimo_cuarto")
+# De estos, los pagos a terceros sí se anulan desde Egresos: la
+# obligación vuelve a quedar pendiente.
+ORIGENES_OBLIGACION = ("iess", "sri", "decimo_tercero", "decimo_cuarto")
+
+
 class Egreso(TenantAwareModel):
     """Un pago que hace la clínica, o una cuenta que tiene pendiente."""
 
@@ -146,7 +168,10 @@ class Egreso(TenantAwareModel):
         help_text="Se resta de lo que se le paga (p. ej. el laboratorio de sus casos).")
     origen = models.CharField(
         max_length=20, blank=True,
-        help_text="Quién lo creó si no fue a mano: «liquidacion», «rol» o «inventario».")
+        help_text="Quién lo creó si no fue a mano: «liquidacion», «rol», «inventario», «iess», "
+                  "«sri», «decimo_tercero» o «decimo_cuarto».")
+    # Para los pagos a terceros (IESS, SRI, décimos): el período que salda.
+    periodo = models.DateField(null=True, blank=True)
     registrado_por = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
     anulado = models.BooleanField(default=False)
     motivo_anulacion = models.CharField(max_length=200, blank=True)
@@ -277,7 +302,11 @@ class RolPagos(TenantAwareModel):
     mes = models.DateField(help_text="El día 1 del mes del rol.")
     dias_trabajados = models.PositiveSmallIntegerField(default=30)
     horas_extra = models.DecimalField(max_digits=10, decimal_places=2, default=CERO,
-                                      help_text="Valor en dólares de las horas extra del mes.")
+                                      help_text="Otro valor por horas extra, en dólares.")
+    horas_suplementarias = models.DecimalField(max_digits=6, decimal_places=2, default=CERO,
+                                               help_text="Número de horas con recargo del 50 %.")
+    horas_extraordinarias = models.DecimalField(max_digits=6, decimal_places=2, default=CERO,
+                                                help_text="Número de horas con recargo del 100 %.")
     otros_ingresos = models.DecimalField(max_digits=10, decimal_places=2, default=CERO,
                                          help_text="Bonos o comisiones.")
     anticipos = models.DecimalField(max_digits=10, decimal_places=2, default=CERO)

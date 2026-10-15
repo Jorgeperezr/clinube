@@ -16,7 +16,9 @@ import { abrirPdf, Aviso, botonFila, dinero, enviar, FORMAS_PAGO, nombreMes, rej
 
 const CAMPOS = [
   ["dias_trabajados", "Días trabajados", "1"],
-  ["horas_extra", "Horas extra (USD)", "0.01"],
+  ["horas_suplementarias", "Horas suplementarias (50 %)", "0.5"],
+  ["horas_extraordinarias", "Horas extraordinarias (100 %)", "0.5"],
+  ["horas_extra", "Otras horas extra (USD)", "0.01"],
   ["otros_ingresos", "Otros ingresos (USD)", "0.01"],
   ["anticipos", "Anticipos (USD)", "0.01"],
   ["prestamos_iess", "Préstamos IESS (USD)", "0.01"],

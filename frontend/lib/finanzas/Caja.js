@@ -88,6 +88,12 @@ export default function Caja() {
             {datos.cierre && !corrigiendo ? (
               <>
                 <h3 style={{ marginBottom: 12 }}>Caja cerrada</h3>
+                {datos.desactualizado && (
+                  <div className="error-box" style={{ background: "var(--amber-soft)", color: "var(--amber)" }}>
+                    Después del cierre se registró un cobro o un pago en efectivo de este día: ahora debería haber {dinero(datos.esperado)}.
+                    Vuelve a cerrar la caja con el conteo actualizado.
+                  </div>
+                )}
                 <Linea texto="Contado" valor={datos.cierre.contado} />
                 <Linea texto="Diferencia" valor={datos.cierre.diferencia} color={Number(datos.cierre.diferencia) === 0 ? null
                   : Number(datos.cierre.diferencia) < 0 ? "var(--red)" : "var(--amber)"} />

@@ -3,6 +3,7 @@ API de finanzas (/api/v1/finanzas/…). Todo exige la función «Finanzas»
 de la persona y que la clínica la tenga activa.
 """
 
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
@@ -20,6 +21,8 @@ from apps.accounts.models import AuditLog, User
 from apps.common.permisos_funcionalidad import RequiereFuncionalidad
 from apps.finanzas import calculos, documentos
 from apps.finanzas.models import (
+    ORIGENES_CALCULADOS,
+    ORIGENES_OBLIGACION,
     CategoriaEgreso,
     CierreCaja,
     ConfiguracionFinanzas,
@@ -158,8 +161,42 @@ class EgresosView(generics.ListCreateAPIView):
         return qs[:500]
 
     def perform_create(self, serializer):
+        _rol_ya_pagado(self.request.tenant, serializer.validated_data)
         egreso = serializer.save(tenant=self.request.tenant, registrado_por=self.request.user)
         _auditar(self.request, "create_expense", egreso, monto=str(egreso.monto))
+
+
+def _rol_ya_pagado(tenant, datos, egreso=None):
+    """Un anticipo para descontar en un rol que ya se pagó no se descontaría nunca."""
+    def valor(campo):
+        return datos.get(campo, getattr(egreso, campo, None))
+
+    if not (valor("descontar_al_profesional") and valor("profesional") and valor("fecha")):
+        return
+    pagado = RolPagos.objects.filter(tenant=tenant, empleado=valor("profesional"),
+                                     mes=valor("fecha").replace(day=1), estado=RolPagos.Estado.PAGADO).first()
+    if pagado:
+        raise _error(f"El rol de {pagado.empleado.full_name} de ese mes ya está pagado: no se le podría "
+                     "descontar. Anula el rol para rehacerlo o registra el anticipo en el mes siguiente.")
+
+
+def _ya_descontado(egreso):
+    """La liquidación o el rol pagado en que entró este egreso, si alguno."""
+    if not (egreso.descontar_al_profesional and egreso.profesional_id):
+        return None
+    _, descontados, rangos, _ = calculos.ya_liquidado(egreso.tenant, egreso.profesional)
+    if str(egreso.id) in descontados or any(a <= egreso.fecha <= b for a, b in rangos):
+        # Se busca en Python: `__contains` sobre JSON no existe en SQLite (CI).
+        for liq in Liquidacion.objects.filter(tenant=egreso.tenant, profesional_id=egreso.profesional_id) \
+                .exclude(estado=Liquidacion.Estado.ANULADA):
+            if str(egreso.id) in (liq.detalle or {}).get("descuentos_ids", []) \
+                    or ("descuentos_ids" not in (liq.detalle or {}) and liq.desde <= egreso.fecha <= liq.hasta):
+                return f"la liquidación N.º {liq.numero:05d}"
+        return "una liquidación"
+    if RolPagos.objects.filter(tenant=egreso.tenant, empleado_id=egreso.profesional_id,
+                               mes=egreso.fecha.replace(day=1), estado=RolPagos.Estado.PAGADO).exists():
+        return "un rol de pagos ya pagado"
+    return None
 
 
 class EgresoView(generics.RetrieveUpdateAPIView):
@@ -174,8 +211,12 @@ class EgresoView(generics.RetrieveUpdateAPIView):
         egreso = self.get_object()
         if egreso.anulado:
             raise _error("Un egreso anulado no se modifica.")
-        if egreso.origen in ("liquidacion", "rol"):
-            raise _error("Este egreso lo creó una liquidación o un rol: se cambia desde allí.")
+        if egreso.origen in ORIGENES_CALCULADOS:
+            raise _error("Este egreso lo creó Clinube al registrar un pago: se cambia desde allí.")
+        donde = _ya_descontado(egreso)
+        if donde:
+            raise _error(f"Ya se descontó en {donde}. Anúlala antes de cambiarlo.")
+        _rol_ya_pagado(self.request.tenant, serializer.validated_data, egreso)
         serializer.save()
         _auditar(self.request, "update_expense", egreso, campos=sorted(self.request.data.keys()))
 
@@ -196,8 +237,11 @@ class AnularEgresoView(APIView):
         motivo = (request.data.get("motivo") or "").strip()
         if not motivo:
             return Response({"detail": "Escribe por qué se anula."}, status=400)
-        if egreso.origen in ("liquidacion", "rol"):
+        if egreso.origen in ORIGENES_CALCULADOS and egreso.origen not in ORIGENES_OBLIGACION:
             return Response({"detail": "Se anula desde la liquidación o el rol que lo creó."}, status=400)
+        donde = _ya_descontado(egreso)
+        if donde:
+            return Response({"detail": f"Ya se descontó en {donde}. Anúlala antes."}, status=400)
         egreso.anulado = True
         egreso.motivo_anulacion = motivo[:200]
         egreso.save(update_fields=["anulado", "motivo_anulacion", "updated_at"])
@@ -252,7 +296,11 @@ class CajaView(APIView):
         if dia is None:
             return Response({"detail": "Fecha no válida."}, status=400)
         cierre = CierreCaja.objects.filter(tenant=request.tenant, fecha=dia).first()
-        return Response({**calculos.caja(request.tenant, dia),
+        c = calculos.caja(request.tenant, dia)
+        # Un cobro o un pago en efectivo apuntado después de cerrar cambia lo
+        # esperado: se avisa para volver a cerrar con la cifra buena.
+        desactualizado = bool(cierre) and Decimal(c["esperado"]) != cierre.esperado
+        return Response({**c, "desactualizado": desactualizado,
                          "cierre": CierreCajaSerializer(cierre).data if cierre else None,
                          "ultimos": CierreCajaSerializer(
                              CierreCaja.objects.filter(tenant=request.tenant)[:10], many=True).data})
@@ -422,8 +470,8 @@ class LiquidacionPdfView(APIView):
 
 # ── Rol de pagos ─────────────────────────────────────────────────────
 
-CAMPOS_ROL = ("dias_trabajados", "horas_extra", "otros_ingresos", "anticipos", "prestamos_iess",
-              "otros_descuentos")
+CAMPOS_ROL = ("dias_trabajados", "horas_suplementarias", "horas_extraordinarias", "horas_extra",
+              "otros_ingresos", "anticipos", "prestamos_iess", "otros_descuentos")
 
 
 def _datos_rol(request, fuente):
@@ -438,6 +486,10 @@ def _datos_rol(request, fuente):
         if v is None or v < 0:
             raise _error("Los valores del rol son números positivos.")
         valores[campo] = int(v) if campo == "dias_trabajados" else v
+    if valores["dias_trabajados"] > 30:
+        raise _error("El mes del rol se cuenta de 30 días.")
+    if valores["horas_suplementarias"] + valores["horas_extraordinarias"] > 200:
+        raise _error("Revisa las horas extra: son más de 200 en el mes.")
     return empleado, inicio, valores
 
 
@@ -484,6 +536,15 @@ class RolesView(APIView):
         return Response(RolSerializer(rol).data, status=201 if not existente else 200)
 
 
+def _recalcular(rol):
+    calculo = calculos.rol(rol.tenant, rol.empleado, rol.mes,
+                           **{campo: getattr(rol, campo) for campo in CAMPOS_ROL})
+    rol.calculo = calculo
+    rol.neto = Decimal(calculo["neto"])
+    rol.costo_empleador = Decimal(calculo["costo_empleador"])
+    rol.save(update_fields=["calculo", "neto", "costo_empleador", "updated_at"])
+
+
 class GenerarRolesView(APIView):
     """POST /finanzas/roles/generar/ {"mes"} — un borrador para cada persona en relación de dependencia."""
 
@@ -519,6 +580,9 @@ class PagarRolView(APIView):
         rol = generics.get_object_or_404(RolPagos.objects.select_for_update(), pk=pk, tenant=request.tenant)
         if rol.estado != RolPagos.Estado.BORRADOR:
             return Response({"detail": "Solo se paga un rol pendiente."}, status=400)
+        # Se recalcula al pagar: un anticipo apuntado después de generar el
+        # borrador, o un cambio de sueldo, tiene que estar en lo que se paga.
+        _recalcular(rol)
         forma = request.data.get("forma_pago") or FormaPago.TRANSFERENCIA
         if forma not in FormaPago.values:
             return Response({"detail": "Forma de pago desconocida."}, status=400)
@@ -557,6 +621,99 @@ class RolPdfView(APIView):
         rol = generics.get_object_or_404(RolPagos.objects.select_related("empleado"), pk=pk, tenant=request.tenant)
         nombre = f"rol-{rol.mes.strftime('%Y-%m')}-{(rol.empleado.full_name or 'empleado').split(' ')[0].lower()}.pdf"
         return _pdf(documentos.rol_pagos(request.tenant, rol), nombre)
+
+
+# ── Obligaciones con el IESS y el SRI, y décimos ─────────────────────
+
+CATEGORIA_DE = {"iess": "sueldos", "sri": "impuestos", "decimo_tercero": "sueldos", "decimo_cuarto": "sueldos"}
+
+
+def _forma_y_fecha(request):
+    forma = request.data.get("forma_pago") or FormaPago.TRANSFERENCIA
+    if forma not in FormaPago.values:
+        raise _error("Forma de pago desconocida.")
+    return forma, _fecha(request.data.get("fecha"), timezone.localdate())
+
+
+class ObligacionesView(APIView):
+    """
+    GET  /finanzas/obligaciones/?mes=2026-10   planilla del IESS y retenciones del mes.
+    POST /finanzas/obligaciones/ {"tipo": "iess"|"sri", "mes", "fecha", "forma_pago"} — registra su pago.
+    """
+
+    permission_classes = PERMISO
+
+    def get(self, request):
+        try:
+            inicio, _ = calculos.mes_de(request.query_params.get("mes"))
+        except (ValueError, TypeError):
+            return Response({"detail": "El mes va como 2026-10."}, status=400)
+        return Response({"mes": inicio.strftime("%Y-%m"), "obligaciones": calculos.obligaciones(request.tenant, inicio)})
+
+    @transaction.atomic
+    def post(self, request):
+        try:
+            inicio, _ = calculos.mes_de(request.data.get("mes"))
+        except (ValueError, TypeError):
+            return Response({"detail": "El mes va como 2026-10."}, status=400)
+        tipo = request.data.get("tipo")
+        o = next((x for x in calculos.obligaciones(request.tenant, inicio) if x["tipo"] == tipo), None)
+        if o is None:
+            return Response({"detail": "No hay nada que pagar de eso en ese mes."}, status=400)
+        if o["pagado"]:
+            return Response({"detail": "Ya está registrado. Si hay que corregirlo, anula ese egreso."}, status=400)
+        forma, fecha = _forma_y_fecha(request)
+        mes_txt = f"{documentos.MESES[inicio.month - 1]} {inicio.year}"
+        egreso = Egreso.objects.create(
+            tenant=request.tenant, fecha=fecha, categoria=categoria(request.tenant, CATEGORIA_DE[tipo]),
+            concepto=f"{o['nombre']} — {mes_txt}", monto=Decimal(o["monto"]), forma_pago=forma,
+            proveedor="IESS" if tipo == "iess" else "SRI", origen=tipo, periodo=inicio,
+            registrado_por=request.user)
+        _auditar(request, "pay_obligation", egreso, tipo=tipo, mes=inicio.strftime("%Y-%m"))
+        return Response(EgresoSerializer(egreso, context={"request": request}).data, status=201)
+
+
+class DecimosView(APIView):
+    """
+    GET  /finanzas/decimos/?tipo=tercero|cuarto&anio=2026   lo acumulado por persona.
+    POST /finanzas/decimos/ {"tipo", "anio", "empleado"?, "fecha", "forma_pago"} — paga a uno o a todos.
+    """
+
+    permission_classes = PERMISO
+
+    def _datos(self, fuente):
+        tipo = fuente.get("tipo")
+        try:
+            anio = int(fuente.get("anio") or timezone.localdate().year)
+        except ValueError:
+            anio = None
+        if tipo not in ("tercero", "cuarto") or not anio or not 2000 <= anio <= 2100:
+            raise _error("Indica el décimo (tercero o cuarto) y el año.")
+        return tipo, anio
+
+    def get(self, request):
+        tipo, anio = self._datos(request.query_params)
+        return Response(calculos.decimos(request.tenant, tipo, anio))
+
+    @transaction.atomic
+    def post(self, request):
+        tipo, anio = self._datos(request.data)
+        forma, fecha = _forma_y_fecha(request)
+        d = calculos.decimos(request.tenant, tipo, anio)
+        filas = [f for f in d["filas"] if not f["pagado"]
+                 and (not request.data.get("empleado") or f["empleado"] == str(request.data["empleado"]))]
+        if not filas:
+            return Response({"detail": "No queda nada pendiente de ese décimo."}, status=400)
+        equipo = {str(u.id): u for u in _equipo(request.tenant)}
+        for f in filas:
+            Egreso.objects.create(
+                tenant=request.tenant, fecha=fecha, categoria=categoria(request.tenant, "sueldos"),
+                concepto=f"{d['nombre']} {anio} — {f['nombre']}", monto=Decimal(f["monto"]), forma_pago=forma,
+                profesional=equipo.get(f["empleado"]), origen=f"decimo_{tipo}", periodo=date(anio, 1, 1),
+                registrado_por=request.user)
+        _auditar(request, "pay_bonus", ConfiguracionFinanzas.de(request.tenant), tipo=tipo, anio=anio,
+                 personas=len(filas))
+        return Response(calculos.decimos(request.tenant, tipo, anio), status=201)
 
 
 # ── Comprobante de cobro ─────────────────────────────────────────────
@@ -615,10 +772,14 @@ class CobrosView(APIView):
         pago = generics.get_object_or_404(Payment, pk=pk, tenant=request.tenant)
         valor = request.data.get("profesional")
         profesional = generics.get_object_or_404(_equipo(request.tenant), pk=valor) if valor else None
-        enlazada = Liquidacion.objects.filter(
-            tenant=request.tenant, desde__lte=pago.date, hasta__gte=pago.date,
-            profesional_id__in=[x for x in (pago.profesional_id, getattr(profesional, "id", None)) if x],
-        ).exclude(estado=Liquidacion.Estado.ANULADA).first()
+        # Solo importa si ya se le liquidó a quien lo tenía. Si el nuevo
+        # profesional ya tiene liquidado ese período, el cobro le entra en
+        # la próxima liquidación como atrasado.
+        enlazada = next((liq for liq in Liquidacion.objects.filter(
+            tenant=request.tenant, profesional_id=pago.profesional_id).exclude(estado=Liquidacion.Estado.ANULADA)
+            if str(pago.id) in (liq.detalle or {}).get("cobros_ids", [])
+            or ("cobros_ids" not in (liq.detalle or {}) and liq.desde <= pago.date <= liq.hasta)),
+            None) if pago.profesional_id else None
         if enlazada:
             return Response({"detail": f"Ese cobro ya entró en la liquidación N.º {enlazada.numero:05d}. "
                                        "Anúlala antes de cambiarlo."}, status=400)

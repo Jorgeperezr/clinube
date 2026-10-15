@@ -29,6 +29,8 @@ urlpatterns = [
     path("finanzas/roles/<uuid:pk>/pagar/", views.PagarRolView.as_view(), name="finanzas-rol-pagar"),
     path("finanzas/roles/<uuid:pk>/anular/", views.AnularRolView.as_view(), name="finanzas-rol-anular"),
     path("finanzas/roles/<uuid:pk>/pdf/", views.RolPdfView.as_view(), name="finanzas-rol-pdf"),
+    path("finanzas/obligaciones/", views.ObligacionesView.as_view(), name="finanzas-obligaciones"),
+    path("finanzas/decimos/", views.DecimosView.as_view(), name="finanzas-decimos"),
     path("finanzas/cobros/", views.CobrosView.as_view(), name="finanzas-cobros"),
     path("finanzas/cobros/<uuid:pk>/", views.CobrosView.as_view(), name="finanzas-cobro"),
     path("finanzas/cobros/<uuid:pk>/comprobante/", views.ComprobanteCobroView.as_view(),

@@ -127,7 +127,7 @@ class RolCalculoTests(Base):
         self.perfil(fecha_ingreso=date(2025, 3, 1), decimo_tercero_mensual=True, decimo_cuarto_mensual=True)
         r = calculos.rol(self.tenant, self.recepcion, self.mes, horas_extra=D("40"), anticipos=D("100"))
         ingresos = {f["concepto"]: f["valor"] for f in r["ingresos"]}
-        self.assertEqual(ingresos["Horas extra"], "40.00")
+        self.assertEqual(ingresos["Otras horas extra"], "40.00")
         self.assertEqual(ingresos["Décimo tercer sueldo"], "53.33")      # (600 + 40) / 12
         self.assertEqual(ingresos["Fondos de reserva"], "53.31")          # 8,33 % de 640
         self.assertEqual(r["descuentos"][0]["valor"], "60.48")           # 9,45 % de 640

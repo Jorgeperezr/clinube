@@ -21,6 +21,7 @@ import { mesActual, SelectorMes } from "../../../lib/finanzas/comunes";
 import Egresos from "../../../lib/finanzas/Egresos";
 import Equipo from "../../../lib/finanzas/Equipo";
 import Honorarios from "../../../lib/finanzas/Honorarios";
+import Obligaciones from "../../../lib/finanzas/Obligaciones";
 import Resumen from "../../../lib/finanzas/Resumen";
 import Roles from "../../../lib/finanzas/Roles";
 
@@ -32,6 +33,7 @@ const PESTANAS = [
   ["equipo", "Equipo"],
   ["honorarios", "Honorarios"],
   ["roles", "Rol de pagos"],
+  ["obligaciones", "IESS, SRI y décimos"],
   ["ajustes", "Ajustes"],
 ];
 
@@ -98,6 +100,7 @@ export default function FinanzasPage() {
       {pestana === "equipo" && <Equipo equipo={equipo} alCambiar={alCambiarPerfil} />}
       {pestana === "honorarios" && <Honorarios mes={mes} equipo={equipo} irA={irA} />}
       {pestana === "roles" && <Roles mes={mes} equipo={equipo} irA={irA} />}
+      {pestana === "obligaciones" && <Obligaciones mes={mes} />}
       {pestana === "ajustes" && <Ajustes categorias={categorias} alCambiarCategorias={cargarCategorias} />}
     </div>
   );
