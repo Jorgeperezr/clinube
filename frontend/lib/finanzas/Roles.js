@@ -20,7 +20,7 @@ const CAMPOS = [
   ["horas_extraordinarias", "Horas extraordinarias (100 %)", "0.5"],
   ["horas_extra", "Otras horas extra (USD)", "0.01"],
   ["otros_ingresos", "Otros ingresos (USD)", "0.01"],
-  ["anticipos", "Anticipos (USD)", "0.01"],
+  ["anticipos", "Otros anticipos (USD)", "0.01"],
   ["prestamos_iess", "Préstamos IESS (USD)", "0.01"],
   ["otros_descuentos", "Otros descuentos (USD)", "0.01"],
 ];

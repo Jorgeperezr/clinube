@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api, currentUser, readList, readObject, tieneFuncion } from "../../../lib/api";
 import BackButton from "../../../lib/BackButton";
+import CertificadoAtencion from "../../../lib/CertificadoAtencion";
 import PatientPayments from "../../../lib/PatientPayments";
 import { VIEWS, getView, readPreferredView, savePreferredView } from "../../../lib/odontogram/registry";
 import Form033Panel from "../../../lib/Form033Panel";
@@ -152,6 +153,7 @@ function PatientDetail() {
       {tab === "plan" && <PlanTab patientId={id} />}
       {tab === "documentos" && (
         <>
+          {["admin", "reception", "doctor"].includes(role) && <CertificadoAtencion patientId={id} />}
           <ExamRequestsSection patientId={id} />
           {["admin", "reception", "doctor"].includes(role) && <MarcarFoto patientId={id} />}
           <DocumentsTab key={versionDocs} patientId={id} />

@@ -217,7 +217,7 @@ def _default_doc_header():
     return {
         "enabled": True,
         "show_logo": True, "show_clinic_name": True, "show_professional": True,
-        "show_specialty": True, "show_address": True, "show_phone": True,
+        "show_specialty": True, "show_ruc": True, "show_address": True, "show_phone": True,
         "show_email": True, "show_website": False,
         "align": "left",            # left | center | right
         "height_mm": 26,

@@ -273,10 +273,12 @@ class DocumentStyle:
             lineas.append(self.subtitle_size + 3)
         if h.get("show_professional", True) and professional.get("full_name"):
             lineas.append(self.size + 2)
-        if any(h.get(k, d) and clinic.get(v) for k, v, d in (
-                ("show_address", "address", True), ("show_phone", "phone", True),
-                ("show_email", "email", True), ("show_website", "website", False))):
-            lineas.append(self.size)
+        # Ancho disponible para el texto: a la derecha del logotipo, o todo
+        # si va centrado. Antes no se medía y el teléfono o el correo se
+        # salían de la hoja en una receta A5.
+        ancho = (self.content_right - x) if align == "left" else self.content_width
+        contacto = self._lineas_de_contacto(clinic, h, ancho, self.size - 1.5)
+        lineas += [self.size] * len(contacto)
         alto_texto = sum(lineas)
 
         def put(text, size, bold, color, dy):
@@ -284,6 +286,7 @@ class DocumentStyle:
                 return 0
             c.setFont(self.font_bold if bold else self.font, size)
             c.setFillColor(color)
+            text = _cabe(text, self.font_bold if bold else self.font, size, ancho)
             if align == "center":
                 c.drawCentredString(self.width / 2, dy, text)
             elif align == "right":
@@ -294,7 +297,14 @@ class DocumentStyle:
 
         y = top - max(4 * mm, (height - alto_texto) / 2) - (self.subtitle_size if lineas else 0) * 0.75
         if h.get("show_clinic_name", True) and clinic.get("name"):
-            put(clinic["name"], self.subtitle_size + 2, True, text_color, y)
+            # Un nombre largo en A5 se achica antes de recortarse.
+            from reportlab.pdfbase.pdfmetrics import stringWidth
+
+            cuerpo_nombre = self.subtitle_size + 2
+            while cuerpo_nombre > self.size + 1 and \
+                    stringWidth(clinic["name"], self.font_bold, cuerpo_nombre) > ancho:
+                cuerpo_nombre -= 0.5
+            put(clinic["name"], cuerpo_nombre, True, text_color, y)
             y -= self.subtitle_size + 3
 
         if h.get("show_professional", True) and professional.get("full_name"):
@@ -305,17 +315,8 @@ class DocumentStyle:
             put(label, self.size, False, self.secondary, y)
             y -= self.size + 2
 
-        contact = []
-        if h.get("show_address", True) and clinic.get("address"):
-            contact.append(clinic["address"])
-        if h.get("show_phone", True) and clinic.get("phone"):
-            contact.append(f"Tel. {clinic['phone']}")
-        if h.get("show_email", True) and clinic.get("email"):
-            contact.append(clinic["email"])
-        if h.get("show_website", False) and clinic.get("website"):
-            contact.append(clinic["website"])
-        if contact:
-            put(" · ".join(contact), self.size - 1.5, False, self.secondary, y)
+        for linea in contacto:
+            put(linea, self.size - 1.5, False, self.secondary, y)
             y -= self.size
 
         # Filete doble: grueso del color de la clínica y fino gris debajo,
@@ -328,6 +329,44 @@ class DocumentStyle:
         c.setLineWidth(0.5)
         c.line(self.content_left, line_y - 1.2 * mm, self.content_right, line_y - 1.2 * mm)
         return line_y - 1.2 * mm - self.block_spacing
+
+    def _lineas_de_contacto(self, clinic, h, ancho, cuerpo):
+        """
+        RUC, dirección, teléfono y correo del membrete. Con `ancho`, en una
+        línea si caben y si no en dos (RUC y dirección; teléfono y correo).
+        """
+        primera, segunda = [], []
+        if h.get("show_ruc", True) and clinic.get("ruc"):
+            primera.append(f"RUC {clinic['ruc']}")
+        if h.get("show_address", True) and clinic.get("address"):
+            primera.append(str(clinic["address"]))
+        if h.get("show_phone", True) and clinic.get("phone"):
+            segunda.append(f"Tel. {clinic['phone']}")
+        if h.get("show_email", True) and clinic.get("email"):
+            segunda.append(str(clinic["email"]))
+        if h.get("show_website", False) and clinic.get("website"):
+            segunda.append(str(clinic["website"]))
+        todo = " · ".join(primera + segunda)
+        if not todo:
+            return []
+        if ancho is None:
+            return [todo]
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        if stringWidth(todo, self.font, cuerpo) <= ancho:
+            return [todo]
+        # Se reparte por piezas en los renglones que hagan falta (hasta
+        # tres), sin partir una dirección o un teléfono por la mitad.
+        lineas, actual = [], ""
+        for pieza in primera + segunda:
+            prueba = f"{actual} · {pieza}" if actual else pieza
+            if actual and stringWidth(prueba, self.font, cuerpo) > ancho:
+                lineas.append(actual)
+                actual = pieza
+            else:
+                actual = prueba
+        lineas.append(actual)
+        return lineas[:3] + ([" · ".join(lineas[3:])] if len(lineas) > 3 else [])
 
     # ── Pie ───────────────────────────────────────────────────────────
     def draw_footer(self, c, page_number=None, total_pages=None, clinic=None):
@@ -346,23 +385,33 @@ class DocumentStyle:
         if f.get("show_clinic", True) and clinic:
             bits += [str(clinic[k]) for k in ("name", "address", "phone", "email")
                      if clinic.get(k)]
+        fijos = []
         if f.get("text"):
-            bits.append(f["text"])
+            fijos.append(f["text"])
         if f.get("show_date", True):
             # Hora de la clínica, no la del servidor: en un contenedor en
             # UTC, `datetime.now()` fechaba las recetas de la tarde en
             # Ecuador con el día siguiente.
             now = ahora_local()
-            bits.append(now.strftime("%d/%m/%Y %H:%M") if f.get("show_time")
-                        else now.strftime("%d/%m/%Y"))
+            fijos.append(now.strftime("%d/%m/%Y %H:%M") if f.get("show_time")
+                         else now.strftime("%d/%m/%Y"))
         if f.get("show_page_numbers", True) and page_number:
-            bits.append(f"Página {page_number}" + (f" de {total_pages}" if total_pages else ""))
+            fijos.append(f"Página {page_number}" + (f" de {total_pages}" if total_pages else ""))
+        # Que quepa en el ancho de la hoja: primero se quitan del final los
+        # datos de la clínica (el membrete ya los lleva); la fecha y el
+        # número de página se quedan siempre. Antes el pie se salía de la
+        # hoja por los dos lados en cualquier A5.
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+
+        while bits and stringWidth("  ·  ".join(bits + fijos), self.font, self.size - 2) > self.content_width:
+            bits.pop()
+        bits += fijos
 
         color = _color(f.get("text_color") or None, "#6b7280") if f.get("text_color") \
             else self.secondary
         c.setFont(self.font, self.size - 2)
         c.setFillColor(color)
-        text = "  ·  ".join(bits)
+        text = _cabe("  ·  ".join(bits), self.font, self.size - 2, self.content_width)
         align = f.get("align", "center")
         if text:
             if align == "left":
@@ -373,7 +422,8 @@ class DocumentStyle:
                 c.drawCentredString(self.width / 2, y, text)
         if f.get("legal_text"):
             c.setFont(self.font, self.size - 3)
-            c.drawCentredString(self.width / 2, y - 4 * mm, f["legal_text"])
+            c.drawCentredString(self.width / 2, y - 4 * mm,
+                                _cabe(f["legal_text"], self.font, self.size - 3, self.content_width))
 
     # ── Marca de agua ─────────────────────────────────────────────────
     def draw_watermark(self, c):
@@ -663,12 +713,8 @@ class DocumentStyle:
             if h.get("show_specialty", True) and professional.get("specialty"):
                 bits.append(professional["specialty"])
             lines.append(" · ".join(bits))
-        contact = [clinic.get(k) for k, flag in
-                   (("address", "show_address"), ("phone", "show_phone"),
-                    ("email", "show_email"), ("website", "show_website"))
-                   if h.get(flag, True) and clinic.get(k)]
-        if contact:
-            lines.append(" · ".join(str(x) for x in contact))
+        # Aquí el texto se parte solo en renglones: basta con una línea lógica.
+        lines += [_esc(x) for x in self._lineas_de_contacto(clinic, h, None, self.size - 1)]
         from reportlab.lib.styles import ParagraphStyle
 
         membrete = ParagraphStyle("membrete", parent=ss["DocSmall"], fontSize=self.size - 1,
@@ -676,17 +722,20 @@ class DocumentStyle:
         text = Paragraph("<br/>".join(lines), membrete) if lines else Paragraph("", membrete)
 
         lg = self.s["logo"]
-        logo = clinic.get("logo_reader") if h.get("show_logo", True) else None
-        if logo is not None:
+        # La ruta y no el ImageReader: `Image` de Platypus no sabe leer un
+        # ImageReader, fallaba en silencio y la historia clínica, los roles
+        # y los comprobantes salían sin el logotipo de la clínica.
+        logo = (clinic.get("logo_path") or getattr(clinic.get("logo_reader"), "fileName", None)) \
+            if h.get("show_logo", True) else None
+        row, widths = [[text]], [self.content_width]
+        if logo:
             try:
                 img = Image(logo, width=float(lg.get("width_mm", 26)) * mm,
                             height=float(lg.get("height_mm", 20)) * mm, kind="proportional")
-                row = [[img, text]]
-                widths = [float(lg.get("width_mm", 26)) * mm + float(lg.get("gap_mm", 4)) * mm, None]
+                columna = float(lg.get("width_mm", 26)) * mm + float(lg.get("gap_mm", 4)) * mm
+                row, widths = [[img, text]], [columna, self.content_width - columna]
             except Exception:
-                row, widths = [[text]], [None]
-        else:
-            row, widths = [[text]], [None]
+                logger.warning("No se pudo poner el logotipo de la clínica en el documento", exc_info=True)
 
         table = Table(row, colWidths=widths, hAlign="LEFT")
         table.setStyle(TableStyle([
@@ -938,10 +987,24 @@ def clinic_snapshot(tenant):
         "name": (branding.display_name if branding and branding.display_name
                  else getattr(tenant, "name", "")),
         "logo_reader": logo_reader,
+        # Platypus no dibuja un ImageReader: necesita la ruta del archivo.
+        "logo_path": branding.logo.path if logo_reader is not None else None,
+        "ruc": getattr(tenant, "ruc", "") or "",
         "address": branding.address if branding else "",
         "phone": branding.phone if branding else "",
         "email": branding.email if branding else "",
     }
+
+
+def _cabe(texto, fuente, cuerpo, ancho):
+    """El texto tal cual si cabe en `ancho`; si no, recortado con «…»."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    if not texto or stringWidth(texto, fuente, cuerpo) <= ancho:
+        return texto
+    while texto and stringWidth(texto + "…", fuente, cuerpo) > ancho:
+        texto = texto[:-1]
+    return texto.rstrip(" ·,") + "…"
 
 
 def _brand_of(tenant):

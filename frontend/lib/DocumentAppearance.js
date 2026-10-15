@@ -95,6 +95,7 @@ const GROUPS = [
       { k: "show_clinic_name", t: "bool", label: "Nombre de la clínica" },
       { k: "show_professional", t: "bool", label: "Profesional" },
       { k: "show_specialty", t: "bool", label: "Especialidad del profesional" },
+      { k: "show_ruc", t: "bool", label: "RUC de la clínica" },
       { k: "show_address", t: "bool", label: "Dirección" },
       { k: "show_phone", t: "bool", label: "Teléfono" },
       { k: "show_email", t: "bool", label: "Correo electrónico" },
@@ -454,6 +455,7 @@ function DocumentPreviewPage({ settings, brand, zoom }) {
     address: brand?.address || "Av. Principal 123 y Secundaria",
     phone: brand?.phone || "0999999999",
     email: brand?.email || "info@clinica.ec",
+    ruc: brand?.ruc || "1790000000001",
   };
 
   const hEnabled = hd.enabled !== false;
@@ -479,6 +481,7 @@ function DocumentPreviewPage({ settings, brand, zoom }) {
     headerLines.push({ text: bits.join(" · "), pt: size, bold: false, color: secondary });
   }
   const contact = [];
+  if (hd.show_ruc !== false && clinic.ruc) contact.push(`RUC ${clinic.ruc}`);
   if (hd.show_address !== false) contact.push(clinic.address);
   if (hd.show_phone !== false) contact.push(`Tel. ${clinic.phone}`);
   if (hd.show_email !== false) contact.push(clinic.email);

@@ -1,11 +1,13 @@
 from django.urls import path
 
-from apps.clinical import alertas_views, form033_views, sprint22_views, views
+from apps.clinical import alertas_views, certificado_views, form033_views, sprint22_views, views
 
 urlpatterns = [
     # Historia clínica
     path("patients/<uuid:pk>/clinical-record/", views.ClinicalRecordView.as_view(), name="clinical-record"),
     path("patients/<uuid:pk>/clinical-record/export-pdf/", views.ClinicalHistoryExportView.as_view(), name="clinical-history-export"),
+    path("patients/<uuid:pk>/certificado-atencion/", certificado_views.CertificadoAtencionView.as_view(),
+         name="certificado-atencion"),
     path("patients/<uuid:pk>/alertas/", alertas_views.AlertasPacienteView.as_view(), name="alertas-paciente"),
     path("patients/<uuid:pk>/alertas/revisar/", alertas_views.RevisarRecetaView.as_view(), name="alertas-revisar"),
     path("patients/<uuid:pk>/evolutions/", views.EvolutionListCreateView.as_view(), name="evolution-list"),
