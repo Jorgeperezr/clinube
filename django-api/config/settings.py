@@ -28,6 +28,12 @@ ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="localhost,127.0.0.1", ca
 # no se puede llegar así: el túnel de Cloudflare solo entrega las
 # peticiones de app.clinube.com.
 ALLOWED_HOSTS += [h for h in ("localhost", "127.0.0.1") if h not in ALLOWED_HOSTS]
+# La página pública vive en el dominio raíz (clinube.com y www) y su
+# formulario llama a la API desde ahí. Con `app.dominio` permitido, el
+# dominio raíz es del mismo dueño: se añade solo, para no tener que tocar
+# el .env del servidor.
+ALLOWED_HOSTS += [h for app in list(ALLOWED_HOSTS) if app.startswith("app.")
+                  for h in (app[4:], f"www.{app[4:]}") if h not in ALLOWED_HOSTS]
 
 # Orígenes confiables para CSRF. Necesario cuando el sitio se sirve
 # detrás de un proxy TLS externo (Codespaces, Cloudflare Tunnel, etc.)
@@ -227,7 +233,9 @@ REST_FRAMEWORK = {
         # la aplicación a propósito.
         "user": "600/min",
         "anon": "20/min",
-        "otp": "5/min",  # aprox. válida; ventana exacta de 10 min se afina en Sprint 10
+        "otp": "5/min",
+        # Alta y solicitudes desde la página pública (apps/common/solicitudes.py).
+        "solicitudes": "10/hour",  # aprox. válida; ventana exacta de 10 min se afina en Sprint 10
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "apps.common.exceptions.custom_exception_handler",

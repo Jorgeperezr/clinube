@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 
 import { instalar, useInstalacion } from "../../lib/AppInstalable";
 import { IconoClinube, LEMA, LogoClinube, MARCA } from "../../lib/marca";
+import { useUrlApp } from "../../lib/sitio";
 import { initColorMode } from "../../lib/theme";
 
 const APP_STORE = process.env.NEXT_PUBLIC_URL_APP_STORE || "";
@@ -40,14 +41,15 @@ const NOMBRE_DISPOSITIVO = { ios: "un iPhone o iPad", android: "un teléfono And
 export default function DescargarPage() {
   useEffect(() => initColorMode(), []);
   const dispositivo = useDispositivo();
+  const entrar = useUrlApp("/login/");
 
   return (
     <div className="dl">
       <header className="dl-cabecera">
-        <a href="/descargar/" aria-label={MARCA}>
+        <a href="/" aria-label={MARCA}>
           <LogoClinube alto={30} tinta="#ffffff" acento="var(--mint)" />
         </a>
-        <a className="dl-entrar" href="/login/">Entrar al panel</a>
+        <a className="dl-entrar" href={entrar}>Entrar al panel</a>
       </header>
 
       <section className="dl-portada">
@@ -125,7 +127,7 @@ export default function DescargarPage() {
         <nav>
           <a href="/privacidad/">Aviso de privacidad</a>
           <a href="/condiciones/">Condiciones de uso</a>
-          <a href="/login/">Panel de la clínica</a>
+          <a href={entrar}>Panel de la clínica</a>
         </nav>
       </footer>
     </div>
@@ -182,6 +184,7 @@ function AppPaciente({ dispositivo }) {
 }
 
 function AppEquipo({ dispositivo }) {
+  const entrar = useUrlApp("/login/");
   const estado = useInstalacion();
   const [hecho, setHecho] = useState(false);
 
@@ -229,7 +232,7 @@ function AppEquipo({ dispositivo }) {
       <div className="dl-accion">
         {accion}
         {hecho && <p className="dl-ok">Listo: la encontrarás como «{MARCA}» en tu pantalla de inicio.</p>}
-        <a className="dl-enlace" href="/login/">O úsalo en el navegador →</a>
+        <a className="dl-enlace" href={entrar}>O úsalo en el navegador →</a>
       </div>
       <ul className="dl-lista">
         <li>Agenda de la clínica y de cada profesional.</li>

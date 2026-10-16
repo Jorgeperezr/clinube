@@ -181,3 +181,56 @@ class AceptacionCondiciones(TenantAwareModel):
 
     def __str__(self):
         return f"{self.version} · {self.correo}"
+
+
+class SolicitudClinica(models.Model):
+    """
+    Lo que llega desde la página pública (clinube.com).
+
+    · Odontología: el alta es directa. Se manda un código al correo y,
+      al confirmarlo, se crea la clínica con su administrador
+      (estado «creada»). Sin el código no se crea nada: así una dirección
+      ajena no puede abrir una clínica a nombre de otro.
+    · Medicina y psicología: aún no se pueden crear. Queda la solicitud
+      («pendiente») para que el Super Administrador la atienda.
+    """
+
+    class Tipo(models.TextChoices):
+        ODONTOLOGIA = "odontologia", "Odontología"
+        MEDICINA = "medicina", "Medicina"
+        PSICOLOGIA = "psicologia", "Psicología"
+
+    class Estado(models.TextChoices):
+        VERIFICANDO = "verificando", "Esperando el código del correo"
+        PENDIENTE = "pendiente", "Pendiente"
+        CREADA = "creada", "Clínica creada"
+        ATENDIDA = "atendida", "Atendida"
+        DESCARTADA = "descartada", "Descartada"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    tipo = models.CharField(max_length=12, choices=Tipo.choices)
+    estado = models.CharField(max_length=12, choices=Estado.choices)
+    clinica = models.CharField("Nombre de la clínica o consulta", max_length=150)
+    ruc = models.CharField(max_length=13, blank=True)
+    ciudad = models.CharField(max_length=80, blank=True)
+    nombre = models.CharField("Persona de contacto", max_length=150)
+    correo = models.EmailField()
+    telefono = models.CharField(max_length=20, blank=True)
+    mensaje = models.TextField(blank=True)
+    # Solo el resumen del código, nunca el código.
+    codigo_hash = models.CharField(max_length=128, blank=True)
+    codigo_vence = models.DateTimeField(null=True, blank=True)
+    intentos = models.PositiveSmallIntegerField(default=0)
+    tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    nota = models.CharField("Nota interna", max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = "Solicitud de clínica"
+        verbose_name_plural = "Solicitudes de clínica"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.clinica}"

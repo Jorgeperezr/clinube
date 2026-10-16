@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.common import health, legal_views
+from apps.common import health, legal_views, solicitudes
 from apps.common import platform_views as views
 
 urlpatterns = [
@@ -12,6 +12,12 @@ urlpatterns = [
     path("legal/condiciones/", legal_views.CondicionesView.as_view(), name="legal-condiciones"),
     path("legal/condiciones/aceptar/", legal_views.AceptarCondicionesView.as_view(),
          name="legal-condiciones-aceptar"),
+    path("publico/solicitudes/", solicitudes.SolicitudPublicaView.as_view(), name="solicitud-publica"),
+    path("publico/solicitudes/<uuid:pk>/confirmar/", solicitudes.ConfirmarSolicitudView.as_view(),
+         name="solicitud-confirmar"),
+    path("platform/solicitudes/", solicitudes.SolicitudesPlataformaView.as_view(), name="platform-solicitudes"),
+    path("platform/solicitudes/<uuid:pk>/", solicitudes.SolicitudPlataformaView.as_view(),
+         name="platform-solicitud"),
     path("platform/overview/", views.PlatformOverviewView.as_view(), name="platform-overview"),
     path("platform/clinics/", views.ClinicListCreateView.as_view(), name="platform-clinics"),
     path("platform/clinics/<uuid:pk>/", views.ClinicDetailView.as_view(), name="platform-clinic-detail"),

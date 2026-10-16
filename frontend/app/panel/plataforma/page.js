@@ -7,6 +7,7 @@ import {
   coloresDelLogotipo, EditorPaleta, LOGOS, SelectorLogo, usePrevisualizacion, VistaTemas,
 } from "../../../lib/IdentidadClinica";
 import { MARCA } from "../../../lib/marca";
+import SolicitudesPlataforma from "../../../lib/SolicitudesPlataforma";
 
 /*
  * El catálogo de funciones NO se repite aquí: lo da la API
@@ -20,7 +21,7 @@ function porDefecto(catalogo) {
 }
 
 const TABS = [
-  ["dashboard", "Dashboard"], ["clinicas", "Clínicas"],
+  ["dashboard", "Dashboard"], ["clinicas", "Clínicas"], ["solicitudes", "Solicitudes"],
   ["admins", "Administradores"], ["funciones", "Funciones"],
   ["auditoria", "Auditoría"], ["config", "Configuración"],
 ];
@@ -51,6 +52,7 @@ export default function PlataformaPage() {
 
       {tab === "dashboard" && <DashboardTab />}
       {tab === "clinicas" && <ClinicsTab />}
+      {tab === "solicitudes" && <SolicitudesPlataforma />}
       {tab === "admins" && <AdminsTab />}
       {tab === "funciones" && <FuncionesTab />}
       {tab === "auditoria" && <AuditTab />}
