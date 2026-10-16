@@ -15,7 +15,12 @@ class AccesoAppTests(APITestCase):
     def setUp(self):
         cache.clear()
         self.addCleanup(cache.clear)
-        self.tenant = Tenant.objects.create(name="Clínica Acceso")
+        # Este flujo es el de WhatsApp: solo para clínicas que lo contratan.
+        self.tenant = Tenant.objects.create(name="Clínica Acceso", funcionalidades=normalizar({"whatsapp": True}))
+        from apps.common.models import PlatformConfiguration
+        config = PlatformConfiguration.get_solo()
+        config.canal_codigo_paciente = "whatsapp"
+        config.save()
         self.recepcion = User.objects.create_user(
             email="r@acceso.ec", password="superseguro123", role="reception", tenant=self.tenant)
         self.paciente = Patient.objects.create(

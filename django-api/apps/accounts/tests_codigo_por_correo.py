@@ -13,6 +13,7 @@ from django.core.cache import cache
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import OTPCode, User
+from apps.common.funcionalidades import normalizar
 from apps.common.models import PlatformConfiguration, Tenant
 from apps.patients.models import Patient
 
@@ -29,7 +30,8 @@ class Base(APITestCase):
     def setUp(self):
         cache.clear()
         self.addCleanup(cache.clear)
-        self.tenant = Tenant.objects.create(name="Clínica Correo")
+        # Con la función de WhatsApp contratada: así se prueban los dos canales.
+        self.tenant = Tenant.objects.create(name="Clínica Correo", funcionalidades=normalizar({"whatsapp": True}))
         self.recepcion = User.objects.create_user(
             email="r@correo-clinica.ec", password="superseguro123", role="reception", tenant=self.tenant)
         self.paciente = Patient.objects.create(
@@ -51,9 +53,10 @@ class Base(APITestCase):
 
 class CanalTests(Base):
     def test_la_app_pregunta_el_canal_sin_sesion(self):
-        self.assertEqual(self.client.get("/api/v1/auth/otp/canal/").data, {"canal": "whatsapp"})
-        self.canal("correo")
+        # El correo es el canal de todos; WhatsApp, si la plataforma lo elige.
         self.assertEqual(self.client.get("/api/v1/auth/otp/canal/").data, {"canal": "correo"})
+        self.canal("whatsapp")
+        self.assertEqual(self.client.get("/api/v1/auth/otp/canal/").data, {"canal": "whatsapp"})
 
 
 class CodigoPorCorreoTests(Base):
@@ -84,10 +87,11 @@ class CodigoPorCorreoTests(Base):
         self.assertEqual(r.status_code, 200, r.data)
 
     def test_un_correo_sin_acceso(self):
+        # Sin cuenta, la app le ofrece crearla; hasta que lo pida, nada sale.
         r = self.client.post(PEDIR, {"email": "nadie@gmail.com"})
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("Este correo no tiene acceso", r.data["detail"])
+        self.assertEqual((r.status_code, r.data["puede_crear"]), (400, True))
         self.assertEqual(mail.outbox, [])
+        self.assertFalse(User.objects.filter(email="nadie@gmail.com").exists())
 
     def test_lo_que_no_es_un_correo(self):
         r = self.client.post(PEDIR, {"email": "ana@"})
@@ -146,6 +150,10 @@ class CodigoPorCorreoTests(Base):
 
 
 class ConWhatsAppTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.canal("whatsapp")
+
     def test_identificarse_con_el_correo_manda_el_whatsapp_a_su_numero(self):
         self.activar()
         mail.outbox.clear()   # la bienvenida
@@ -220,6 +228,7 @@ class ActivarConCorreoTests(Base):
 
 class AvisoDePrivacidadTests(Base):
     def test_dice_quien_envia_el_codigo(self):
+        self.canal("whatsapp")
         texto = str(self.client.get("/api/v1/legal/privacidad/").data)
         self.assertIn("WhatsApp): envía los códigos para entrar en la app", texto)
         self.canal("correo")
@@ -256,6 +265,7 @@ class CorreosConLaCaraDeLaClinicaTests(Base):
             self.assertIn(f">{cifra}</td>", html)
 
     def test_al_activar_llega_la_bienvenida_con_los_pasos(self):
+        self.canal("whatsapp")
         r = self.activar()
         self.assertEqual(r.data["bienvenida"], "enviada")
         correo = mail.outbox[-1]
@@ -275,6 +285,7 @@ class CorreosConLaCaraDeLaClinicaTests(Base):
         self.assertIn("por correo", mail.outbox[-1].body)
 
     def test_sin_correo_en_la_ficha_no_se_envia_nada(self):
+        self.canal("whatsapp")
         self.paciente.email = ""
         self.paciente.save()
         r = self.activar()

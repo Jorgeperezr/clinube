@@ -143,7 +143,7 @@ class PlataformaTests(APITestCase):
         self.assertEqual(self.client.get("/api/v1/platform/config/").data["correo_origen"], "")
         self.client.patch("/api/v1/platform/config/", GMAIL, format="json")
         datos = self.client.get("/api/v1/platform/config/").data
-        self.assertEqual((datos["correo_origen"], datos["canal_codigo_paciente"]), ("plataforma", "whatsapp"))
+        self.assertEqual((datos["correo_origen"], datos["canal_codigo_paciente"]), ("plataforma", "correo"))   # el correo es el canal por defecto
 
     def test_no_se_pasa_a_correo_sin_correo(self):
         r = self.client.patch("/api/v1/platform/config/", {"canal_codigo_paciente": "correo"}, format="json")

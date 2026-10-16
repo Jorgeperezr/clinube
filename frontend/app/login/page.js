@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { currentUser, login, RUTA_CAMBIO, RUTA_CONDICIONES } from "../../lib/api";
+import { useCallback, useState } from "react";
+import { currentUser, login, loginConGoogle, RUTA_CAMBIO, RUTA_CONDICIONES } from "../../lib/api";
+import BotonGoogle from "../../lib/BotonGoogle";
 import PantallaAcceso from "../../lib/PantallaAcceso";
 
 export default function LoginPage() {
@@ -32,6 +33,14 @@ export default function LoginPage() {
     }
   }
 
+  const conGoogle = useCallback(async (credential) => {
+    setError(""); setLoading(true);
+    try {
+      await loginConGoogle(credential);
+      window.location.href = currentUser()?.condiciones_pendientes ? RUTA_CONDICIONES : "/panel/";
+    } catch (err) { setError(err.message); setLoading(false); }
+  }, []);
+
   return (
     <PantallaAcceso>
       <form onSubmit={handleSubmit}>
@@ -60,6 +69,7 @@ export default function LoginPage() {
         <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} disabled={loading}>
           {loading ? "Entrando…" : "Entrar"}
         </button>
+        <BotonGoogle alEntrar={conGoogle} />
         <p style={{ textAlign: "center", marginTop: 16, fontSize: 13.5 }}>
           <a href="/recuperar/">¿Olvidaste tu contraseña?</a>
         </p>

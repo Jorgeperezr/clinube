@@ -37,6 +37,9 @@ class OTPRequestSerializer(serializers.Serializer):
 
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     email = serializers.CharField(max_length=254, required=False, allow_blank=True)
+    # Solo al pedir el código: el paciente crea su propia cuenta.
+    crear = serializers.BooleanField(required=False, default=False)
+    nombre = serializers.CharField(max_length=150, required=False, allow_blank=True)
 
     def validate(self, datos):
         if not (datos.get("phone") or "").strip() and not (datos.get("email") or "").strip():

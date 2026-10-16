@@ -35,6 +35,33 @@ class BaseVistaPaciente(APIView):
     permission_classes = [EsPaciente, RequiereFuncionalidad.para("app_paciente")]
 
 
+class MiCuentaView(APIView):
+    """
+    GET /api/v1/app/cuenta/ — si la cuenta ya está enlazada con su ficha.
+
+    Lo primero que pregunta la app al entrar. Una cuenta creada por el
+    propio paciente no tiene clínica hasta que la recepción le da acceso
+    desde la ficha: entonces la app explica qué hacer en vez de fallar.
+    Sin `RequiereFuncionalidad`: una cuenta sin clínica no tiene función
+    que mirar.
+    """
+
+    permission_classes = [EsPaciente]
+
+    def get(self, request):
+        from apps.patients.models import Patient
+
+        u = request.user
+        enlazada = bool(u.tenant_id) and Patient.objects.filter(user=u, tenant_id=u.tenant_id).exists()
+        return Response({
+            "enlazada": enlazada,
+            "app_activa": bool(u.tenant_id) and activa(u.tenant, "app_paciente"),
+            "nombre": u.full_name,
+            "correo": u.email or "",
+            "clinica": u.tenant.name if u.tenant_id else None,
+        })
+
+
 class MiPerfilView(BaseVistaPaciente):
     """GET /api/v1/app/me/ — lo que la app muestra al abrirse."""
 

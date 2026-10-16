@@ -10,7 +10,7 @@ from apps.common.models import Tenant
 
 class AuthTests(APITestCase):
     def setUp(self):
-        self.tenant = Tenant.objects.create(name="Clínica Test", ruc="1234567890001")
+        self.tenant = _con_whatsapp(Tenant.objects.create(name="Clínica Test", ruc="1234567890001"))
         self.admin = User.objects.create_user(
             email="admin@test.com", password="superseguro123", role="admin", tenant=self.tenant
         )
@@ -131,7 +131,7 @@ class AccesoDeRevisionTests(APITestCase):
         from apps.common.models import Tenant
         cache.clear()
         self.addCleanup(cache.clear)
-        self.tenant = Tenant.objects.create(name="Clínica Demostración")
+        self.tenant = _con_whatsapp(Tenant.objects.create(name="Clínica Demostración"))
         self.revisor = self._paciente_con_acceso("+593900000001")
 
     def _paciente_con_acceso(self, telefono):
@@ -177,3 +177,16 @@ class AccesoDeRevisionTests(APITestCase):
         with self.settings(APP_REVISION_TELEFONO="+593900000009", APP_REVISION_CODIGO="246810"):
             _, entrada, _ = self._entrar("+593900000009", "246810")
         self.assertEqual(entrada.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+def _con_whatsapp(tenant):
+    """Estas pruebas son del código por WhatsApp: la clínica lo tiene contratado."""
+    from apps.common.funcionalidades import normalizar
+    from apps.common.models import PlatformConfiguration
+
+    tenant.funcionalidades = normalizar({"whatsapp": True})
+    tenant.save(update_fields=["funcionalidades"])
+    config = PlatformConfiguration.get_solo()
+    config.canal_codigo_paciente = "whatsapp"
+    config.save()
+    return tenant

@@ -468,7 +468,7 @@ class PlatformConfigSerializer(serializers.ModelSerializer):
         fields = ["platform_name", "logo_url", "smtp_host", "smtp_port", "smtp_user",
                   "smtp_password", "smtp_password_set", "correo_origen", "timezone", "currency",
                   "titular_nombre", "titular_ruc", "titular_correo", "proveedor_correo",
-                  "canal_codigo_paciente", "updated_at"]
+                  "canal_codigo_paciente", "google_client_id", "updated_at"]
         read_only_fields = ["updated_at"]
 
     def get_smtp_password_set(self, obj):

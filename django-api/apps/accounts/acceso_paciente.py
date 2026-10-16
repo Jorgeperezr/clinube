@@ -30,11 +30,11 @@ CORREO = "correo"
 
 
 def canal_codigo():
-    """El canal elegido en Plataforma; WhatsApp si no hay configuración."""
+    """El canal elegido en Plataforma; correo si no hay configuración."""
     from apps.common.models import PlatformConfiguration
 
     config = PlatformConfiguration.objects.filter().first()
-    return getattr(config, "canal_codigo_paciente", "") or WHATSAPP
+    return getattr(config, "canal_codigo_paciente", "") or CORREO
 
 
 def normalizar_correo(texto):
@@ -58,8 +58,9 @@ def ocultar(correo):
 
 
 def _pacientes():
-    return User.objects.filter(role=User.Role.PATIENT, is_active=True,
-                               patient_profile__isnull=False).select_related("tenant", "patient_profile")
+    # También las cuentas que el paciente creó él mismo y que su clínica
+    # aún no enlaza con la ficha: entran y ven que esperan el acceso.
+    return User.objects.filter(role=User.Role.PATIENT, is_active=True).select_related("tenant")
 
 
 def cuenta_por_correo(correo):
@@ -71,7 +72,8 @@ def cuenta_por_correo(correo):
     if cuenta is not None:
         return cuenta, None
     # Activadas con el teléfono antes de que la cuenta guardara el correo.
-    candidatas = list(_pacientes().filter(email__isnull=True, patient_profile__email__iexact=correo)[:2])
+    candidatas = list(_pacientes().filter(email__isnull=True, patient_profile__isnull=False,
+                                          patient_profile__email__iexact=correo)[:2])
     if len(candidatas) > 1:
         return None, ("Ese correo está en las fichas de varios pacientes. Pide en la recepción "
                       "de tu clínica que lo revisen, o entra con tu teléfono.")
@@ -111,3 +113,47 @@ def enviar_codigo_por_correo(cuenta, codigo, minutos):
     from apps.accounts.correos_paciente import enviar_codigo
 
     enviar_codigo(cuenta, codigo, minutos, correo_de(cuenta))
+
+
+def canal_de_clinica(tenant):
+    """
+    WhatsApp solo si la plataforma lo usa (Plataforma → Configuración) Y
+    la clínica tiene contratada la función de WhatsApp. En todo lo demás,
+    correo: es el canal de todos y no le cuesta nada a la clínica.
+    """
+    from apps.common.funcionalidades import activa
+
+    if canal_codigo() == WHATSAPP and tenant is not None and activa(tenant, "whatsapp"):
+        return WHATSAPP
+    return CORREO
+
+
+def canal_para(datos, cuenta):
+    """
+    Por dónde mandar el código a esta cuenta. Por WhatsApp cuando su
+    clínica lo tiene y la cuenta tiene teléfono; si no, por correo, también
+    a una app antigua que todavía pide el teléfono.
+    """
+    if canal_de_clinica(cuenta.tenant if cuenta.tenant_id else None) == WHATSAPP and cuenta.phone:
+        return WHATSAPP
+    return CORREO
+
+
+def crear_cuenta_propia(correo, nombre):
+    """
+    La cuenta que el paciente crea él mismo, sin clínica todavía. Cuando su
+    clínica active el acceso en la ficha con este correo, se enlaza sola
+    (apps/patients/acceso_app.py busca la cuenta por el correo).
+
+    Si ya hubo una cuenta de paciente con ese correo y se le quitó el
+    acceso, se reutiliza en vez de chocar con el correo único.
+    """
+    cuenta = User.objects.filter(email__iexact=correo, role=User.Role.PATIENT).first()
+    if cuenta is not None:
+        if not cuenta.is_active and not hasattr(cuenta, "patient_profile"):
+            cuenta.is_active, cuenta.tenant = True, None
+            cuenta.full_name = nombre or cuenta.full_name
+            cuenta.save(update_fields=["is_active", "tenant", "full_name"])
+        return cuenta
+    return User.objects.create_user(email=correo, role=User.Role.PATIENT, tenant=None,
+                                    full_name=(nombre or "").strip()[:150])

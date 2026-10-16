@@ -840,3 +840,22 @@ cada correo da acceso a una sola ficha (igual que cada teléfono).
       vuelven a aceptar las condiciones y las fichas marcan el aviso como
       pendiente.
 - [ ] Probar la restauración de un backup (un backup no probado no existe).
+
+## Entrar con Google
+
+Opcional. Con esto aparece «Continuar con Google» en el inicio de sesión
+del panel. El equipo entra con el correo que tiene registrado en su
+clínica; Google no crea cuentas del equipo.
+
+1. En https://console.cloud.google.com crea un proyecto (gratis).
+2. **APIs y servicios → Pantalla de consentimiento de OAuth**: tipo
+   «Externo», nombre «Clinube», correo de soporte y el dominio
+   `clinube.com`. Publícala.
+3. **APIs y servicios → Credenciales → Crear credenciales → ID de
+   cliente de OAuth**, tipo «Aplicación web». En «Orígenes de JavaScript
+   autorizados» pon `https://app.clinube.com`.
+4. Copia el ID de cliente (termina en `.apps.googleusercontent.com`) en
+   **Plataforma → Configuración → Entrar con Google** y guarda.
+
+No hay secreto que guardar: el panel solo usa el ID público, y la API
+comprueba la firma de Google con sus claves públicas.

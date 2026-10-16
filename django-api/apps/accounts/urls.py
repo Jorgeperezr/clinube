@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from apps.accounts import password_views, views
+from apps.accounts import google, password_views, views
 
 urlpatterns = [
     # Autenticación — RF-USR-01, 02, 04
@@ -11,6 +11,8 @@ urlpatterns = [
     path("auth/me/preferencias/", views.PreferenciasView.as_view(), name="auth-me-preferencias"),
     path("auth/change-password/", password_views.CambiarMiContrasenaView.as_view(),
          name="auth-change-password"),
+    path("auth/google/config/", google.GoogleConfigView.as_view(), name="google-config"),
+    path("auth/google/", google.GoogleLoginView.as_view(), name="google-login"),
     path("auth/otp/canal/", views.OTPCanalView.as_view(), name="otp-canal"),
     path("auth/otp/request/", views.OTPRequestView.as_view(), name="otp-request"),
     path("auth/otp/verify/", views.OTPVerifyView.as_view(), name="otp-verify"),
@@ -20,6 +22,7 @@ urlpatterns = [
     path("users/", views.UserListCreateView.as_view(), name="user-list"),
     path("users/funciones/", views.CatalogoFuncionesView.as_view(), name="user-funciones"),
     path("users/<uuid:pk>/", views.UserDetailView.as_view(), name="user-detail"),
+    path("users/<uuid:pk>/invitar/", views.InvitarUsuarioView.as_view(), name="user-invitar"),
     # Auditoría — RF-USR-05
     path("audit-logs/", views.AuditLogListView.as_view(), name="audit-log-list"),
     # App móvil — RF-APP-05

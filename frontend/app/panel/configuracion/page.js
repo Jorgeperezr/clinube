@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, apiBase, readList, currentUser} from "../../../lib/api";
+import { api, apiBase, apiErrorMessage, readList, currentUser } from "../../../lib/api";
 import BackButton from "../../../lib/BackButton";
 import { PRESETS, applyTheme, logoSrc, resetTheme, saveBrandingCache } from "../../../lib/theme";
 import { EditorPaleta, LOGOS, SelectorLogo, usePrevisualizacion, VistaTemas } from "../../../lib/IdentidadClinica";
@@ -365,6 +365,7 @@ function UsersTab() {
     try {
       const cuerpo = { ...form };
       if (form.role === "admin") delete cuerpo.funciones;   // el administrador las tiene todas
+      if (!cuerpo.password) delete cuerpo.password;          // sin contraseña: le llega una invitación
       const resp = await api("/users/", { method: "POST", body: JSON.stringify(cuerpo) });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -372,11 +373,23 @@ function UsersTab() {
         const first = typeof detail === "object" ? Object.values(detail)[0] : detail;
         throw new Error(Array.isArray(first) ? first[0] : `Error ${resp.status}`);
       }
-      setOkMsg(form.role === "doctor"
+      const invitacion = data.invitacion === "enviada"
+        ? ` Le llegó una invitación a ${form.email} para elegir su contraseña.`
+        : data.invitacion === "fallo" ? " La invitación no se pudo enviar: usa «Reenviar invitación»." : "";
+      setOkMsg((form.role === "doctor"
         ? `Usuario creado. ${form.full_name} ya aparece como doctor en la Agenda.`
-        : "Usuario creado.");
+        : "Usuario creado.") + invitacion);
       setForm({ ...vacio, funciones: sugeridas(catalogo, vacio.role) });
       load();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function reenviar(u) {
+    setError(""); setOkMsg("");
+    try {
+      const resp = await api(`/users/${u.id}/invitar/`, { method: "POST" });
+      if (!resp.ok) throw new Error(await apiErrorMessage(resp));
+      setOkMsg(`Invitación enviada a ${u.email}.`);
     } catch (err) { setError(err.message); }
   }
 
@@ -407,21 +420,23 @@ function UsersTab() {
       <form onSubmit={submit} className="card" style={{ marginBottom: 18 }}>
         <h3 style={{ marginBottom: 4 }}>Nuevo usuario de staff</h3>
         <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-          Si el rol es Doctor/a, su perfil de agenda se crea automáticamente.
+          Sin contraseña, la persona recibe un correo con la marca de la clínica para elegir la suya, o entra con
+          su cuenta de Google si usa ese correo. Si el rol es Doctor/a, su perfil de agenda se crea solo.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 1fr 1fr auto", gap: "0 12px", alignItems: "end" }}>
-          <div className="field" style={{ marginBottom: 0 }}><label>Nombre completo *</label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 12px", alignItems: "flex-end" }}>
+          <div className="field" style={{ marginBottom: 0, flex: "1.5 1 180px" }}><label>Nombre completo *</label>
             <input required value={form.full_name}
                    onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
-          <div className="field" style={{ marginBottom: 0 }}><label>Correo *</label>
+          <div className="field" style={{ marginBottom: 0, flex: "1.5 1 200px" }}><label>Correo *</label>
             <input type="email" required value={form.email}
                    onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-          <div className="field" style={{ marginBottom: 0 }}><label>Rol *</label>
+          <div className="field" style={{ marginBottom: 0, flex: "1 1 140px" }}><label>Rol *</label>
             <select value={form.role} onChange={(e) => cambiarRol(e.target.value)}>
               {Object.entries(ROLE_OPTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select></div>
-          <div className="field" style={{ marginBottom: 0 }}><label>Contraseña * (10+)</label>
-            <input type="password" required minLength={10} value={form.password}
+          <div className="field" style={{ marginBottom: 0, flex: "1 1 170px" }}><label>Contraseña (opcional)</label>
+            <input type="password" minLength={10} value={form.password} autoComplete="new-password"
+                   placeholder="Mejor por invitación"
                    onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
           <button className="btn btn-primary">Crear</button>
         </div>
@@ -454,7 +469,14 @@ function UsersTab() {
             {users.map((u) => (
               <tr key={u.id}>
                 <td style={{ fontWeight: 600 }}>{u.full_name || "—"}</td>
-                <td>{u.email}</td>
+                <td>
+                  {u.email}
+                  {u.is_active && u.email !== currentUser()?.email && (
+                    <button type="button" className="btn btn-ghost" style={{ fontSize: 11.5, padding: "1px 8px", marginLeft: 6 }}
+                            title="Le manda otra vez el correo para elegir su contraseña"
+                            onClick={() => reenviar(u)}>Reenviar invitación</button>
+                  )}
+                </td>
                 <td><span className="badge badge-ok">{ROLE_OPTIONS[u.role] || u.role}</span></td>
                 <td>
                   {u.role === "admin" ? <span style={{ color: "var(--ink-soft)" }}>Todas</span> : (

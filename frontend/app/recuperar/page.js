@@ -35,10 +35,11 @@ export default function RecuperarPage() {
 }
 
 function Recuperar() {
-  const token = useSearchParams().get("token");
+  const params = useSearchParams();
+  const token = params.get("token");
   return (
     <PantallaAcceso>
-      {token ? <ElegirContrasena token={token} /> : <PedirEnlace />}
+      {token ? <ElegirContrasena token={token} bienvenida={params.get("bienvenida") === "1"} /> : <PedirEnlace />}
     </PantallaAcceso>
   );
 }
@@ -100,7 +101,7 @@ function PedirEnlace() {
   );
 }
 
-function ElegirContrasena({ token }) {
+function ElegirContrasena({ token, bienvenida }) {
   const [nueva, setNueva] = useState("");
   const [repetida, setRepetida] = useState("");
   const [listo, setListo] = useState(false);
@@ -128,9 +129,9 @@ function ElegirContrasena({ token }) {
   if (listo) {
     return (
       <div>
-        <h2 style={{ marginBottom: 10 }}>Contraseña actualizada</h2>
+        <h2 style={{ marginBottom: 10 }}>{bienvenida ? "Todo listo" : "Contraseña actualizada"}</h2>
         <p style={{ color: "var(--ink-soft)", fontSize: 14, marginBottom: 20 }}>
-          Ya puedes entrar con tu contraseña nueva.
+          {bienvenida ? "Ya puedes entrar con tu correo y tu contraseña." : "Ya puedes entrar con tu contraseña nueva."}
         </p>
         <a className="btn btn-primary" href="/login/" style={anchoCompleto}>Iniciar sesión</a>
       </div>
@@ -139,7 +140,7 @@ function ElegirContrasena({ token }) {
 
   return (
     <form onSubmit={guardar}>
-      <h2 style={{ marginBottom: 6 }}>Elige una contraseña nueva</h2>
+      <h2 style={{ marginBottom: 6 }}>{bienvenida ? "Bienvenido: elige tu contraseña" : "Elige una contraseña nueva"}</h2>
       <p style={{ color: "var(--ink-soft)", marginBottom: 20, fontSize: 14 }}>
         Al menos 10 caracteres. Evita contraseñas comunes o el nombre de la clínica.
       </p>
@@ -158,7 +159,7 @@ function ElegirContrasena({ token }) {
         {ocupado ? "Guardando…" : "Guardar contraseña"}
       </button>
       <p style={{ textAlign: "center", marginTop: 16, fontSize: 13.5 }}>
-        <a href="/recuperar/">Pedir otro enlace</a>
+        {bienvenida ? <a href="/login/">Prefiero entrar con Google</a> : <a href="/recuperar/">Pedir otro enlace</a>}
       </p>
     </form>
   );

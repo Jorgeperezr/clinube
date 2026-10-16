@@ -131,9 +131,18 @@ class PlatformConfiguration(models.Model):
     CANAL_WHATSAPP = "whatsapp"
     CANAL_CORREO = "correo"
     CANALES_CODIGO = [(CANAL_WHATSAPP, "WhatsApp"), (CANAL_CORREO, "Correo electrónico")]
+    # El correo es el canal de todos. WhatsApp solo vale para las clínicas
+    # que lo tienen contratado y conectado (función «whatsapp», que la
+    # plataforma añade a pedido): ver apps/accounts/acceso_paciente.py.
     canal_codigo_paciente = models.CharField(
         "Canal del código de la app del paciente", max_length=10,
-        choices=CANALES_CODIGO, default=CANAL_WHATSAPP,
+        choices=CANALES_CODIGO, default=CANAL_CORREO,
+    )
+    # «Entrar con Google»: el ID de cliente OAuth (tipo «Aplicación web»)
+    # de Google Cloud. Vacío = el botón no aparece.
+    google_client_id = models.CharField(
+        "ID de cliente de Google", max_length=200, blank=True,
+        help_text="De Google Cloud → APIs y servicios → Credenciales. Termina en .apps.googleusercontent.com.",
     )
     # Funciones que nacieron «en prueba» y que ya se publicaron para todas
     # las clínicas (Plataforma → Funciones). Ver apps/common/funcionalidades.py.

@@ -13,6 +13,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'api/cliente.dart';
 import 'api/modelos.dart';
+import 'pantallas/espera.dart';
 import 'pantallas/ingreso.dart';
 import 'pantallas/principal.dart';
 import 'tema.dart';
@@ -89,8 +90,17 @@ class _AppPacienteState extends State<AppPaciente> {
     if (guardada != null) _marca = guardada;
     _sinColor = await _api.sesion.sinColor;
     final hay = await _api.sesion.hayTokens;
-    if (hay) unawaited(_refrescarMarca());
-    return _Arranque(haySesion: hay, marca: _marca);
+    EstadoCuenta? cuenta;
+    if (hay) {
+      try {
+        cuenta = await _api.estadoCuenta();
+      } catch (_) {
+        // Sin red o un servidor anterior: se sigue como antes, a la
+        // pantalla principal, que ya sabe decir qué pasa.
+      }
+      if (cuenta == null || cuenta.enlazada) unawaited(_refrescarMarca());
+    }
+    return _Arranque(haySesion: hay, marca: _marca, cuenta: cuenta);
   }
 
   /// Vuelve a pedir la marca por si la clínica cambió de logotipo o de
@@ -133,6 +143,17 @@ class _AppPacienteState extends State<AppPaciente> {
                     body: Center(child: CircularProgressIndicator()),
                   );
                 }
+                final cuenta = snap.data?.cuenta;
+                if ((snap.data?.haySesion ?? false) &&
+                    cuenta != null &&
+                    !cuenta.enlazada) {
+                  return PantallaEspera(
+                    api: _api,
+                    estado: cuenta,
+                    alEnlazar: _refrescarSesion,
+                    alSalir: _refrescarSesion,
+                  );
+                }
                 if (snap.data?.haySesion ?? false) {
                   return PantallaPrincipal(
                     api: _api,
@@ -152,10 +173,13 @@ class _AppPacienteState extends State<AppPaciente> {
 
 /// Lo que hay que saber antes de pintar la primera pantalla.
 class _Arranque {
-  const _Arranque({required this.haySesion, required this.marca});
+  const _Arranque({required this.haySesion, required this.marca, this.cuenta});
 
   final bool haySesion;
   final Marca marca;
+
+  /// Si la cuenta espera a que su clínica le dé acceso (null = no se sabe).
+  final EstadoCuenta? cuenta;
 }
 
 /// La app se compiló sin la dirección https de la API (ver [urlApiValida]).

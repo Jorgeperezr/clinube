@@ -61,10 +61,11 @@ CATALOGO = {
     },
     "whatsapp": {
         "nombre": "Recordatorios por WhatsApp",
-        "descripcion": "Avisos automáticos de cita y de pago. Necesita conectar la cuenta de Meta de la clínica.",
-        # Incluida, pero apagada de fábrica: hasta que la clínica conecte
-        # SU cuenta de Meta no manda nada, y encendida parecería rota.
-        "tipo": "incluida", "por_defecto": False,
+        "descripcion": "Recordatorios, recetas y confirmaciones por WhatsApp. Se contrata aparte: la "
+                       "clínica paga su cuenta de Meta y entrega su número a la plataforma.",
+        # A pedido: solo la tienen las clínicas que la pagan y conectan SU
+        # cuenta de Meta. Sin ella todo va por correo y por la app.
+        "tipo": "adicional", "por_defecto": False,
     },
     "convenios": {
         "nombre": "Convenios y tarifarios",

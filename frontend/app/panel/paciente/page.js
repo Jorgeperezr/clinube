@@ -870,7 +870,7 @@ function AccesoApp({ patient }) {
     const ok = await confirmar(activar ? {
       title: "Acceso a la app",
       message: `${nombre} podrá entrar en la app Clinube ${como}. ` +
-        "Verá sus citas, su saldo y las indicaciones que se le compartan.",
+        "Verá sus citas, su saldo, sus recetas e indicaciones, y podrá escribir a la clínica.",
       confirmLabel: "Activar acceso",
     } : {
       title: "Quitar el acceso a la app",
@@ -916,6 +916,14 @@ function AccesoApp({ patient }) {
           )}
           <button type="button" className="enlace-accion" style={{ ...enlace, color: "var(--red)" }}
                   disabled={ocupado} onClick={() => cambiar(false)}>Quitar acceso</button>
+        </>
+      ) : puedeActivar && estado.cuenta_propia ? (
+        <>
+          {/* El paciente ya creó su cuenta en la app con este correo y
+              espera: al activar se enlaza esa misma cuenta. */}
+          <strong style={{ color: "var(--amber)" }}>Ya creó su cuenta con {estado.correo} y espera acceso</strong>
+          <button type="button" className="enlace-accion" style={enlace} disabled={ocupado}
+                  onClick={() => cambiar(true)}>Dar acceso</button>
         </>
       ) : puedeActivar ? (
         <>

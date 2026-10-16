@@ -43,7 +43,7 @@ class RecuperacionPorCorreo(APITestCase):
         self.assertEqual(mail.outbox, [])
 
     def test_si_el_smtp_falla_se_registra_y_la_respuesta_no_cambia(self):
-        with mock.patch("apps.accounts.views.send_mail", side_effect=OSError("smtp caído")), \
+        with mock.patch("apps.accounts.correos_personal._enviar", side_effect=OSError("smtp caído")), \
                 self.assertLogs("apps.accounts.views", level="ERROR") as registro:
             r = self.client.post(URL, {"email": "doc@correo.ec"})
         self.assertEqual(r.status_code, 200)

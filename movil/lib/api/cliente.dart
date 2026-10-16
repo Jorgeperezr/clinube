@@ -46,10 +46,13 @@ import 'modelos.dart';
 
 /// Fallo con un mensaje que se le puede enseñar a una persona.
 class ErrorDeApi implements Exception {
-  ErrorDeApi(this.mensaje, {this.codigo});
+  ErrorDeApi(this.mensaje, {this.codigo, this.puedeCrear = false});
 
   final String mensaje;
   final int? codigo;
+
+  /// El correo no tiene cuenta y el servidor ofrece crearla.
+  final bool puedeCrear;
 
   /// La sesión ya no vale y hay que volver a entrar.
   bool get sesionCaducada => codigo == 401;
@@ -269,29 +272,46 @@ class ClienteApi {
   /// Por dónde llega el código: `'correo'` o `'whatsapp'`. Lo decide la
   /// plataforma, y la pantalla de ingreso pide el correo o el teléfono
   /// según esto. Si no se puede preguntar (sin red, un servidor viejo),
-  /// WhatsApp: es como funcionaba la app antes de existir la opción.
+  /// correo: es el canal de todas las clínicas.
   Future<String> canalDelCodigo() async {
     try {
       final r = await _red(() => _http.get(_uri('/auth/otp/canal/'),
           headers: const {'Content-Type': 'application/json'}));
-      if (r.statusCode >= 400) return 'whatsapp';
+      if (r.statusCode >= 400) return 'correo';
       final datos = _json(r);
-      return datos is Map && datos['canal'] == 'correo' ? 'correo' : 'whatsapp';
+      return datos is Map && datos['canal'] == 'whatsapp' ? 'whatsapp' : 'correo';
     } catch (_) {
-      return 'whatsapp';
+      return 'correo';
     }
   }
 
   /// Pide el código. [dato] es el teléfono o, con [porCorreo], el correo.
   /// Devuelve el mensaje del servidor («Te enviamos el código a
   /// an***@gmail.com…») para enseñarlo tal cual, o null si no trae.
-  Future<String?> pedirCodigo(String dato, {bool porCorreo = false}) async {
+  ///
+  /// Con [crear], si el correo aún no tiene cuenta se crea una con [nombre]
+  /// (el paciente la crea él mismo; su clínica la enlaza después). Sin
+  /// [crear], un correo sin cuenta lanza [ErrorDeApi] con `puedeCrear`.
+  Future<String?> pedirCodigo(String dato,
+      {bool porCorreo = false, bool crear = false, String nombre = ''}) async {
     final r = await _red(() => _http.post(
           _uri('/auth/otp/request/'),
           headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({porCorreo ? 'email' : 'phone': dato}),
+          body: jsonEncode({
+            porCorreo ? 'email' : 'phone': dato,
+            if (crear) 'crear': true,
+            if (crear) 'nombre': nombre,
+          }),
         ));
-    if (r.statusCode >= 400) throw _error(r);
+    if (r.statusCode >= 400) {
+      final error = _error(r);
+      var puedeCrear = false;
+      try {
+        final datos = _json(r);
+        puedeCrear = datos is Map && datos['puede_crear'] == true;
+      } catch (_) {}
+      throw ErrorDeApi(error.mensaje, codigo: error.codigo, puedeCrear: puedeCrear);
+    }
     try {
       final datos = _json(r);
       final detalle = datos is Map ? datos['detail'] : null;
@@ -323,6 +343,10 @@ class ClienteApi {
     if (r.statusCode >= 400) throw _error(r);
     return DocumentoLegal.desdeJson(_json(r) as Map<String, dynamic>);
   }
+
+  /// Si la cuenta ya está enlazada con su ficha o espera a su clínica.
+  Future<EstadoCuenta> estadoCuenta() async =>
+      EstadoCuenta.desdeJson(await objeto('/app/cuenta/'));
 
   /// La marca de la clínica del paciente, guardada de paso.
   Future<Marca> marcaDeLaClinica() async {

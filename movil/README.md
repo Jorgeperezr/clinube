@@ -118,6 +118,22 @@ curl -s http://localhost/api/v1/auth/otp/canal/ -o test/fixtures/otp-canal-corre
 curl -s -X POST http://localhost/api/v1/auth/otp/request/ -H "Content-Type: application/json" -d '{"email":"CORREO_DEL_PACIENTE"}' -o test/fixtures/otp-pedido-correo.json
 ```
 
+La cuenta que crea el propio paciente: con un correo que no tenga cuenta,
+primero sin `crear` y luego con él; el código sale en el registro de Django
+y con el token que da `otp/verify/` se captura su estado (aún sin clínica):
+
+```sh
+curl -s -X POST http://localhost/api/v1/auth/otp/request/ -H "Content-Type: application/json" -d '{"email":"CORREO_NUEVO"}' -o test/fixtures/otp-sin-cuenta.json
+```
+
+```sh
+curl -s -X POST http://localhost/api/v1/auth/otp/request/ -H "Content-Type: application/json" -d '{"email":"CORREO_NUEVO","crear":true,"nombre":"Paciente Captura"}' -o test/fixtures/otp-cuenta-creada.json
+```
+
+```sh
+curl -s http://localhost/api/v1/app/cuenta/ -H "Authorization: Bearer TOKEN" -o test/fixtures/cuenta-esperando.json
+```
+
 `solicitudes-cita` y `mensajes` necesitan algo dentro para valer:
 antes de capturar, pide desde la app (o con `curl -X POST` a esas mismas
 rutas) al menos tres citas y dos mensajes, y desde la «Bandeja de la

@@ -8,6 +8,10 @@
 /// al año, y una contraseña que se usa dos veces al año es una
 /// contraseña olvidada o apuntada en un papel.
 ///
+/// Si el correo aún no tiene cuenta, se ofrece crearla aquí mismo: el
+/// paciente escribe su nombre y le llega el código. Su clínica la enlaza
+/// después con su ficha (mientras tanto, ve la pantalla de espera).
+///
 /// En el iPhone el teclado numérico no tiene tecla «Intro»: el código
 /// se envía solo al completar los 6 dígitos, y tocar fuera de los campos
 /// cierra el teclado, que si no tapaba el botón de entrar.
@@ -44,12 +48,16 @@ class PantallaIngreso extends StatefulWidget {
 class _PantallaIngresoState extends State<PantallaIngreso> {
   final _telefono = TextEditingController();
   final _codigo = TextEditingController();
+  final _nombre = TextEditingController();
   bool _codigoPedido = false;
+
+  /// El correo no tiene cuenta y el paciente va a crearla.
+  bool _creando = false;
   bool _ocupado = false;
   String? _error;
 
-  /// `'correo'` o `'whatsapp'`; WhatsApp mientras no se sepa.
-  String _canal = 'whatsapp';
+  /// `'correo'` o `'whatsapp'`; correo mientras no se sepa.
+  String _canal = 'correo';
 
   /// Lo que contestó el servidor al pedir el código (adónde lo mandó).
   String? _enviado;
@@ -68,6 +76,7 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
   void dispose() {
     _telefono.dispose();
     _codigo.dispose();
+    _nombre.dispose();
     super.dispose();
   }
 
@@ -91,13 +100,24 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
   }
 
   Future<void> _pedir() => _ejecutar(() async {
-        final enviado = await widget.api
-            .pedirCodigo(_telefono.text.trim(), porCorreo: _porCorreo);
-        if (mounted) {
-          setState(() {
-            _codigoPedido = true;
-            _enviado = enviado;
-          });
+        if (_creando && _nombre.text.trim().length < 3) {
+          setState(() => _error = 'Escribe tu nombre y apellido.');
+          return;
+        }
+        try {
+          final enviado = await widget.api.pedirCodigo(_telefono.text.trim(),
+              porCorreo: _porCorreo,
+              crear: _creando,
+              nombre: _nombre.text.trim());
+          if (mounted) {
+            setState(() {
+              _codigoPedido = true;
+              _enviado = enviado;
+            });
+          }
+        } on ErrorDeApi catch (e) {
+          if (!e.puedeCrear || !mounted) rethrow;
+          setState(() => _creando = true);
         }
       });
 
@@ -181,6 +201,21 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
                         border: const OutlineInputBorder(),
                       ),
                     ),
+                    if (_creando && !_codigoPedido) ...[
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _nombre,
+                        enabled: !_ocupado,
+                        autofocus: true,
+                        textCapitalization: TextCapitalization.words,
+                        autofillHints: const [AutofillHints.name],
+                        inputFormatters: [LengthLimitingTextInputFormatter(150)],
+                        decoration: const InputDecoration(
+                          labelText: 'Tu nombre y apellido',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                     if (_codigoPedido) ...[
                       const SizedBox(height: 14),
                       TextField(
@@ -213,7 +248,9 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
                             ? 'Un momento…'
                             : (_codigoPedido
                                 ? 'Entrar'
-                                : 'Enviarme el código')),
+                                : _creando
+                                    ? 'Crear mi cuenta'
+                                    : 'Enviarme el código')),
                       ),
                     ),
                     if (_codigoPedido)
@@ -222,6 +259,7 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
                             ? null
                             : () => setState(() {
                                   _codigoPedido = false;
+                                  _creando = false;
                                   _enviado = null;
                                   _codigo.clear();
                                 }),
@@ -254,6 +292,10 @@ class _PantallaIngresoState extends State<PantallaIngreso> {
       return _porCorreo
           ? 'Te enviamos un código a tu correo. Si no lo ves, mira en «Spam».'
           : 'Te enviamos un código por WhatsApp al $_telefonoVisible.';
+    }
+    if (_creando) {
+      return 'Aún no tienes cuenta con este correo. Escribe tu nombre y te '
+          'enviamos un código para crearla.';
     }
     return _porCorreo
         ? 'Ingresa con tu correo electrónico. Te enviaremos un código.'

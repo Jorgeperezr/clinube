@@ -1121,20 +1121,21 @@ function ConfigTab() {
       <div className="card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginBottom: 4 }}>Código para entrar en la app del paciente</h3>
         <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-          Cómo le llega al paciente el código de 6 cifras con el que entra en la app. Es para
-          todas las clínicas. Al cambiarlo nadie tiene que volver a activar su acceso: la app
-          pide el teléfono o el correo según lo que elijas aquí.
+          Cómo le llega al paciente el código de 6 cifras con el que entra en la app. El correo es
+          el canal de todas las clínicas. WhatsApp solo se usa con las clínicas que tienen
+          contratada la función de WhatsApp (Clínicas → funciones adicionales); las demás siguen
+          recibiendo el código por correo.
         </p>
         {[
-          { valor: "whatsapp", titulo: "WhatsApp",
-            texto: "Al teléfono de la ficha. Necesita la cuenta de WhatsApp de la plataforma en Meta con la plantilla «otp_login» aprobada; sin ella el código no llega." },
-          { valor: "correo", titulo: "Correo electrónico",
-            texto: "Al correo de la ficha. Solo necesita el correo saliente de arriba funcionando: prueba antes con «Enviar correo de prueba». Las fichas sin correo no podrán entrar hasta que se les añada." },
+          { valor: "correo", titulo: "Correo electrónico (recomendado)",
+            texto: "Al correo de la ficha. Solo necesita el correo saliente de arriba funcionando: prueba antes con «Enviar correo de prueba»." },
+          { valor: "whatsapp", titulo: "WhatsApp para quien lo contrate",
+            texto: "Por WhatsApp a las clínicas con la función contratada y su cuenta de Meta conectada (plantilla «otp_login» aprobada). El resto, por correo." },
         ].map((o) => (
           <label key={o.valor} style={{ display: "flex", gap: 10, alignItems: "flex-start",
                                         marginBottom: 10, cursor: "pointer" }}>
             <input type="radio" name="canal_codigo_paciente" value={o.valor}
-                   checked={(config.canal_codigo_paciente || "whatsapp") === o.valor}
+                   checked={(config.canal_codigo_paciente || "correo") === o.valor}
                    onChange={() => setConfig({ ...config, canal_codigo_paciente: o.valor })}
                    style={{ marginTop: 3 }} />
             <span>
@@ -1143,6 +1144,21 @@ function ConfigTab() {
             </span>
           </label>
         ))}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3 style={{ marginBottom: 4 }}>Entrar con Google</h3>
+        <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
+          Con esto aparece «Continuar con Google» en el inicio de sesión del panel. El equipo de una
+          clínica entra con el correo que tiene registrado; Google no crea cuentas del equipo.
+          Se obtiene gratis en Google Cloud → APIs y servicios → Credenciales → «ID de cliente de
+          OAuth» de tipo «Aplicación web», con origen autorizado https://app.clinube.com.
+        </p>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>ID de cliente de Google</label>
+          <input value={config.google_client_id || ""} placeholder="1234567890-abc.apps.googleusercontent.com"
+                 onChange={(e) => setConfig({ ...config, google_client_id: e.target.value.trim() })} />
+        </div>
       </div>
 
       <button className="btn btn-primary">Guardar configuración</button>

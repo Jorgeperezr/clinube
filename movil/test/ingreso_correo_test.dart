@@ -43,12 +43,12 @@ void main() {
       expect(await api.canalDelCodigo(), 'whatsapp');
     });
 
-    test('si no se puede preguntar, WhatsApp, como antes', () async {
+    test('si no se puede preguntar, correo: es el canal de todos', () async {
       final api = ClienteApi(
           urlBase: 'http://x',
           sesion: SesionFalsa(),
           http_: MockClient((req) async => http.Response('no', 404)));
-      expect(await api.canalDelCodigo(), 'whatsapp');
+      expect(await api.canalDelCodigo(), 'correo');
     });
   });
 

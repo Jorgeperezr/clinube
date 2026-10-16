@@ -76,6 +76,25 @@ export async function login(email, password) {
     const msg = data?.error?.message || data?.detail || "Credenciales incorrectas.";
     throw new Error(msg);
   }
+  return guardarSesion(data);
+}
+
+/**
+ * Entrar con Google: el botón de Google entrega un «ID token» y la API lo
+ * comprueba (apps/accounts/google.py). Solo para quien ya es del equipo.
+ */
+export async function loginConGoogle(credential) {
+  const resp = await sinRed(() => fetch(`${apiBase()}/api/v1/auth/google/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential, para: "personal" }),
+  }));
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data?.detail || data?.error?.message || "No se pudo entrar con Google.");
+  return guardarSesion(data);
+}
+
+async function guardarSesion(data) {
   tokens.set(data.access, data.refresh);
   // El login devuelve solo tokens; el perfil (nombre y rol) se
   // consulta a /auth/me/ para poder filtrar la navegación por rol.

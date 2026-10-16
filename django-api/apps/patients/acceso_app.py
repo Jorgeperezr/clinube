@@ -34,7 +34,7 @@ from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.acceso_paciente import CORREO, canal_codigo, normalizar_correo
+from apps.accounts.acceso_paciente import CORREO, normalizar_correo
 from apps.accounts.models import AuditLog, User
 from apps.common.funcionalidades import activa
 from apps.common.permisos_funcionalidad import RequiereFuncionalidad
@@ -57,10 +57,22 @@ def _estado(paciente):
         "correo": (cuenta.email or correo) if cuenta else correo,
         "correo_valido": bool(correo),
         # Por dónde le llega el código: el panel lo explica con esto.
-        "canal": canal_codigo(),
+        "canal": _canal(paciente),
+        # El paciente ya creó su cuenta con el correo de la ficha y espera
+        # que la clínica le dé acceso: al activar se enlaza esa misma.
+        "cuenta_propia": cuenta is None and bool(correo) and User.objects.filter(
+            email__iexact=correo, role=User.Role.PATIENT, is_active=True,
+            patient_profile__isnull=True).exists(),
         "ultimo_ingreso": cuenta.last_login if cuenta else None,
         "funcion_activa": activa(paciente.tenant, "app_paciente"),
     }
+
+
+def _canal(paciente):
+    """Por dónde le llegará el código: el de su clínica (correo, salvo WhatsApp contratado)."""
+    from apps.accounts.acceso_paciente import canal_de_clinica
+
+    return canal_de_clinica(paciente.tenant)
 
 
 def _auditar(request, paciente, accion, **datos):
@@ -90,7 +102,7 @@ class AccesoAppView(APIView):
         paciente = self._paciente(request, pk)
         telefono = normalizar_telefono(paciente.phone)
         correo = normalizar_correo(paciente.email)
-        por_correo = canal_codigo() == CORREO
+        por_correo = _canal(paciente) == CORREO
         if por_correo and not correo:
             return Response(
                 {"detail": "La ficha no tiene un correo electrónico válido. Corrígelo en los "

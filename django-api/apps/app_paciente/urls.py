@@ -3,6 +3,7 @@ from django.urls import path
 from apps.app_paciente import contacto, views
 
 urlpatterns = [
+    path("app/cuenta/", views.MiCuentaView.as_view(), name="app-mi-cuenta"),
     path("app/me/", views.MiPerfilView.as_view(), name="app-mi-perfil"),
     path("app/citas/", views.MisCitasView.as_view(), name="app-mis-citas"),
     path("app/citas/<uuid:pk>/confirmar/", views.ConfirmarCitaView.as_view(), name="app-confirmar-cita"),

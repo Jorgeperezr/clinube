@@ -474,3 +474,31 @@ class DocumentoLegal {
         ],
       );
 }
+
+/// Si la cuenta ya está enlazada con su ficha (GET /app/cuenta/).
+///
+/// Una cuenta creada por el propio paciente no tiene clínica hasta que la
+/// recepción le da acceso desde su ficha con este mismo correo.
+class EstadoCuenta {
+  const EstadoCuenta({
+    required this.enlazada,
+    required this.correo,
+    this.nombre = '',
+    this.clinica,
+    this.appActiva = true,
+  });
+
+  factory EstadoCuenta.desdeJson(Map<String, dynamic> j) => EstadoCuenta(
+        enlazada: j['enlazada'] == true,
+        correo: (j['correo'] as String?) ?? '',
+        nombre: (j['nombre'] as String?) ?? '',
+        clinica: j['clinica'] as String?,
+        appActiva: j['app_activa'] != false,
+      );
+
+  final bool enlazada;
+  final String correo;
+  final String nombre;
+  final String? clinica;
+  final bool appActiva;
+}

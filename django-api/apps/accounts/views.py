@@ -6,7 +6,6 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.core.mail import send_mail
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -105,30 +104,37 @@ class OTPRequestView(APIView):
         # cualquier número —en la primera clínica— y se le enviaba un
         # WhatsApp: cualquiera podía gastar los mensajes de la clínica, y
         # el paciente real se quedaba con una cuenta «sin enlazar».
-        user, motivo = acceso_paciente.identificar(serializer.validated_data)
+        datos = serializer.validated_data
+        user, motivo = acceso_paciente.identificar(datos)
         if motivo:
             return Response({"detail": motivo}, status=status.HTTP_400_BAD_REQUEST)
+        if user is None and datos.get("email"):
+            correo = acceso_paciente.normalizar_correo(datos["email"])
+            if User.objects.filter(email__iexact=correo).exclude(role=User.Role.PATIENT).exists():
+                return Response({"detail": "Ese correo es de una cuenta del equipo de una clínica: "
+                                           "entra con él en el panel, no en la app."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if not datos.get("crear"):
+                # La app ofrece crearla: el paciente la crea él mismo y
+                # su clínica le da acceso a su ficha después.
+                return Response({"detail": "Todavía no tienes cuenta con este correo. Créala en un "
+                                           "momento: te enviamos un código para confirmar que es tuyo.",
+                                 "puede_crear": True}, status=status.HTTP_400_BAD_REQUEST)
+            user = acceso_paciente.crear_cuenta_propia(correo, datos.get("nombre"))
         if user is None:
-            dato = "correo" if serializer.validated_data.get("email") else "número"
             return Response(
-                {"detail": f"Este {dato} no tiene acceso a la app. Pide en la recepción de tu "
-                           "clínica que lo activen en tu ficha."},
+                {"detail": "Este número no tiene acceso a la app. Entra con tu correo electrónico."},
                 status=status.HTTP_400_BAD_REQUEST)
-        if not (user.tenant and user.tenant.is_active and activa(user.tenant, "app_paciente")):
+        if user.tenant_id and not (user.tenant.is_active and activa(user.tenant, "app_paciente")):
             return Response(
                 {"detail": "Tu clínica no tiene activa la app en este momento."},
                 status=status.HTTP_400_BAD_REQUEST)
 
-        if canal == acceso_paciente.CORREO:
-            if not acceso_paciente.correo_de(user):
-                return Response(
-                    {"detail": "Tu ficha no tiene correo electrónico. Pide en la recepción de tu "
-                               "clínica que lo añadan: el código llega por correo."},
-                    status=status.HTTP_400_BAD_REQUEST)
-        elif not user.phone:
+        canal = acceso_paciente.canal_para(datos, user)
+        if canal == acceso_paciente.CORREO and not acceso_paciente.correo_de(user):
             return Response(
-                {"detail": "Tu ficha no tiene un teléfono móvil. Pide en la recepción de tu "
-                           "clínica que lo añadan: el código llega por WhatsApp."},
+                {"detail": "Tu ficha no tiene correo electrónico. Pide en la recepción de tu "
+                           "clínica que lo añadan: el código llega por correo."},
                 status=status.HTTP_400_BAD_REQUEST)
 
         if not self._issue_and_send_otp(user, canal):
@@ -286,20 +292,10 @@ class StaffRecoveryRequestView(APIView):
         # correo existe), pero un fallo de envío deja rastro.
         base = settings.PANEL_URL or request.build_absolute_uri("/").rstrip("/")
         enlace = f"{base}/recuperar/?token={raw_token}"
-        saludo = f"Hola, {user.full_name}:" if user.full_name else "Hola:"
         try:
-            send_mail(
-                subject=f"Restablecer tu contraseña de {settings.MARCA}",
-                message=(
-                    f"{saludo}\n\n"
-                    "Para elegir una contraseña nueva, abre este enlace:\n\n"
-                    f"{enlace}\n\n"
-                    f"El enlace es válido durante {RESET_TTL_MINUTES} minutos y se puede usar una sola vez.\n"
-                    "Si no lo pediste tú, ignora este correo: tu contraseña no cambia.\n"
-                ),
-                from_email=None,
-                recipient_list=[email],
-            )
+            from apps.accounts.correos_personal import enviar_recuperacion
+
+            enviar_recuperacion(user, enlace, RESET_TTL_MINUTES)
         except Exception:
             logging.getLogger(__name__).exception(
                 "No se pudo enviar el correo de recuperación (revisar el correo en Plataforma → Configuración o EMAIL_HOST)",
@@ -362,6 +358,58 @@ class UserListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         user = serializer.save(tenant=self.request.tenant)
         _asegurar_ficha_de_doctor(self.request.tenant, user)
+        # Sin contraseña puesta por el administrador, la persona recibe una
+        # invitación con la marca de la clínica para elegir la suya (o
+        # entrar con Google). Nadie más llega a conocer su contraseña.
+        self._invitacion = invitar(self.request, user) if not user.has_usable_password() else None
+
+    def create(self, request, *args, **kwargs):
+        self._invitacion = None
+        respuesta = super().create(request, *args, **kwargs)
+        respuesta.data["invitacion"] = self._invitacion
+        return respuesta
+
+
+INVITACION_HORAS = 72
+
+
+def invitar(request, user):
+    """Manda la invitación y dice cómo fue: «enviada» o «fallo»."""
+    from apps.accounts.correos_personal import enviar_invitacion
+    from apps.accounts.google import client_id
+
+    raw_token = secrets.token_urlsafe(32)
+    PasswordResetToken.objects.create(
+        user=user, token_hash=_hash_value(raw_token),
+        expires_at=timezone.now() + timedelta(hours=INVITACION_HORAS),
+    )
+    base = settings.PANEL_URL or request.build_absolute_uri("/").rstrip("/")
+    try:
+        enviar_invitacion(user, f"{base}/recuperar/?token={raw_token}&bienvenida=1", INVITACION_HORAS,
+                          con_google=bool(client_id()))
+    except Exception:
+        logging.getLogger(__name__).exception("No se pudo enviar la invitación", extra={"user_id": str(user.id)})
+        return "fallo"
+    AuditLog.objects.create(tenant=user.tenant, user=request.user, action="invite_staff",
+                            entity_type="User", entity_id=str(user.id))
+    return "enviada"
+
+
+class InvitarUsuarioView(APIView):
+    """POST /api/v1/users/{id}/invitar/ — vuelve a mandar la invitación."""
+
+    permission_classes = [HasRole.for_roles("admin")]
+
+    def post(self, request, pk):
+        user = generics.get_object_or_404(
+            User.objects.exclude(role=User.Role.PATIENT), pk=pk, tenant=request.tenant, is_active=True)
+        if not user.email:
+            return Response({"detail": "Esta persona no tiene correo."}, status=status.HTTP_400_BAD_REQUEST)
+        resultado = invitar(request, user)
+        if resultado == "fallo":
+            return Response({"detail": "No se pudo enviar el correo. Revisa el correo saliente en Plataforma."},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"invitacion": resultado})
 
 
 def _asegurar_ficha_de_doctor(tenant, user):
