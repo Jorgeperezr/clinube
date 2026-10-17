@@ -349,10 +349,6 @@ function OdontogramTab({ patientId, initialView }) {
   return (
     <div>
       {ConfirmUI}
-      <Form033Panel patientId={patientId} />
-      <OralHealthIndicators patientId={patientId} />
-      <CpoCeoCard patientId={patientId} refreshKey={Object.keys(teeth).length} />
-      <DiagnosisSection patientId={patientId} />
       {error && <div className="error-box">{error}</div>}
 
       <div className="card" style={{ marginBottom: 18 }}>
@@ -525,7 +521,48 @@ function OdontogramTab({ patientId, initialView }) {
           Haz clic en una pieza del odontograma para ver su historial o registrar un estado.
         </p>
       )}
+
+      {/* El odontograma va primero: es lo que se mira en cada consulta. El
+          formulario 033, los indicadores y los diagnósticos van debajo, en
+          un bloque que se pliega y recuerda cómo lo dejó cada persona. */}
+      <SeccionPlegable clave="fichaRegistros" titulo="Historia clínica odontológica, indicadores y diagnósticos">
+        <Form033Panel patientId={patientId} />
+        <OralHealthIndicators patientId={patientId} />
+        <CpoCeoCard patientId={patientId} refreshKey={Object.keys(teeth).length} />
+        <DiagnosisSection patientId={patientId} />
+      </SeccionPlegable>
     </div>
+  );
+}
+
+/** Un bloque que se abre y se cierra; se recuerda en este navegador. */
+function SeccionPlegable({ clave, titulo, children }) {
+  const [abierta, setAbierta] = useState(true);
+  useEffect(() => {
+    try { if (localStorage.getItem(clave) === "0") setAbierta(false); } catch { /* sin almacenamiento */ }
+  }, [clave]);
+  function alternar() {
+    setAbierta((v) => {
+      try { localStorage.setItem(clave, v ? "0" : "1"); } catch { /* sin almacenamiento */ }
+      return !v;
+    });
+  }
+  return (
+    <section style={{ marginTop: 22 }}>
+      <button type="button" onClick={alternar} aria-expanded={abierta}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "transparent",
+                       border: "none", borderTop: "1px solid var(--line)", padding: "14px 2px", cursor: "pointer",
+                       color: "var(--ink)", fontSize: 15, fontWeight: 700, textAlign: "left" }}>
+        <span aria-hidden="true" style={{ display: "inline-block", width: 14, color: "var(--ink-soft)",
+                                          transform: abierta ? "rotate(90deg)" : "none",
+                                          transition: "transform var(--dur-fast) var(--ease)" }}>▸</span>
+        {titulo}
+        <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 500, color: "var(--petrol)" }}>
+          {abierta ? "Ocultar" : "Mostrar"}
+        </span>
+      </button>
+      {abierta && <div>{children}</div>}
+    </section>
   );
 }
 

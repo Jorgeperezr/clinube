@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api, readList } from "../../../lib/api";
+import CampoTelefono from "../../../lib/CampoTelefono";
 
 const ORDER_OPTIONS = [
   ["name_asc", "Nombre (A-Z)"],
@@ -243,7 +244,7 @@ function PatientForm({ onSaved }) {
         </div>
         <div className="field">
           <label>Teléfono (WhatsApp)</label>
-          <input placeholder="+5939…" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+          <CampoTelefono valor={form.phone} alCambiar={(v) => set("phone", v)} />
         </div>
         <div className="field">
           <label>Correo</label>

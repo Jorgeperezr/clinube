@@ -12,6 +12,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { apiBase } from "../../lib/api";
+import CampoTelefono from "../../lib/CampoTelefono";
 import { LogoClinube, MARCA } from "../../lib/marca";
 import { useUrlApp } from "../../lib/sitio";
 import { initColorMode } from "../../lib/theme";
@@ -129,7 +130,7 @@ function CrearClinica() {
                 <input required maxLength={150} value={form.nombre} onChange={cambia("nombre")} autoComplete="name" />
               </Campo>
               <Campo etiqueta="Teléfono">
-                <input type="tel" maxLength={20} value={form.telefono} onChange={cambia("telefono")} autoComplete="tel" />
+                <CampoTelefono valor={form.telefono} alCambiar={(v) => setForm({ ...form, telefono: v })} />
               </Campo>
               <Campo etiqueta="Correo" completo>
                 <input type="email" required value={form.correo} onChange={cambia("correo")} autoComplete="email" />

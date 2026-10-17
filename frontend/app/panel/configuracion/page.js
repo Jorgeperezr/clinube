@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, apiBase, apiErrorMessage, readList, currentUser } from "../../../lib/api";
+import CampoTelefono from "../../../lib/CampoTelefono";
 import BackButton from "../../../lib/BackButton";
 import { PRESETS, applyTheme, logoSrc, resetTheme, saveBrandingCache } from "../../../lib/theme";
 import { EditorPaleta, LOGOS, SelectorLogo, usePrevisualizacion, VistaTemas } from "../../../lib/IdentidadClinica";
@@ -929,8 +930,7 @@ function BrandingTab() {
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Teléfono</label>
-            <input value={phone} onChange={(e) => setPhone(e.target.value)}
-                   placeholder="0999999999" maxLength={40} />
+            <CampoTelefono valor={phone} alCambiar={setPhone} placeholder="2 245 6789" />
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Correo electrónico</label>
