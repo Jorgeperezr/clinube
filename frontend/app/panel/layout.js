@@ -47,7 +47,7 @@ const NAV = [
   // Sueldos y honorarios de todo el equipo: solo con la función «finanzas».
   { seccion: "Gestión", clave: "finanzas", href: "/panel/finanzas/", label: "Finanzas", iconName: "finanzas", roles: ["admin", "reception", "doctor", "auxiliary"], funcionalidad: "finanzas", funcion: "finanzas" },
   { seccion: "Gestión", clave: "configuracion", href: "/panel/configuracion/", label: "Configuración", iconName: "configuracion", roles: ["admin"] },
-  { seccion: "Mi espacio", clave: "firma", href: "/panel/firma/", label: "Mi firma", iconName: "firma", roles: ["doctor"] },
+  { seccion: "Mi espacio", clave: "firma", href: "/panel/firma/", label: "Mi firma", iconName: "firma", roles: ["doctor", "admin"], atiende: true },
   // La copia de los pacientes de cada profesional. La administración
   // tiene la de toda la clínica en Configuración → Copia de seguridad.
   { seccion: "Mi espacio", clave: "respaldo", href: "/panel/respaldo/", label: "Mi respaldo", iconName: "respaldo", roles: ["doctor", "auxiliary"], funcion: "respaldo" },
@@ -206,7 +206,10 @@ export default function PanelLayout({ children }) {
   const permitidos = NAV.filter(
     (n) => n.roles.includes(user.role)
       && (!n.funcionalidad || contratadas[n.funcionalidad] !== false)
-      && (!n.funcion || tieneFuncion(user, n.funcion)),
+      && (!n.funcion || tieneFuncion(user, n.funcion))
+      // El administrador que también atiende (un consultorio de una sola
+      // persona) firma recetas como cualquier doctor.
+      && (!n.atiende || user.role === "doctor" || user.atiende),
   );
   const path = typeof window !== "undefined" ? window.location.pathname : "";
   // Oculto por la persona, salvo que sea donde está ahora: no se le

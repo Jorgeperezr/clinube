@@ -1373,6 +1373,7 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
   font-size: 14px; font-weight: 600; cursor: pointer;
 }
 .web-segmentado button[aria-checked="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.web-segmentado--dos { grid-template-columns: repeat(2, 1fr); }
 .web-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .web-campo { margin-bottom: 12px; min-width: 0; }
 .web-campo > span { font-size: 13px; font-weight: 600; color: var(--ink-soft); }

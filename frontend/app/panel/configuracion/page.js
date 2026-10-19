@@ -332,7 +332,7 @@ function sugeridas(catalogo, rol) {
 function UsersTab() {
   const [users, setUsers] = useState([]);
   const [catalogo, setCatalogo] = useState([]);
-  const vacio = { full_name: "", email: "", role: "doctor", password: "", funciones: {} };
+  const vacio = { full_name: "", email: "", role: "doctor", password: "", funciones: {}, atiende: false };
   const [form, setForm] = useState(vacio);
   const [editando, setEditando] = useState(null);   // { id, funciones }
   const [error, setError] = useState("");
@@ -366,6 +366,7 @@ function UsersTab() {
     try {
       const cuerpo = { ...form };
       if (form.role === "admin") delete cuerpo.funciones;   // el administrador las tiene todas
+      else delete cuerpo.atiende;                            // atender ya lo da el rol de doctor
       if (!cuerpo.password) delete cuerpo.password;          // sin contraseña: le llega una invitación
       const resp = await api("/users/", { method: "POST", body: JSON.stringify(cuerpo) });
       const data = await resp.json().catch(() => ({}));
@@ -377,8 +378,8 @@ function UsersTab() {
       const invitacion = data.invitacion === "enviada"
         ? ` Le llegó una invitación a ${form.email} para elegir su contraseña.`
         : data.invitacion === "fallo" ? " La invitación no se pudo enviar: usa «Reenviar invitación»." : "";
-      setOkMsg((form.role === "doctor"
-        ? `Usuario creado. ${form.full_name} ya aparece como doctor en la Agenda.`
+      setOkMsg((form.role === "doctor" || (form.role === "admin" && form.atiende)
+        ? `Usuario creado. ${form.full_name} ya aparece como profesional en la Agenda.`
         : "Usuario creado.") + invitacion);
       setForm({ ...vacio, funciones: sugeridas(catalogo, vacio.role) });
       load();
@@ -391,6 +392,25 @@ function UsersTab() {
       const resp = await api(`/users/${u.id}/invitar/`, { method: "POST" });
       if (!resp.ok) throw new Error(await apiErrorMessage(resp));
       setOkMsg(`Invitación enviada a ${u.email}.`);
+    } catch (err) { setError(err.message); }
+  }
+
+  async function cambiarAtiende(u, atiende) {
+    setError(""); setOkMsg("");
+    try {
+      const resp = await api(`/users/${u.id}/`, { method: "PATCH", body: JSON.stringify({ atiende }) });
+      if (!resp.ok) throw new Error(await apiErrorMessage(resp));
+      const yo = currentUser();
+      if (yo?.id === u.id) {
+        // Es su propia cuenta: «Mi firma» aparece o desaparece del menú ya.
+        localStorage.setItem("user", JSON.stringify({ ...yo, atiende }));
+        window.dispatchEvent(new Event("perfil-actualizado"));
+      }
+      setOkMsg(atiende
+        ? `${u.full_name || u.email} ya puede atender: sale en la Agenda, escribe en la historia y firma recetas. `
+          + (yo?.id === u.id ? "Pon tu registro profesional y tu firma en «Mi firma»." : "")
+        : `${u.full_name || u.email} ya no sale en la Agenda. Sus citas e historias anteriores se conservan.`);
+      load();
     } catch (err) { setError(err.message); }
   }
 
@@ -441,6 +461,13 @@ function UsersTab() {
                    onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
           <button className="btn btn-primary">Crear</button>
         </div>
+        {form.role === "admin" && (
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, fontSize: 13.5 }}>
+            <input type="checkbox" checked={form.atiende}
+                   onChange={(e) => setForm({ ...form, atiende: e.target.checked })} />
+            También atiende pacientes (sale en la Agenda y firma recetas)
+          </label>
+        )}
 
         {/* El administrador las tiene todas: enseñarle casillas que no
             cambian nada solo confundiría. */}
@@ -478,7 +505,18 @@ function UsersTab() {
                             onClick={() => reenviar(u)}>Reenviar invitación</button>
                   )}
                 </td>
-                <td><span className="badge badge-ok">{ROLE_OPTIONS[u.role] || u.role}</span></td>
+                <td>
+                  <span className="badge badge-ok">{ROLE_OPTIONS[u.role] || u.role}</span>
+                  {u.role === "admin" && (
+                    <label style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, fontSize: 12.5,
+                                    whiteSpace: "nowrap" }}
+                           title="Para el profesional que administra y además atiende, por ejemplo en un consultorio propio">
+                      <input type="checkbox" checked={!!u.atiende} disabled={!u.is_active}
+                             onChange={(e) => cambiarAtiende(u, e.target.checked)} />
+                      Atiende pacientes
+                    </label>
+                  )}
+                </td>
                 <td>
                   {u.role === "admin" ? <span style={{ color: "var(--ink-soft)" }}>Todas</span> : (
                     editando?.id === u.id ? (

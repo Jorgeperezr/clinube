@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.accounts import acceso_paciente
+from apps.accounts import acceso_paciente, atencion
 from apps.accounts.funciones import funciones_de
 from apps.accounts.models import (
     AuditLog,
@@ -512,6 +512,10 @@ class MeView(APIView):
             # El panel lo enseña junto al nombre de la clínica: quien trabaja
             # en ella ve funciones que las demás todavía no tienen.
             "clinica_de_pruebas": bool(u.tenant_id and u.tenant.es_prueba),
+            # Si además de su rol atiende pacientes (el administrador de un
+            # consultorio): el panel le enseña «Mi firma» y su agenda.
+            "atiende": u.role == User.Role.DOCTOR or atencion.atiende(u),
+            "modalidad": u.tenant.modalidad if u.tenant_id else None,
         })
 
 

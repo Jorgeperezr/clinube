@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from apps.accounts import atencion
 from apps.accounts.funciones import CATALOGO as CATALOGO_FUNCIONES
 from apps.accounts.funciones import ROLES_CON_FUNCIONES, al_crear, funciones_de
 from apps.accounts.models import AuditLog, DeviceToken, User
@@ -69,11 +70,15 @@ class UserSerializer(serializers.ModelSerializer):
     # Al leer: las funciones EFECTIVAS (con las heredadas del rol si no
     # tiene nada guardado). Al escribir: solo las que se quieren cambiar.
     funciones = serializers.JSONField(required=False)
+    # Un administrador que también atiende pacientes (el profesional que
+    # trabaja solo, o el dueño que además consulta): tiene ficha de doctor
+    # sin dejar de administrar. Ver apps/accounts/atencion.py.
+    atiende = serializers.BooleanField(required=False)
 
     class Meta:
         model = User
         fields = ["id", "email", "phone", "full_name", "role", "is_active",
-                  "funciones", "password", "created_at"]
+                  "funciones", "atiende", "password", "created_at"]
         read_only_fields = ["id", "created_at"]
 
     def validate_funciones(self, valor):
@@ -89,7 +94,16 @@ class UserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         datos = super().to_representation(instance)
         datos["funciones"] = funciones_de(instance)
+        datos["atiende"] = instance.role == User.Role.DOCTOR or atencion.atiende(instance)
         return datos
+
+    def validate(self, attrs):
+        rol = attrs.get("role") or (self.instance.role if self.instance else None)
+        if attrs.get("atiende") and rol not in (User.Role.ADMIN, User.Role.DOCTOR):
+            raise serializers.ValidationError(
+                {"atiende": "Solo un administrador puede atender además de administrar. "
+                            "Para alguien que solo atiende, usa el rol de doctor."})
+        return attrs
 
     def validate_role(self, value):
         # Un usuario de staff no puede crearse con rol 'patient' desde este
@@ -103,6 +117,7 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password", None)
         elegidas = validated_data.pop("funciones", None) or {}
+        atiende = validated_data.pop("atiende", None)
         user = User(**validated_data)
         # Se guardan SIEMPRE completas al dar de alta: lo sugerido para su
         # rol más lo que el administrador cambió en el formulario. Si se
@@ -114,16 +129,21 @@ class UserSerializer(serializers.ModelSerializer):
         else:
             user.set_unusable_password()
         user.save()
+        if atiende and user.role == User.Role.ADMIN:
+            atencion.cambiar(user, True)
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop("password", None)
         elegidas = validated_data.pop("funciones", None)
+        atiende = validated_data.pop("atiende", None)
         if elegidas is not None:
             # Sobre las efectivas: quien tenía las heredadas del rol pasa a
             # tenerlas guardadas, y a partir de ahí se cambia solo lo pedido.
             instance.funciones = {**funciones_de(instance), **elegidas}
         user = super().update(instance, validated_data)
+        if atiende is not None and user.role == User.Role.ADMIN:
+            atencion.cambiar(user, atiende)
         if password:
             user.set_password(password)
             user.save(update_fields=["password"])

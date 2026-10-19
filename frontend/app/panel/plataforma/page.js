@@ -225,7 +225,7 @@ function ClinicsTab() {
   const [clinics, setClinics] = useState([]);
   const [catalogo, setCatalogo] = useState([]);
   const VACIO = { name: "", ruc: "", address: "", phone: "", email: "",
-                  admin_full_name: "", admin_email: "", es_prueba: false,
+                  admin_full_name: "", admin_email: "", es_prueba: false, modalidad: "clinica",
                   funcionalidades: porDefecto(catalogo) };
   const [form, setForm] = useState(VACIO);
   const [identidad, setIdentidad] = useState(identidadVacia());
@@ -295,7 +295,7 @@ function ClinicsTab() {
   async function empezarEdicion(c) {
     setError(""); setOkMsg("");
     setEditing({ id: c.id, name: c.name, ruc: c.ruc, address: c.address, phone: c.phone, email: c.email,
-                 es_prueba: Boolean(c.es_prueba),
+                 es_prueba: Boolean(c.es_prueba), modalidad: c.modalidad || "clinica",
                  funcionalidades: c.funcionalidades || porDefecto(catalogo) });
     setIdentidadActual(null);
     setIdentidad(identidadVacia());
@@ -380,8 +380,38 @@ function ClinicsTab() {
           </p>
         )}
 
+        <div className="field" style={{ marginBottom: 14 }}>
+          <label>Tipo de cuenta</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[["clinica", "Clínica con equipo", "Administración, recepción y varios profesionales."],
+              ["consultorio", "Profesional independiente", "Un consultorio de una persona: administra y atiende con la misma cuenta."]]
+              .map(([clave, titulo, texto]) => {
+                const actual = (editing || form).modalidad || "clinica";
+                return (
+                  <label key={clave} className="card" style={{ flex: "1 1 220px", margin: 0, padding: "10px 12px", cursor: "pointer",
+                                                               display: "flex", gap: 8, alignItems: "start",
+                                                               borderColor: actual === clave ? "var(--petrol)" : undefined }}>
+                    <input type="radio" name="modalidad" style={{ marginTop: 3 }} checked={actual === clave}
+                           onChange={() => (editing ? setEditing({ ...editing, modalidad: clave })
+                                                    : setForm({ ...form, modalidad: clave }))} />
+                    <span>
+                      <strong style={{ fontSize: 14 }}>{titulo}</strong>
+                      <span style={{ display: "block", fontSize: 12, color: "var(--ink-soft)" }}>{texto}</span>
+                    </span>
+                  </label>
+                );
+              })}
+          </div>
+          {editing && editing.modalidad === "consultorio" && (
+            <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 6 }}>
+              Al guardar, su administrador queda también como profesional que atiende. Puede sumar equipo más
+              adelante sin cambiar nada.
+            </p>
+          )}
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1.5fr", gap: "12px 14px" }}>
-          {fld("name", "Nombre *")}
+          {fld("name", (editing || form).modalidad === "consultorio" ? "Nombre del consultorio *" : "Nombre *")}
           {fld("ruc", "RUC")}
           {fld("address", "Dirección")}
           {fld("phone", "Teléfono")}
@@ -480,10 +510,13 @@ function ClinicsTab() {
         {!editing && (
           <>
             <div style={{ borderTop: "1px solid var(--line)", margin: "16px 0 14px" }} />
-            <h4 style={{ marginBottom: 2, fontSize: 14 }}>Administrador de la clínica</h4>
+            <h4 style={{ marginBottom: 2, fontSize: 14 }}>
+              {form.modalidad === "consultorio" ? "Profesional" : "Administrador de la clínica"}
+            </h4>
             <p style={{ fontSize: 13, color: "var(--ink-soft)", marginBottom: 12 }}>
-              Es quien recibe las credenciales y, ya dentro, da de alta a los
-              profesionales. Opcional: puedes crearlo más tarde.
+              {form.modalidad === "consultorio"
+                ? "Es el dueño del consultorio: con esta cuenta administra, atiende, lleva la historia y firma recetas."
+                : "Es quien recibe las credenciales y, ya dentro, da de alta a los profesionales. Opcional: puedes crearlo más tarde."}
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr auto",
                           gap: "12px 14px", alignItems: "end" }}>
@@ -509,6 +542,9 @@ function ClinicsTab() {
                   <td style={{ fontWeight: 600 }}>
                     {c.name}
                     {c.es_prueba && <span className="etiqueta-prueba">De pruebas</span>}
+                    {c.modalidad === "consultorio" && (
+                      <span className="badge" style={{ marginLeft: 6, fontSize: 11 }}>Consultorio</span>
+                    )}
                     {/* Las adicionales que tiene, para verlas sin abrir la clínica. */}
                     {catalogo.some((f) => f.tipo === "adicional" && c.funcionalidades?.[f.clave]) && (
                       <span style={{ display: "block", fontSize: 11.5, fontWeight: 500, color: "var(--petrol)" }}>

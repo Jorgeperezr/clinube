@@ -327,9 +327,12 @@ class DoctorMySignatureView(APIView):
     GET/POST /api/v1/doctors/me/signature/ — el doctor gestiona su propia
     firma manuscrita (dibujada en pantalla táctil o con el mouse) y su
     número de registro profesional. La firma se estampa en las recetas.
+
+    También el administrador que atiende (apps/accounts/atencion.py); al
+    que no atiende le responde 404, como a cualquiera sin ficha.
     """
 
-    permission_classes = [HasRole.for_roles("doctor")]
+    permission_classes = [HasRole.for_roles("doctor", "admin")]
 
     def _my_doctor(self, request):
         return Doctor.objects.filter(tenant=request.tenant, user=request.user).first()

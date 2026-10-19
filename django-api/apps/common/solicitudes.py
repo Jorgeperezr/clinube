@@ -56,7 +56,8 @@ class SolicitudSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SolicitudClinica
-        fields = ["tipo", "clinica", "ruc", "ciudad", "nombre", "correo", "telefono", "mensaje", "sitio_web"]
+        fields = ["tipo", "modalidad", "clinica", "ruc", "ciudad", "nombre", "correo", "telefono", "mensaje",
+                  "sitio_web"]
 
     def validate_clinica(self, valor):
         valor = valor.strip()
@@ -167,11 +168,15 @@ def _crear_clinica(solicitud, password):
 
     tenant = Tenant.objects.create(name=solicitud.clinica, ruc=solicitud.ruc, is_active=True,
                                    phone=solicitud.telefono, email=solicitud.correo,
-                                   funcionalidades=normalizar(None))
+                                   modalidad=solicitud.modalidad, funcionalidades=normalizar(None))
     call_command("bootstrap", tenant_name=tenant.name, stdout=io.StringIO())
     admin = User(tenant=tenant, email=solicitud.correo, full_name=solicitud.nombre, role=User.Role.ADMIN)
     admin.set_password(password)
     admin.save()
+    if tenant.modalidad == "consultorio":
+        # Quien trabaja solo administra y atiende con la misma cuenta.
+        from apps.accounts import atencion
+        atencion.cambiar(admin, True)
     branding, _ = ClinicBranding.objects.get_or_create(tenant=tenant)
     branding.display_name = branding.display_name or solicitud.clinica
     branding.phone = branding.phone or solicitud.telefono
@@ -195,7 +200,7 @@ class SolicitudPlataformaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SolicitudClinica
-        fields = ["id", "created_at", "tipo", "tipo_nombre", "estado", "estado_nombre", "clinica", "ruc",
+        fields = ["id", "created_at", "tipo", "tipo_nombre", "modalidad", "estado", "estado_nombre", "clinica", "ruc",
                   "ciudad", "nombre", "correo", "telefono", "mensaje", "nota", "tenant"]
         read_only_fields = [f for f in fields if f not in ("estado", "nota")]
 

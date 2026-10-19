@@ -18,8 +18,8 @@ import { initColorMode } from "../../lib/theme";
 const SERVICIOS = [
   {
     clave: "odontologia", nombre: "Odontología", disponible: true,
-    texto: "Odontograma, historia clínica, recetas, certificados y las finanzas de la clínica.",
-    accion: "Crear mi clínica",
+    texto: "Odontograma, historia clínica, recetas y certificados. Para tu consultorio propio o para una clínica con equipo.",
+    accion: "Empezar",
   },
   {
     clave: "medicina", nombre: "Medicina", disponible: false,

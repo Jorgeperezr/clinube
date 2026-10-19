@@ -47,6 +47,13 @@ class Tenant(models.Model):
             "Plataforma."
         ),
     )
+    # Un consultorio es la cuenta de un profesional que trabaja solo: la
+    # misma persona administra y atiende. Cambia lo que se ofrece al
+    # darla de alta y algunos textos, no lo que el sistema permite: una
+    # clínica también puede tener administradores que atienden.
+    MODALIDADES = [("clinica", "Clínica con equipo"), ("consultorio", "Consultorio (profesional independiente)")]
+    modalidad = models.CharField(max_length=12, choices=MODALIDADES, default="clinica",
+                                 verbose_name="Modalidad")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -228,6 +235,9 @@ class SolicitudClinica(models.Model):
     correo = models.EmailField()
     telefono = models.CharField(max_length=20, blank=True)
     mensaje = models.TextField(blank=True)
+    # Odontología: un consultorio de una sola persona o una clínica con
+    # equipo (Tenant.modalidad).
+    modalidad = models.CharField(max_length=12, choices=Tenant.MODALIDADES, default="clinica")
     # Solo el resumen del código, nunca el código.
     codigo_hash = models.CharField(max_length=128, blank=True)
     codigo_vence = models.DateTimeField(null=True, blank=True)

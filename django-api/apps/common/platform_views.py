@@ -23,6 +23,7 @@ from rest_framework import generics, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts import atencion
 from apps.accounts.models import AuditLog, User
 from apps.common.models import PlatformConfiguration, Tenant
 from apps.common.permissions import HasRole
@@ -68,7 +69,7 @@ class ClinicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
         fields = ["id", "name", "ruc", "address", "phone", "email",
-                  "is_active", "es_prueba", "admin", "condiciones", "funcionalidades",
+                  "is_active", "es_prueba", "modalidad", "admin", "condiciones", "funcionalidades",
                   "created_at"]
         read_only_fields = ["id", "created_at"]
 
@@ -190,6 +191,10 @@ class ClinicListCreateView(generics.ListCreateAPIView):
         admin = User(tenant=tenant, email=email,
                      full_name=full_name or email, role=User.Role.ADMIN)
         temporal = _credencial_temporal(admin)
+        if tenant.modalidad == "consultorio":
+            # El profesional que trabaja solo administra y atiende con la
+            # misma cuenta: nace con su ficha de doctor.
+            atencion.cambiar(admin, True)
         _audit_platform(self.request, "create_clinic_admin", "User", admin.id,
                         {"email": admin.email, "clinic": tenant.name})
         self._credenciales = {
@@ -216,7 +221,15 @@ class ClinicDetailView(generics.RetrieveUpdateAPIView):
     def perform_update(self, serializer):
         previous_active = serializer.instance.is_active
         previous_prueba = serializer.instance.es_prueba
+        previous_modalidad = serializer.instance.modalidad
         tenant = serializer.save()
+        if previous_modalidad != tenant.modalidad and tenant.modalidad == "consultorio":
+            # Pasar a consultorio deja atendiendo a su administrador; al
+            # revés no se le quita nada: puede seguir atendiendo en una
+            # clínica con equipo.
+            admin = _principal_admin(tenant)
+            if admin:
+                atencion.cambiar(admin, True)
         if previous_active != tenant.is_active:
             action = "activate_clinic" if tenant.is_active else "deactivate_clinic"
         else:
@@ -226,6 +239,8 @@ class ClinicDetailView(generics.RetrieveUpdateAPIView):
             # Que conste quién convirtió una clínica en «de pruebas»: desde
             # ese momento ve funciones que las demás todavía no tienen.
             metadata["es_prueba"] = tenant.es_prueba
+        if previous_modalidad != tenant.modalidad:
+            metadata["modalidad"] = tenant.modalidad
         _audit_platform(self.request, action, "Tenant", tenant.id, metadata)
 
 

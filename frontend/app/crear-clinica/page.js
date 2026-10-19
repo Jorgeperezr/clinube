@@ -22,7 +22,11 @@ const TIPOS = [
   ["medicina", "Medicina"],
   ["psicologia", "Psicología"],
 ];
-const VACIO = { clinica: "", ciudad: "", ruc: "", nombre: "", correo: "", telefono: "", mensaje: "", sitio_web: "" };
+const MODALIDADES = [
+  ["consultorio", "Solo yo", "Atiendo a mis pacientes y llevo todo con mi cuenta."],
+  ["clinica", "Clínica con equipo", "Hay recepción u otros profesionales."],
+];
+const VACIO = { modalidad: "consultorio", clinica: "", ciudad: "", ruc: "", nombre: "", correo: "", telefono: "", mensaje: "", sitio_web: "" };
 
 async function publico(ruta, cuerpo) {
   let resp;
@@ -66,13 +70,16 @@ function CrearClinica() {
   }, [params]);
 
   const odonto = tipo === "odontologia";
+  const solo = odonto && form.modalidad === "consultorio";
   const cambia = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
   async function enviarDatos(e) {
     e.preventDefault();
     setError(""); setEnviando(true);
     try {
-      const r = await publico("solicitudes/", { ...form, tipo, mensaje: odonto ? "" : form.mensaje });
+      const r = await publico("solicitudes/", {
+        ...form, tipo, mensaje: odonto ? "" : form.mensaje, modalidad: odonto ? form.modalidad : "clinica",
+      });
       setSolicitud(r);
       setPaso(odonto ? "codigo" : "enviada");
     } catch (err) { setError(err.message); }
@@ -102,7 +109,7 @@ function CrearClinica() {
       <main className="web-formulario">
         {paso === "datos" && (
           <form onSubmit={enviarDatos} className="web-caja">
-            <h1>{odonto ? "Crea tu clínica" : "Solicita acceso"}</h1>
+            <h1>{!odonto ? "Solicita acceso" : solo ? "Crea tu consultorio" : "Crea tu clínica"}</h1>
             <p className="web-suave">
               {odonto
                 ? "Te enviaremos un código al correo para confirmar. Después eliges tu contraseña y entras."
@@ -115,9 +122,24 @@ function CrearClinica() {
               ))}
             </div>
 
+            {odonto && (
+              <div className="web-segmentado web-segmentado--dos" role="radiogroup" aria-label="Quién va a usarlo">
+                {MODALIDADES.map(([k, t, ayuda]) => (
+                  <button key={k} type="button" role="radio" aria-checked={form.modalidad === k} title={ayuda}
+                          onClick={() => setForm({ ...form, modalidad: k })}>{t}</button>
+                ))}
+              </div>
+            )}
+            {odonto && (
+              <p className="web-nota" style={{ marginTop: -4 }}>
+                {MODALIDADES.find(([k]) => k === form.modalidad)?.[2]}
+                {solo && " Si más adelante sumas a alguien, lo das de alta sin cambiar de cuenta."}
+              </p>
+            )}
+
             {error && <div className="error-box">{error}</div>}
             <div className="web-campos">
-              <Campo etiqueta={odonto ? "Nombre de la clínica" : "Nombre de la clínica o consulta"} completo>
+              <Campo etiqueta={!odonto ? "Nombre de la clínica o consulta" : solo ? "Nombre del consultorio" : "Nombre de la clínica"} completo>
                 <input required minLength={3} maxLength={150} value={form.clinica} onChange={cambia("clinica")} autoComplete="organization" />
               </Campo>
               <Campo etiqueta="Ciudad">
@@ -176,7 +198,7 @@ function CrearClinica() {
               </Campo>
             </div>
             <button className="web-boton web-boton--ancho" disabled={enviando}>
-              {enviando ? "Creando…" : "Crear mi clínica"}
+              {enviando ? "Creando…" : solo ? "Crear mi consultorio" : "Crear mi clínica"}
             </button>
             <button type="button" className="web-enlace web-volver" onClick={() => { setPaso("datos"); setError(""); }}>
               ← Corregir los datos
