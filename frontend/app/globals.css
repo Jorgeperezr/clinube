@@ -1309,40 +1309,186 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
 .web-boton--chico { min-height: 36px; padding: 0 16px; font-size: 14px; }
 .web-boton--ancho { width: 100%; }
 .web-enlace { color: var(--petrol); font-size: 14.5px; font-weight: 600; background: none; border: none; cursor: pointer; padding: 0; }
-.web-portada {
-  max-width: 760px; margin: 0 auto; text-align: center;
-  padding: clamp(56px, 12vw, 120px) 16px clamp(48px, 9vw, 96px);
-  display: flex; flex-direction: column; align-items: center; gap: 18px;
+/* ── Portada (app/inicio) ─────────────────────────────────────────
+   Editorial: titulares en Fraunces, cuerpo en Inter. La cabecera y el
+   cierre van sobre la tinta de la marca (#0B1220) en los dos modos; el
+   resto sigue al claro u oscuro de quien la visita. */
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/fonts/fraunces-latin.woff2") format("woff2");
 }
-.web-portada h1 { font-size: clamp(34px, 7vw, 60px); line-height: 1.05; letter-spacing: -.035em; margin: 6px 0 0; }
-.web-portada p { font-size: clamp(16px, 2.4vw, 20px); line-height: 1.5; color: var(--ink-soft); margin: 0; max-width: 600px; }
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/fonts/fraunces-latin-italic.woff2") format("woff2");
+}
+.web {
+  --w-titular: "Fraunces", Georgia, "Times New Roman", serif;
+  --w-tinta: #0b1220;
+  --w-tinta-2: #111b2e;
+  --w-menta: #76eafa;
+  --w-claro: #e8eef5;
+  --w-suave: #9fb0c3;
+}
+.web-caja h1 { font-family: var(--w-titular); font-weight: 560; letter-spacing: -.02em; }
+
+.web-barra--inicio {
+  background: rgba(11, 18, 32, .9);
+  border-bottom-color: rgba(255, 255, 255, .08);
+}
+.web-barra--inicio .web-nav a { color: var(--w-suave); }
+.web-barra--inicio .web-nav a:hover { color: #fff; }
+.web-boton--menta { background: var(--w-menta); border-color: var(--w-menta); color: var(--w-tinta); }
+.web-boton--fantasma { background: transparent; border-color: rgba(255, 255, 255, .28); color: #fff; }
+.web-boton--fantasma:hover { border-color: rgba(255, 255, 255, .6); opacity: 1; }
+
+.web-heroe {
+  position: relative; overflow: hidden; color: var(--w-claro);
+  background:
+    radial-gradient(60% 70% at 85% 30%, rgba(14, 116, 144, .55), transparent 70%),
+    radial-gradient(40% 50% at 10% 100%, rgba(118, 234, 250, .12), transparent 70%),
+    var(--w-tinta);
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); align-items: center;
+  gap: clamp(32px, 5vw, 64px);
+  padding: clamp(56px, 9vw, 112px) max(16px, calc((100% - 1120px) / 2)) clamp(64px, 10vw, 128px);
+  margin-top: -1px; border-bottom: 1px solid rgba(255, 255, 255, .06);
+}
+/* Retícula muy tenue: textura de papel milimetrado, sin imagen. */
+.web-heroe::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: linear-gradient(180deg, #000 40%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent);
+}
+.web-heroe-texto { position: relative; display: flex; flex-direction: column; gap: 22px; }
+.web-antetitulo {
+  margin: 0; display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
+  font-size: 13px; font-weight: 600; letter-spacing: .02em; color: var(--w-suave);
+  padding: 6px 14px 6px 10px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 16px;
+}
+.web-punto {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--w-menta);
+  box-shadow: 0 0 0 4px rgba(118, 234, 250, .18);
+}
+.web-heroe h1 {
+  margin: 0; font-family: var(--w-titular); font-weight: 500; color: #fff;
+  font-size: clamp(40px, 6.4vw, 76px); line-height: 1.04; letter-spacing: -.018em;
+  font-variation-settings: "opsz" 144;
+}
+.web-heroe h1 em { font-style: italic; font-weight: 400; color: var(--w-menta); }
+.web-heroe-bajada { margin: 0; max-width: 520px; font-size: clamp(16px, 1.8vw, 19px); line-height: 1.6; color: var(--w-suave); }
+
+/* Muestra del producto */
+.web-muestra { position: relative; min-height: 440px; }
+.web-tarjeta {
+  position: absolute; background: var(--card); color: var(--ink); border-radius: 18px;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06);
+}
+.web-tarjeta--agenda { top: 0; left: 0; width: min(100%, 380px); padding: 18px 18px 8px; }
+.web-tarjeta-cabeza { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.web-tarjeta-cabeza span:first-child { font-family: var(--w-titular); font-size: 22px; font-weight: 560; }
+.web-tarjeta-cifra { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.web-cita {
+  display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 10px;
+  padding: 11px 0; border-top: 1px solid var(--line); font-size: 14px;
+}
+.web-cita-hora { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--petrol); }
+.web-cita-motivo { font-weight: 600; display: flex; flex-direction: column; }
+.web-cita-motivo small { font-weight: 500; color: var(--ink-soft); font-size: 12.5px; }
+.web-cita-estado {
+  font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: var(--petrol-soft); color: var(--petrol);
+}
+.web-tarjeta--receta { right: 0; top: 150px; width: 230px; padding: 18px; display: flex; flex-direction: column; gap: 9px; transform: rotate(2.5deg); }
+.web-tarjeta-etiqueta { font-family: var(--w-titular); font-style: italic; font-size: 18px; color: var(--petrol); }
+.web-receta-linea { height: 7px; border-radius: 4px; background: var(--line); }
+.web-firma { width: 130px; height: 40px; color: var(--ink); margin-top: 6px; }
+.web-sello {
+  position: absolute; right: 14px; bottom: 16px; transform: rotate(-8deg);
+  font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--petrol); border: 2px solid currentColor; border-radius: 6px; padding: 2px 7px; opacity: .85;
+}
+.web-tarjeta--aviso {
+  left: 40px; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px;
+  font-size: 13.5px; font-weight: 600;
+}
+.web-tarjeta--aviso small { display: block; font-weight: 500; color: var(--ink-soft); font-size: 12px; }
+.web-aviso-icono {
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--w-menta); color: var(--w-tinta); font-weight: 800;
+}
+
+/* Entrada escalonada al cargar; nada se mueve si la persona lo pidió. */
+@keyframes web-aparecer { from { opacity: 0; translate: 0 14px; } to { opacity: 1; translate: 0 0; } }
+.web-aparece { animation: web-aparecer .7s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
+@media (prefers-reduced-motion: reduce) { .web-aparece { animation: none; } }
+
 .web-acciones { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
 .web-acciones--izq { justify-content: flex-start; align-items: center; }
-.web-seccion { max-width: 1080px; margin: 0 auto; padding: clamp(40px, 7vw, 72px) 16px; border-top: 1px solid var(--line); }
-.web-seccion h2 { font-size: clamp(26px, 4vw, 34px); letter-spacing: -.02em; margin: 0 0 24px; }
-.web-servicios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.web-servicio {
-  background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 24px;
-  display: flex; flex-direction: column; gap: 10px;
+
+/* Secciones */
+.web-seccion { max-width: 1120px; margin: 0 auto; padding: clamp(56px, 8vw, 96px) 16px 0; }
+.web-encabezado {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); gap: 8px 24px; align-items: baseline;
+  padding-top: 18px; border-top: 1px solid var(--line-strong, var(--line)); margin-bottom: clamp(24px, 4vw, 40px);
 }
-.web-servicio--activo { border-color: var(--petrol); box-shadow: 0 0 0 1px var(--petrol); }
-.web-servicio h3 { font-size: 22px; margin: 4px 0 0; letter-spacing: -.01em; }
-.web-servicio p { margin: 0 0 8px; color: var(--ink-soft); font-size: 15px; line-height: 1.55; flex: 1; }
+.web-numero { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; color: var(--petrol); letter-spacing: .06em; }
+.web-encabezado h2 {
+  margin: 0; font-family: var(--w-titular); font-weight: 520; font-size: clamp(30px, 4.2vw, 46px);
+  line-height: 1.05; letter-spacing: -.025em;
+}
+.web-encabezado p { margin: 0; color: var(--ink-soft); font-size: 15.5px; line-height: 1.6; max-width: 420px; }
+
+.web-modalidades { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.web-modalidad {
+  border-radius: 22px; padding: clamp(24px, 3.4vw, 36px); display: flex; flex-direction: column; gap: 14px;
+  background: var(--card); border: 1px solid var(--line); align-items: flex-start;
+}
+.web-modalidad--consultorio { background: var(--petrol-soft); border-color: transparent; }
+.web-modalidad h3 { margin: 0; font-family: var(--w-titular); font-weight: 520; font-size: clamp(24px, 2.8vw, 30px); letter-spacing: -.015em; }
+.web-modalidad p { margin: 0; color: var(--ink-soft); font-size: 15.5px; line-height: 1.6; }
+.web-modalidad ul { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.web-modalidad li { display: flex; gap: 10px; font-size: 14.5px; font-weight: 500; }
+.web-modalidad li::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: 8px; border-radius: 50%; background: var(--petrol); }
+
+.web-especialidades { list-style: none; margin: 0; padding: 0; border-bottom: 1px solid var(--line); }
+.web-especialidades a {
+  display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 1.6fr) auto 28px; align-items: center; gap: 20px;
+  padding: 22px 4px; border-top: 1px solid var(--line); color: var(--ink);
+  transition: background var(--dur-fast) var(--ease), padding var(--dur-fast) var(--ease);
+}
+.web-especialidades a:hover { background: color-mix(in srgb, var(--petrol-soft) 55%, transparent); padding-left: 14px; }
+.web-especialidad-nombre { font-family: var(--w-titular); font-size: clamp(24px, 3vw, 32px); font-weight: 500; letter-spacing: -.02em; }
+.web-especialidades li:not(.web-especialidad--si) .web-especialidad-nombre { color: var(--ink-soft); }
+.web-especialidad-texto { color: var(--ink-soft); font-size: 15px; line-height: 1.5; }
+.web-flecha { color: var(--petrol); font-size: 20px; transition: translate var(--dur-fast) var(--ease); }
+.web-especialidades a:hover .web-flecha { translate: 4px 0; }
 .web-estado {
-  align-self: flex-start; font-size: 12px; font-weight: 700; letter-spacing: .03em;
+  justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .03em; white-space: nowrap;
   padding: 4px 10px; border-radius: 999px; background: var(--line); color: var(--ink-soft);
 }
 .web-estado--si { background: var(--petrol-soft); color: var(--petrol); }
-.web-incluye { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
-.web-incluye h3 { font-size: 16px; margin: 0 0 6px; }
-.web-incluye p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--ink-soft); }
-.web-apps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.web-incluye { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.web-incluye > div { padding: 26px 24px 28px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.web-incluye h3 { font-family: var(--w-titular); font-weight: 520; font-size: 21px; letter-spacing: -.01em; margin: 0 0 8px; }
+.web-incluye p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+
+.web-apps { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .web-app {
-  background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 26px;
-  display: flex; flex-direction: column; gap: 12px; align-items: flex-start;
+  background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 28px;
+  display: flex; flex-direction: column; gap: 14px; align-items: flex-start;
 }
-.web-app h3 { font-size: 20px; margin: 0; }
-.web-app p { margin: 0; color: var(--ink-soft); font-size: 15px; line-height: 1.55; }
+.web-app h3 { font-family: var(--w-titular); font-weight: 520; font-size: 24px; letter-spacing: -.015em; margin: 0; }
+.web-app p { margin: 0; color: var(--ink-soft); font-size: 15px; line-height: 1.6; }
 .web-tiendas { display: flex; gap: 10px; flex-wrap: wrap; }
 .web-tienda {
   display: inline-flex; flex-direction: column; justify-content: center; min-width: 148px; min-height: 48px;
@@ -1350,9 +1496,23 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
 }
 .web-tienda small { font-size: 10.5px; font-weight: 500; opacity: .85; }
 .web-tienda--pronto { background: transparent; color: var(--ink-soft); border: 1px dashed var(--line-strong); }
+
+.web-cierre {
+  max-width: 1120px; margin: clamp(64px, 9vw, 112px) auto 0; padding: clamp(48px, 7vw, 80px) 24px;
+  border-radius: 28px; text-align: center; color: var(--w-claro);
+  background: radial-gradient(70% 90% at 50% 0%, rgba(14, 116, 144, .6), transparent 70%), var(--w-tinta);
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+}
+.web-cierre h2 {
+  margin: 8px 0 0; font-family: var(--w-titular); font-weight: 500; color: #fff;
+  font-size: clamp(30px, 4.6vw, 52px); line-height: 1.05; letter-spacing: -.025em; max-width: 720px;
+}
+.web-cierre p { margin: 0 0 8px; color: var(--w-suave); font-size: 16px; }
+
 .web-pie {
-  max-width: 1080px; margin: 0 auto; padding: 28px 16px calc(28px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--line); display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  max-width: 1120px; margin: 0 auto; padding: 32px 16px calc(32px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
   font-size: 13px; color: var(--ink-faint);
 }
 .web-pie nav { display: flex; gap: 18px; margin-left: auto; }
@@ -1390,13 +1550,26 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
 }
 
 @media (max-width: 960px) {
+  .web-heroe { grid-template-columns: 1fr; }
+  .web-muestra { max-width: 520px; width: 100%; }
   .web-incluye { grid-template-columns: 1fr 1fr; }
-  .web-servicios { grid-template-columns: 1fr 1fr; }
-  .web-servicio--activo { grid-column: 1 / -1; }
+  .web-encabezado { grid-template-columns: 48px minmax(0, 1fr); }
+  .web-encabezado p { grid-column: 2; }
+  .web-especialidades a { grid-template-columns: minmax(0, 1fr) auto 24px; }
+  .web-especialidad-texto { grid-column: 1 / -1; grid-row: 2; }
 }
 @media (max-width: 640px) {
   .web-nav { display: none; }
-  .web-servicios, .web-apps, .web-incluye { grid-template-columns: 1fr; }
+  .web-modalidades, .web-apps, .web-incluye { grid-template-columns: 1fr; }
+  .web-encabezado { grid-template-columns: 1fr; }
+  .web-encabezado p { grid-column: auto; }
+  /* En el teléfono no caben superpuestas: la agenda y, debajo, el aviso. */
+  .web-muestra { min-height: 0; display: flex; flex-direction: column; }
+  .web-tarjeta { position: relative; }
+  .web-tarjeta--agenda { width: 100%; }
+  .web-tarjeta--receta { display: none; }
+  .web-tarjeta--aviso { left: auto; align-self: flex-end; margin: -18px 12px 0 0; }
+  .web-cierre { border-radius: 0; }
   .web-campos { grid-template-columns: 1fr; }
   .web-acciones .web-boton { flex: 1 1 100%; }
   .web-pie nav { margin-left: 0; }

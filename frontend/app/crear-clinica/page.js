@@ -67,6 +67,8 @@ function CrearClinica() {
   useEffect(() => {
     const t = params.get("tipo");
     if (TIPOS.some(([k]) => k === t)) setTipo(t);
+    const m = params.get("modalidad");
+    if (MODALIDADES.some(([k]) => k === m)) setForm((f) => ({ ...f, modalidad: m }));
   }, [params]);
 
   const odonto = tipo === "odontologia";
