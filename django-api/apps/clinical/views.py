@@ -447,11 +447,13 @@ class ClinicalHistoryExportView(generics.GenericAPIView):
             patient=patient, tenant=request.tenant
         ).prefetch_related("items", "items__treatment")
 
+        from apps.clinical.pdf_utils import SECCIONES_HISTORIA
         from apps.common.document_style import clinic_snapshot, get_document_style
         from apps.patients.models import MedicalBackground
 
         pdf_bytes = generate_clinical_history_pdf(
             patient, evolutions.select_related("doctor__user", "created_by"), diagnoses, plans,
+            incluir=_incluir(request, SECCIONES_HISTORIA),
             style=get_document_style(request.tenant),
             clinic=clinic_snapshot(request.tenant),
             background=MedicalBackground.objects.filter(patient=patient).first(),
@@ -640,7 +642,7 @@ class PeriodontalExamListCreateView(generics.ListCreateAPIView):
         from apps.clinical.models import PeriodontalExam
         return (PeriodontalExam.objects
                 .filter(tenant=self.request.tenant, patient_id=self.kwargs["pk"])
-                .prefetch_related("teeth"))
+                .select_related("patient", "created_by").prefetch_related("teeth"))
 
     def perform_create(self, serializer):
         from django.utils import timezone
@@ -652,16 +654,89 @@ class PeriodontalExamListCreateView(generics.ListCreateAPIView):
             created_by=self.request.user,
             date=serializer.validated_data.get("date") or timezone.localdate(),
         )
-        # Dentición permanente completa, en orden clínico
+        # Dentición permanente completa, en orden clínico. Lo que no cambia
+        # de una exploración a otra —la pieza que falta, el implante— se
+        # trae de la anterior: nadie tiene que volver a marcar ausencias.
+        from apps.clinical.models import PeriodontalExam
+        anterior = (PeriodontalExam.objects.filter(tenant=self.request.tenant, patient=patient)
+                    .exclude(pk=exam.pk).order_by("-date", "-created_at").first())
+        previas = {t.tooth_code: t for t in anterior.teeth.all()} if anterior else {}
         codes = ([f"1{n}" for n in range(8, 0, -1)] + [f"2{n}" for n in range(1, 9)]
                  + [f"4{n}" for n in range(8, 0, -1)] + [f"3{n}" for n in range(1, 9)])
         PeriodontalTooth.objects.bulk_create([
             PeriodontalTooth(
                 tenant=self.request.tenant, exam=exam, tooth_code=c,
+                is_present=previas[c].is_present if c in previas else True,
+                has_implant=previas[c].has_implant if c in previas else False,
                 probing_depth=[0] * 6, gingival_margin=[0] * 6,
-                bleeding=[False] * 6, plaque=[False] * 6,
+                bleeding=[False] * 6, plaque=[False] * 6, suppuration=[False] * 6,
             ) for c in codes
         ])
+
+
+class PeriodontalExamDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET/PATCH/DELETE /api/v1/periodontal-exams/{id}/ — la fecha y las
+    observaciones de una exploración, o borrarla si se creó por error.
+    """
+
+    permission_classes = [HasRole.for_roles("admin", "doctor")]
+
+    def get_serializer_class(self):
+        from apps.clinical.serializers import PeriodontalExamSerializer
+        return PeriodontalExamSerializer
+
+    def get_queryset(self):
+        from apps.clinical.models import PeriodontalExam
+        return (PeriodontalExam.objects.filter(tenant=self.request.tenant)
+                .select_related("patient", "created_by").prefetch_related("teeth"))
+
+    def perform_destroy(self, instance):
+        _audit(self.request, "delete_periodontal_exam", "PeriodontalExam", instance.id)
+        instance.delete()
+
+
+class PeriodontalExamPDFView(generics.GenericAPIView):
+    """
+    GET /api/v1/periodontal-exams/{id}/pdf/?incluir=diagrama,piezas,resumen,notas
+
+    El periodontograma solo, con el membrete de la clínica. `incluir`
+    elige los componentes (sin él, todos): la vista previa del panel lo
+    usa para que el profesional quite lo que no quiere entregar.
+    """
+
+    permission_classes = [HasRole.for_roles("admin", "doctor")]
+
+    def get(self, request, pk):
+        from django.http import HttpResponse
+        from django.shortcuts import get_object_or_404
+
+        from apps.clinical.models import PeriodontalExam
+        from apps.clinical.periodontograma_pdf import COMPONENTES, generar_pdf
+        from apps.common.document_style import clinic_snapshot, get_document_style
+
+        exam = get_object_or_404(
+            PeriodontalExam.objects.select_related("patient", "created_by").prefetch_related("teeth"),
+            pk=pk, tenant=request.tenant)
+        pdf = generar_pdf(exam, get_document_style(request.tenant), clinic_snapshot(request.tenant),
+                          incluir=_incluir(request, COMPONENTES))
+        _audit(request, "export_periodontal_exam", "PeriodontalExam", exam.id)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'inline; filename="periodontograma_{exam.patient.national_id}_{exam.date:%Y%m%d}.pdf"')
+        return response
+
+
+def _incluir(request, componentes):
+    """
+    Los componentes pedidos en `?incluir=a,b`, de los que admite el
+    documento. Sin el parámetro, todos; con él vacío, ninguno de los
+    opcionales (lo obligatorio, como los datos del paciente, sale siempre).
+    """
+    crudo = request.query_params.get("incluir")
+    if crudo is None:
+        return set(componentes)
+    return {c for c in crudo.split(",") if c in componentes}
 
 
 class PeriodontalToothUpdateView(generics.RetrieveUpdateAPIView):

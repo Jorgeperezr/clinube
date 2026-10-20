@@ -9,10 +9,33 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, currentUser } from "./api";
+import VistaPreviaPDF from "./VistaPreviaPDF";
+
+/* Partes opcionales de cada documento (las acepta la API en ?incluir=). */
+const SECCIONES_HISTORIA = [
+  { clave: "datos", etiqueta: "Datos del paciente" },
+  { clave: "antecedentes", etiqueta: "Antecedentes médicos" },
+  { clave: "diagnosticos", etiqueta: "Diagnósticos" },
+  { clave: "periodontograma", etiqueta: "Periodontograma", ayuda: "La última exploración, con sus líneas" },
+  { clave: "evoluciones", etiqueta: "Evoluciones, recetas e indicaciones" },
+  { clave: "planes", etiqueta: "Planes de tratamiento" },
+];
+const SECCIONES_033 = [
+  { clave: "anamnesis", etiqueta: "Motivo, enfermedad actual y antecedentes", ayuda: "Literales B a G" },
+  { clave: "indicadores", etiqueta: "Indicadores de salud bucal" },
+  { clave: "cpo", etiqueta: "Índices CPO-ceo" },
+  { clave: "diagnosticos", etiqueta: "Diagnósticos (CIE-10)" },
+  { clave: "plan", etiqueta: "Plan de tratamiento" },
+  { clave: "periodontograma", etiqueta: "Periodontograma" },
+  { clave: "examenes", etiqueta: "Exámenes complementarios" },
+  { clave: "documentos", etiqueta: "Documentos adjuntos" },
+  { clave: "consentimientos", etiqueta: "Consentimientos informados" },
+];
 
 export default function CpoCeoCard({ patientId, refreshKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [vista, setVista] = useState(null);   // documento en vista previa
 
   const load = useCallback(async () => {
     try {
@@ -26,17 +49,10 @@ export default function CpoCeoCard({ patientId, refreshKey }) {
   // La historia completa la exporta quien escribe en ella (admin y doctor).
   const puedeHistoria = ["admin", "doctor"].includes(currentUser()?.role);
 
-  async function exportPdf(ruta = "form033/export-pdf/") {
-    setError("");
-    try {
-      const resp = await api(`/patients/${patientId}/${ruta}`);
-      if (!resp.ok) throw new Error(`No se pudo generar el PDF (error ${resp.status}).`);
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (err) { setError(err.message); }
-  }
+  const HISTORIA = { titulo: "Historia clínica", ruta: `/patients/${patientId}/clinical-record/export-pdf/`,
+                     nombre: "historia_clinica.pdf", clave: "historia", componentes: SECCIONES_HISTORIA };
+  const F033 = { titulo: "Formulario 033", ruta: `/patients/${patientId}/form033/export-pdf/`,
+                 nombre: "formulario_033.pdf", clave: "form033", componentes: SECCIONES_033 };
 
   // Formulario OFICIAL del MSP (plantilla xlsx del Ministerio) autocompletado
   async function exportXlsx() {
@@ -71,13 +87,13 @@ export default function CpoCeoCard({ patientId, refreshKey }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {puedeHistoria && (
             <button className="btn btn-primary" style={{ fontSize: 13 }}
-                    onClick={() => exportPdf("clinical-record/export-pdf/")}
+                    onClick={() => setVista(HISTORIA)}
                     title="Datos, antecedentes, diagnósticos, evoluciones y planes, con el membrete de la clínica">
               Historia clínica (PDF)
             </button>
           )}
           <button className={`btn ${puedeHistoria ? "btn-ghost" : "btn-primary"}`} style={{ fontSize: 13 }}
-                  onClick={() => exportPdf()}>
+                  onClick={() => setVista(F033)}>
             Formulario 033 (PDF)
           </button>
           <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={exportXlsx}
@@ -88,6 +104,7 @@ export default function CpoCeoCard({ patientId, refreshKey }) {
       </div>
 
       {error && <div className="error-box">{error}</div>}
+      {vista && <VistaPreviaPDF {...vista} onCerrar={() => setVista(null)} />}
 
       <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", fontSize: 14 }}>

@@ -69,4 +69,63 @@ class HistoriaConMembreteYPeriodontogramaTests(APITestCase):
 
     def test_resumen_cuenta_solo_las_piezas_presentes(self):
         piezas = {t.tooth_code: t for t in self.exam.teeth.all()}
-        self.assertEqual(resumen(piezas), {"sondaje_medio": 3.1, "sangrado": 17, "bolsas": 2, "sitios": 12})
+        self.assertEqual(resumen(piezas), {"sondaje_medio": 3.1, "nic_medio": 3.1, "sangrado": 17,
+                                           "supuracion": 0, "placa": 0, "bolsas": 2, "sitios": 12})
+
+    def test_pdf_propio_del_periodontograma_con_componentes(self):
+        url = f"/api/v1/periodontal-exams/{self.exam.id}/pdf/"
+        with mock.patch.object(Periodontograma, "draw", autospec=True, side_effect=DIBUJAR) as dibujo:
+            r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(dibujo.called)
+        # Sin el diagrama, no se dibuja.
+        with mock.patch.object(Periodontograma, "draw", autospec=True, side_effect=DIBUJAR) as dibujo:
+            r = self.client.get(url + "?incluir=piezas,resumen")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(dibujo.called)
+
+    def test_quitar_secciones_en_la_historia_y_el_033(self):
+        for ruta in ("clinical-record/export-pdf/", "form033/export-pdf/"):
+            with mock.patch.object(Periodontograma, "draw", autospec=True, side_effect=DIBUJAR) as dibujo:
+                r = self.client.get(f"/api/v1/patients/{self.patient.id}/{ruta}?incluir=diagnosticos")
+            self.assertEqual(r.status_code, 200, ruta)
+            self.assertFalse(dibujo.called, ruta)
+
+
+class ExploracionesTests(APITestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Perio")
+        self.admin = User.objects.create_user(email="a@perio.ec", password="superseguro123",
+                                              role="admin", tenant=self.tenant)
+        self.patient = Patient.objects.create(tenant=self.tenant, first_name="Luis", last_name="Paz",
+                                              national_id="1102003002")
+        self.client.force_authenticate(self.admin)
+        self.url = f"/api/v1/patients/{self.patient.id}/periodontal-exams/"
+
+    def test_la_nueva_exploracion_hereda_ausencias_e_implantes(self):
+        primera = self.client.post(self.url, {"date": "2026-01-10"}, format="json").data
+        pieza = {t["tooth_code"]: t for t in primera["teeth"]}
+        self.client.patch(f"/api/v1/periodontal-teeth/{pieza['18']['id']}/", {"is_present": False}, format="json")
+        self.client.patch(f"/api/v1/periodontal-teeth/{pieza['36']['id']}/", {"has_implant": True}, format="json")
+        segunda = self.client.post(self.url, {"date": "2026-06-10"}, format="json").data
+        nueva = {t["tooth_code"]: t for t in segunda["teeth"]}
+        self.assertFalse(nueva["18"]["is_present"])
+        self.assertTrue(nueva["36"]["has_implant"])
+        self.assertEqual(nueva["16"]["probing_depth"], [0] * 6)
+
+    def test_supuracion_pronostico_y_borrar_exploracion(self):
+        exam = self.client.post(self.url, {}, format="json").data
+        diente = exam["teeth"][0]
+        r = self.client.patch(f"/api/v1/periodontal-teeth/{diente['id']}/",
+                              {"suppuration": [True, False, False, False, False, False], "prognosis": "reservado",
+                               "gum_width": 3}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["prognosis"], "reservado")
+        r = self.client.patch(f"/api/v1/periodontal-teeth/{diente['id']}/", {"suppuration": [True]}, format="json")
+        self.assertEqual(r.status_code, 400)
+        datos = self.client.get(f"/api/v1/periodontal-exams/{exam['id']}/").data
+        self.assertGreater(datos["statistics"]["suppuration_percent"], 0)
+        self.assertEqual(self.client.patch(f"/api/v1/periodontal-exams/{exam['id']}/",
+                                           {"notes": "Control en 3 meses"}, format="json").status_code, 200)
+        self.assertEqual(self.client.delete(f"/api/v1/periodontal-exams/{exam['id']}/").status_code, 204)
+        self.assertFalse(PeriodontalExam.objects.filter(pk=exam["id"]).exists())

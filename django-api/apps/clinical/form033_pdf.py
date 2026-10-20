@@ -114,17 +114,42 @@ def _membrete(c, y, width, tenant, clinic, color):
     return y - 8 * mm
 
 
+# Literales que se pueden quitar en la vista previa (?incluir=…). Los
+# datos del paciente y el profesional responsable salen siempre.
+SECCIONES_033 = ("anamnesis", "indicadores", "cpo", "diagnosticos", "plan", "examenes",
+                 "documentos", "consentimientos", "periodontograma")
+
+
 def build_form033_pdf(patient, tenant, form_record, diagnoses, cpo_ceo, professional,
                       indicadores=None, plan_items=None, exams=None,
-                      documents=None, consents=None, clinic=None, color=None, periodontal=None):
+                      documents=None, consents=None, clinic=None, color=None, periodontal=None,
+                      incluir=None):
     """
     Devuelve los bytes del PDF del formulario 033 completo del paciente.
 
     `clinic` es `clinic_snapshot(tenant)` y `color`, el principal de la
     paleta de documentos de la clínica; sin ellos sale el encabezado de
     siempre, solo con el nombre. `periodontal` es la última exploración
-    periodontal: se dibuja como en el panel, con sus líneas.
+    periodontal: se dibuja como en el panel, con sus líneas. `incluir`
+    elige las SECCIONES_033 (None: todas).
     """
+    incluir = set(SECCIONES_033) if incluir is None else set(incluir)
+    if "anamnesis" not in incluir:
+        form_record = None
+    if "indicadores" not in incluir:
+        indicadores = None
+    if "diagnosticos" not in incluir:
+        diagnoses = None
+    if "plan" not in incluir:
+        plan_items = None
+    if "examenes" not in incluir:
+        exams = None
+    if "documentos" not in incluir:
+        documents = None
+    if "consentimientos" not in incluir:
+        consents = None
+    if "periodontograma" not in incluir:
+        periodontal = None
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle("Historia clínica odontológica (HCU-form.033)")
@@ -194,13 +219,14 @@ def build_form033_pdf(patient, tenant, form_record, diagnoses, cpo_ceo, professi
         y = _line(c, y, "Fluorosis:", (indicadores.get("fluorosis") or "—").capitalize(), width)
 
     # J. Índices CPO-ceo
-    ensure(24 * mm)
-    y = _header_band(c, y, width, "ÍNDICES CPO-ceo")
-    cpo, ceo = cpo_ceo["cpo"], cpo_ceo["ceo"]
-    y = _line(c, y, "CPO (perm.):",
-              f"C={cpo['C']}  P={cpo['P']}  O={cpo['O']}  TOTAL={cpo['total']}", width)
-    y = _line(c, y, "ceo (temp.):",
-              f"c={ceo['c']}  e={ceo['e']}  o={ceo['o']}  TOTAL={ceo['total']}", width)
+    if "cpo" in incluir:
+        ensure(24 * mm)
+        y = _header_band(c, y, width, "ÍNDICES CPO-ceo")
+        cpo, ceo = cpo_ceo["cpo"], cpo_ceo["ceo"]
+        y = _line(c, y, "CPO (perm.):",
+                  f"C={cpo['C']}  P={cpo['P']}  O={cpo['O']}  TOTAL={cpo['total']}", width)
+        y = _line(c, y, "ceo (temp.):",
+                  f"c={ceo['c']}  e={ceo['e']}  o={ceo['o']}  TOTAL={ceo['total']}", width)
 
     # Diagnósticos
     if diagnoses:

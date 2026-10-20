@@ -19,6 +19,7 @@ import { useConfirm } from "../../../lib/ConfirmDialog";
 import AlertasPaciente, { revisarReceta, textoChoques } from "../../../lib/AlertasClinicas";
 import { ConsentsTab, DocumentsTab, PlanTab } from "../../../lib/ClinicalTabs";
 import { hoyISO } from "../../../lib/fechas.mjs";
+import VistaPreviaPDF from "../../../lib/VistaPreviaPDF";
 
 
 const SURFACE_NAMES = {
@@ -208,6 +209,9 @@ function OdontogramTab({ patientId, initialView }) {
   }, [initialView]);
   const [history, setHistory] = useState([]);      // historial de la pieza
   const [error, setError] = useState("");
+  // El periodontograma registra mediciones, no estados por superficie:
+  // la simbología y el historial de estados de la pieza no son suyos.
+  const esPerio = viewKey === "compacto";
 
   const loadCurrent = useCallback(async () => {
     try {
@@ -400,7 +404,7 @@ function OdontogramTab({ patientId, initialView }) {
                     })} />
           );
         })()}
-        {selected && (
+        {selected && !esPerio && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10,
                         flexWrap: "wrap", fontSize: 13.5 }}>
             <span style={{ fontWeight: 700, color: "var(--petrol)" }}>
@@ -418,7 +422,7 @@ function OdontogramTab({ patientId, initialView }) {
             </span>
           </div>
         )}
-        {rmEdit && (
+        {rmEdit && !esPerio && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
                         marginTop: 12, padding: "10px 14px", borderRadius: 10,
                         background: "var(--petrol-soft)", border: "1px solid var(--petrol)" }}>
@@ -439,7 +443,7 @@ function OdontogramTab({ patientId, initialView }) {
           </div>
         )}
 
-        {pendingReg && (
+        {pendingReg && !esPerio && (
           <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10,
                         background: "var(--petrol-soft)", border: "1px solid var(--petrol)",
                         display: "flex", alignItems: "end", gap: 12, flexWrap: "wrap" }}>
@@ -474,10 +478,10 @@ function OdontogramTab({ patientId, initialView }) {
           </div>
         )}
 
-        <OdontogramLegend states={states} onSelect={handleLegendSelect} selectedTooth={selected} />
+        {!esPerio && <OdontogramLegend states={states} onSelect={handleLegendSelect} selectedTooth={selected} />}
       </div>
 
-      {selected ? (
+      {esPerio ? null : selected ? (
         <div>
           <div className="card" style={{ padding: 0 }}>
             <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)", fontWeight: 600 }}>
@@ -580,6 +584,7 @@ function EvolutionsTab({ patientId }) {
   const [editText, setEditText] = useState("");
   const [evolutions, setEvolutions] = useState([]);
   const [form, setForm] = useState({ type: "clinical_note", notes: "", visible_to_patient: false, follow_up_date: "" });
+  const [receta, setReceta] = useState(null);      // receta en vista previa
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [dictando, setDictando] = useState(false);
@@ -661,6 +666,10 @@ function EvolutionsTab({ patientId }) {
   return (
     <div className="rejilla-adaptable" style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 18, alignItems: "start" }}>
       {ConfirmUI}
+      {receta && (
+        <VistaPreviaPDF titulo="Receta" ruta={`/evolutions/${receta.id}/prescription-pdf/`}
+                        nombre={`receta-${receta.date}.pdf`} onCerrar={() => setReceta(null)} />
+      )}
       <form onSubmit={submit} className="card">
         <h3 style={{ marginBottom: 12 }}>Nueva evolución</h3>
         {error && <div className="error-box">{error}</div>}
@@ -728,17 +737,7 @@ function EvolutionsTab({ patientId }) {
                     <div style={{ whiteSpace: "nowrap" }}>
                       {ev.type === "prescription" && editing !== ev.id && (
                         <button className="btn btn-ghost" style={{ padding: "4px 10px", fontSize: 12 }}
-                                onClick={async () => {
-                                  try {
-                                    const r = await api(`/evolutions/${ev.id}/prescription-pdf/`);
-                                    if (!r.ok) throw new Error(`Error ${r.status}`);
-                                    const blob = await r.blob();
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement("a");
-                                    a.href = url; a.download = `receta-${ev.date}.pdf`; a.click();
-                                    URL.revokeObjectURL(url);
-                                  } catch (err) { setError("No se pudo descargar la receta."); }
-                                }}>
+                                onClick={() => setReceta(ev)}>
                           📄 Receta PDF
                         </button>
                       )}

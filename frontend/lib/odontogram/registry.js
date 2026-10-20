@@ -18,8 +18,8 @@ import Odontogram3D from "./Odontogram3D";
 export const VIEWS = [
   {
     key: "clasico",
-    label: "Clásico",
-    description: "Esquema MSP por superficies. Vista predeterminada.",
+    label: "Esquema MSP",
+    description: "Odontograma por superficies con la simbología del formulario 033. Vista predeterminada.",
     Component: ClassicOdontogram,
   },
   {
@@ -30,8 +30,8 @@ export const VIEWS = [
   },
   {
     key: "compacto",
-    label: "Compacto",
-    description: "Ficha clínica completa: estados por superficie más mediciones periodontales (sondaje, margen, placa, sangrado, movilidad y furcación) con índices agregados.",
+    label: "Periodontograma",
+    description: "Ficha periodontal por exploración: sondaje, margen, nivel de inserción, sangrado, supuración, placa, movilidad, furcas y pronóstico, con PDF e imagen.",
     Component: PeriodontalMatrix,
   },
   {

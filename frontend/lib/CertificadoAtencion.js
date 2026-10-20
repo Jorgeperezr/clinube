@@ -9,8 +9,9 @@
 
 import { useEffect, useState } from "react";
 
-import { api, apiErrorMessage, readList } from "./api";
+import { api, readList } from "./api";
 import { hoyISO } from "./fechas.mjs";
+import VistaPreviaPDF from "./VistaPreviaPDF";
 
 const VACIO = {
   hora_inicio: "", hora_fin: "", doctor: "", diagnostico: "", procedimiento: "",
@@ -23,7 +24,7 @@ export default function CertificadoAtencion({ patientId }) {
   const [form, setForm] = useState(VACIO);
   const [doctores, setDoctores] = useState([]);
   const [sinCita, setSinCita] = useState(false);
-  const [generando, setGenerando] = useState(false);
+  const [vista, setVista] = useState(null);       // petición del PDF en vista previa
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -45,31 +46,21 @@ export default function CertificadoAtencion({ patientId }) {
       }).catch(() => {});
   }, [abierto, fecha, patientId]);
 
-  async function generar(e) {
+  // Se ve antes de descargarlo o imprimirlo (lib/VistaPreviaPDF.js).
+  function generar(e) {
     e.preventDefault();
     setError("");
-    setGenerando(true);
-    // La pestaña se abre antes de pedir el PDF: Safari bloquea las que
-    // se abren cuando ya terminó la petición.
-    const pestana = window.open("", "_blank");
-    try {
-      const resp = await api(`/patients/${patientId}/certificado-atencion/`, {
-        method: "POST", body: JSON.stringify({ ...form, fecha }),
-      });
-      if (!resp.ok) throw new Error(await apiErrorMessage(resp));
-      const url = URL.createObjectURL(await resp.blob());
-      if (pestana) pestana.location.href = url; else window.location.href = url;
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (err) {
-      pestana?.close();
-      setError(err.message);
-    } finally { setGenerando(false); }
+    setVista({ method: "POST", body: JSON.stringify({ ...form, fecha }) });
   }
 
   const cambia = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
+      {vista && (
+        <VistaPreviaPDF titulo="Certificado de atención" ruta={`/patients/${patientId}/certificado-atencion/`}
+                        opciones={vista} nombre={`certificado_${fecha}.pdf`} onCerrar={() => setVista(null)} />
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <h3 style={{ margin: 0 }}>Certificado de atención</h3>
@@ -132,7 +123,7 @@ export default function CertificadoAtencion({ patientId }) {
             <input maxLength={400} value={form.observaciones} onChange={cambia("observaciones")} />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary" disabled={generando}>{generando ? "Generando…" : "Generar PDF"}</button>
+            <button className="btn btn-primary">Vista previa</button>
             <button type="button" className="btn btn-ghost" onClick={() => setAbierto(false)}>Cerrar</button>
           </div>
           <p style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 10 }}>

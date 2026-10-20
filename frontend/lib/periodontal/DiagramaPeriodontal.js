@@ -11,6 +11,7 @@
  *   · línea roja  → margen gingival
  *   · línea azul  → fondo de la bolsa (margen + profundidad de sondaje)
  *   · sombreado   → la bolsa, entre las dos
+ *   · aro ámbar   → supuración al sondaje
  *
  * Todo en milímetros reales desde la unión amelocementaria de CADA pieza
  * (`marcoVestibular`): el cuello de un canino no está a la misma altura
@@ -33,6 +34,7 @@ const PROFUNDIDAD_ALERTA = 4;      // > 4 mm: bolsa patológica
 
 const COLOR_MARGEN = "#d64545";
 const COLOR_FONDO = "#2f6fd6";
+const COLOR_SUPURACION = "#d99a00";
 
 /**
  * Una cara (vestibular o palatina/lingual) de un cuadrante.
@@ -70,6 +72,7 @@ export function DiagramaCara({ codes, cara, byCode = {}, surfacesByTooth = {},
         fondo: (m.cuello + m.apical * (gm + pd)) * ESCALA,
         pd,
         sangra: Boolean(t.bleeding?.[base + k]),
+        supura: Boolean(t.suppuration?.[base + k]),
       };
     }).sort((a, b) => a.x - b.x);
     actual.push(...pts);
@@ -124,6 +127,8 @@ export function DiagramaCara({ codes, cara, byCode = {}, surfacesByTooth = {},
                 <circle cx={p.x} cy={p.fondo} r={p.sangra ? 2.8 : 2}
                         fill={p.sangra ? COLOR_MARGEN : COLOR_FONDO}
                         stroke={p.pd > PROFUNDIDAD_ALERTA ? "var(--card)" : "none"} strokeWidth="1" />
+                {p.supura && <circle cx={p.x} cy={p.fondo} r="4.6" fill="none"
+                                     stroke={COLOR_SUPURACION} strokeWidth="1.4" />}
               </g>
             ))}
           </g>
@@ -141,6 +146,8 @@ export function LeyendaPeriodontal() {
         ? <span style={{ width: 18, height: 2.5, background: color, borderRadius: 2 }} />
         : forma === "punto"
           ? <span style={{ width: 8, height: 8, background: color, borderRadius: "50%" }} />
+          : forma === "aro"
+            ? <span style={{ width: 10, height: 10, border: `2px solid ${color}`, borderRadius: "50%" }} />
           : <span style={{ width: 14, height: 10, background: color, opacity: 0.25, borderRadius: 2 }} />}
       {texto}
     </span>
@@ -151,6 +158,7 @@ export function LeyendaPeriodontal() {
       {item(COLOR_FONDO, "Fondo de bolsa")}
       {item(COLOR_FONDO, "Bolsa", "zona")}
       {item(COLOR_MARGEN, "Sangrado al sondaje", "punto")}
+      {item(COLOR_SUPURACION, "Supuración", "aro")}
     </div>
   );
 }

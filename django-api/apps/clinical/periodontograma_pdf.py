@@ -9,6 +9,7 @@ frente con su corona y sus raíces, la pauta de milímetros y, encima,
   · línea azul  → fondo de la bolsa (margen + profundidad de sondaje)
   · sombreado   → la bolsa, entre las dos
   · punto rojo  → sangrado al sondaje
+  · aro ámbar   → supuración
 
 Todo en milímetros reales desde la unión amelocementaria de cada pieza,
 con las medidas y los perfiles de frontend/lib/odontogram/AnatomiaDental.js
@@ -42,6 +43,7 @@ MARGEN = 0.6
 PROFUNDIDAD_ALERTA = 4          # > 4 mm: bolsa patológica
 
 ROJO = colors.HexColor("#d64545")
+AMBAR = colors.HexColor("#d99a00")
 AZUL = colors.HexColor("#2f6fd6")
 CONTORNO = colors.HexColor("#3f8f8a")
 CORONA = colors.HexColor("#fbf8f1")
@@ -297,7 +299,8 @@ class Periodontograma(Flowable):
                 actual = []
                 filas.append(None)
                 continue
-            gm, pd, sangra = _lista(t.gingival_margin, 0), _lista(t.probing_depth, 0), _lista(t.bleeding, False)
+            gm, pd = _lista(t.gingival_margin, 0), _lista(t.probing_depth, 0)
+            sangra, supura = _lista(t.bleeding, False), _lista(getattr(t, "suppuration", None), False)
             puntos = []
             for j in range(3):
                 g, p = gm[base + j] or 0, pd[base + j] or 0
@@ -305,7 +308,7 @@ class Periodontograma(Flowable):
                     "x": izq + sitios[j] * k,
                     "margen": top - (cuello + apical * g) * k,
                     "fondo": top - (cuello + apical * (g + p)) * k,
-                    "pd": p, "gm": g, "sangra": bool(sangra[base + j]),
+                    "pd": p, "gm": g, "sangra": bool(sangra[base + j]), "supura": bool(supura[base + j]),
                 })
             puntos.sort(key=lambda q: q["x"])
             actual.extend(puntos)
@@ -388,6 +391,10 @@ class Periodontograma(Flowable):
             # El fondo que sangra se agranda y se pinta de rojo: es la bolsa activa.
             c.setFillColor(ROJO if p["sangra"] else AZUL)
             c.circle(p["x"], p["fondo"], (0.7 if p["sangra"] else 0.45) * mm, stroke=0, fill=1)
+            if p["supura"]:
+                c.setStrokeColor(AMBAR)
+                c.setLineWidth(0.7)
+                c.circle(p["x"], p["fondo"], 1.15 * mm, stroke=1, fill=0)
         c.restoreState()
 
     def _fila(self, c, top, nombre, filas, campo):
@@ -410,22 +417,125 @@ class Periodontograma(Flowable):
 
 def resumen(piezas):
     """Cifras para leer el periodontograma de un vistazo."""
-    sitios = sangran = bolsas = 0
-    suma = 0
+    sitios = sangran = supuran = placa = bolsas = 0
+    suma = suma_nic = 0
     for t in piezas.values():
         if not t.is_present:
             continue
-        pd, sg = _lista(t.probing_depth, 0), _lista(t.bleeding, False)
+        pd, gm = _lista(t.probing_depth, 0), _lista(t.gingival_margin, 0)
+        sg, su, pl = (_lista(t.bleeding, False), _lista(getattr(t, "suppuration", None), False),
+                      _lista(t.plaque, False))
         for i in range(6):
             sitios += 1
             suma += pd[i] or 0
+            suma_nic += (pd[i] or 0) + (gm[i] or 0)
             sangran += 1 if sg[i] else 0
+            supuran += 1 if su[i] else 0
+            placa += 1 if pl[i] else 0
             bolsas += 1 if (pd[i] or 0) > PROFUNDIDAD_ALERTA else 0
     if not sitios:
         return None
     return {
         "sondaje_medio": round(suma / sitios, 1),
+        "nic_medio": round(suma_nic / sitios, 1),
         "sangrado": round(100 * sangran / sitios),
+        "supuracion": round(100 * supuran / sitios),
+        "placa": round(100 * placa / sitios),
         "bolsas": bolsas,
         "sitios": sitios,
     }
+
+
+# Componentes del PDF propio del periodontograma (?incluir=…).
+COMPONENTES = ("diagrama", "piezas", "resumen", "notas")
+
+PRONOSTICOS = {"bueno": "Bueno", "reservado": "Reservado", "malo": "Malo", "imposible": "Imposible"}
+
+
+def _tabla_piezas(piezas, style, celda):
+    """Lo que es de la pieza entera: implante, movilidad, furcas, encía y pronóstico."""
+    from reportlab.platypus import Table
+
+    from apps.clinical.pdf_utils import _p
+
+    filas = []
+    for code in SUPERIOR + INFERIOR:
+        t = piezas.get(code)
+        if t is None:
+            continue
+        if not t.is_present:
+            filas.append([code, "Ausente", "—", "—", "—", "—", "—"])
+            continue
+        filas.append([
+            code, "Implante" if t.has_implant else "Natural", str(t.mobility or 0),
+            str(t.furcation_buccal or 0), str(t.furcation_lingual or 0),
+            f"{t.gum_width} mm" if t.gum_width else "—",
+            PRONOSTICOS.get(getattr(t, "prognosis", ""), "—"),
+        ])
+    cabecera = ["Pieza", "Tipo", "Movilidad", "Furca V", "Furca P/L", "Encía queratinizada", "Pronóstico"]
+    anchos = [0.09, 0.14, 0.12, 0.11, 0.12, 0.22, 0.2]
+    datos = [cabecera] + [[_p(v, celda) for v in f] for f in filas]
+    t = Table(datos, colWidths=[style.content_width * a for a in anchos], repeatRows=1)
+    t.setStyle(style.table_style())
+    return t
+
+
+def generar_pdf(exam, style, clinic, incluir=None, _total=None):
+    """El periodontograma de una exploración como documento propio."""
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer
+
+    from apps.clinical.pdf_utils import _base_styles, _construir, _p
+    from apps.common.document_style import fecha_documento
+
+    incluir = set(COMPONENTES) if incluir is None else set(incluir)
+    styles = _base_styles(style)
+    celda = ParagraphStyle("celda", parent=styles["Normal"], fontSize=style.size - 1,
+                           leading=(style.size - 1) * 1.3)
+    patient = exam.patient
+    piezas = {t.tooth_code: t for t in exam.teeth.all()}
+    autor = (exam.created_by.full_name or exam.created_by.email) if exam.created_by else None
+
+    story = list(style.header_flowables(clinic=clinic))
+    story += style.title_flowables(
+        "Periodontograma", subtitle=patient.full_name,
+        meta=[("Identificación", patient.national_id), ("Exploración", fecha_documento(exam.date)),
+              ("Registró", autor)],
+    )
+    numero = 0
+
+    def seccion(titulo):
+        nonlocal numero
+        numero += 1
+        story.append(style.section_flowable(titulo, numero))
+
+    datos = resumen(piezas)
+    if "resumen" in incluir and datos:
+        seccion("Índices")
+        story.append(style.fields_table([
+            [("Sondaje medio", f"{datos['sondaje_medio']} mm"), ("Nivel de inserción medio", f"{datos['nic_medio']} mm"),
+             ("Sitios de más de 4 mm", str(datos["bolsas"]))],
+            [("Sangrado al sondaje", f"{datos['sangrado']} %"), ("Supuración", f"{datos['supuracion']} %"),
+             ("Placa", f"{datos['placa']} %")],
+        ]))
+    if "diagrama" in incluir and piezas:
+        seccion("Diagrama")
+        leyenda = ('<font color="#d64545"><b>——</b></font> Margen gingival &nbsp;&nbsp; '
+                   '<font color="#2f6fd6"><b>——</b></font> Fondo de bolsa &nbsp;&nbsp; '
+                   '<font backColor="#d5e2f7">&nbsp;&nbsp;&nbsp;&nbsp;</font> Bolsa &nbsp;&nbsp; '
+                   '<font color="#d64545"><b>•</b></font> Sangrado &nbsp;&nbsp; '
+                   '<font color="#d99a00"><b>o</b></font> Supuración &nbsp;&nbsp; '
+                   'En rojo, sondajes de más de 4 mm.')
+        story.append(KeepTogether([Periodontograma(piezas, style.content_width), Spacer(1, 3),
+                                   Paragraph(leyenda, styles["Small"])]))
+    if "piezas" in incluir and piezas:
+        seccion("Datos por pieza")
+        story.append(_tabla_piezas(piezas, style, celda))
+    if "notas" in incluir and exam.notes:
+        seccion("Observaciones")
+        story.append(_p(exam.notes, styles["Normal"]))
+
+    pdf, paginas = _construir(style, clinic, "Periodontograma", story, _total)
+    if _total is None:
+        return generar_pdf(exam, style, clinic, incluir, _total=paginas)
+    return pdf

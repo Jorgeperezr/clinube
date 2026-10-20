@@ -255,7 +255,7 @@ class Form033PDFExportView(APIView):
     def get(self, request, pk):
         from django.http import HttpResponse
 
-        from apps.clinical.form033_pdf import build_form033_pdf
+        from apps.clinical.form033_pdf import SECCIONES_033, build_form033_pdf
         from apps.clinical.models import (
             Diagnosis,
             ExamRequest,
@@ -264,6 +264,7 @@ class Form033PDFExportView(APIView):
             PeriodontalExam,
             TreatmentPlanItem,
         )
+        from apps.clinical.views import _incluir
         from apps.common.document_style import clinic_snapshot, get_document_style
         from apps.patients.models import PatientDocument
 
@@ -321,6 +322,7 @@ class Form033PDFExportView(APIView):
             clinic=clinic_snapshot(request.tenant), color=get_document_style(request.tenant).primary,
             periodontal=PeriodontalExam.objects.filter(tenant=request.tenant, patient=patient)
             .prefetch_related("teeth").first(),
+            incluir=_incluir(request, SECCIONES_033),
         )
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         filename = f"form033_{patient.national_id or patient.id}.pdf"

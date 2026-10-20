@@ -196,6 +196,64 @@ export function SiteNumberRow({
   );
 }
 
+/** Pronóstico individual de la pieza (McGuire y Nunn). */
+export const PRONOSTICOS = [
+  ["", "—", "Sin valorar"], ["bueno", "B", "Bueno"], ["reservado", "R", "Reservado"],
+  ["malo", "M", "Malo"], ["imposible", "I", "Imposible"],
+];
+
+export function PronosticoSelect({ value, onChange, label, disabled }) {
+  const color = { bueno: "var(--green)", reservado: "var(--amber)", malo: "var(--red)",
+                  imposible: "var(--red)" }[value] || "var(--ink)";
+  return (
+    <select value={value || ""} onChange={(e) => onChange(e.target.value)} disabled={disabled}
+            aria-label={label} title={PRONOSTICOS.find(([k]) => k === (value || ""))?.[2]}
+            style={{ width: CELL_W + 8, fontSize: 10.5, padding: "1px 2px", textAlign: "center",
+                     borderRadius: 4, border: "1px solid var(--line)", background: "var(--elev)",
+                     color, fontWeight: value ? 700 : 400, display: "block", margin: "0 auto",
+                     cursor: disabled ? "not-allowed" : "pointer" }}>
+      {PRONOSTICOS.map(([k, corto, largo]) => <option key={k} value={k} title={largo}>{corto}</option>)}
+    </select>
+  );
+}
+
+/** Un número por pieza (ancho de encía queratinizada, en mm). */
+export function CampoPieza({ value, onChange, label, disabled, max = 15 }) {
+  const [borrador, setBorrador] = useState(null);
+  return (
+    <input type="text" inputMode="numeric" disabled={disabled} aria-label={label} title={label}
+           value={borrador ?? String(value ?? 0)}
+           onFocus={(e) => e.target.select()} onBlur={() => setBorrador(null)}
+           onChange={(e) => {
+             const t = e.target.value.trim();
+             if (!/^\d{0,2}$/.test(t)) return;
+             setBorrador(t);
+             if (t !== "") onChange(Math.min(max, Number(t)));
+           }}
+           style={{ width: 24, height: 16, padding: 0, textAlign: "center", fontSize: 10, borderRadius: 2,
+                    border: "1px solid var(--line)", background: "var(--elev)", color: "var(--ink)",
+                    display: "block", margin: "0 auto" }} />
+  );
+}
+
+/** Valores calculados de los tres sitios (nivel de inserción): solo lectura. */
+export function SiteValueRow({ values, base, orden = [0, 1, 2], alerta = 4 }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 1, justifyContent: "center", width: "100%" }}>
+      {orden.map((i) => {
+        const v = values?.[base + i] ?? 0;
+        return (
+          <span key={i} className="tabular" title={SITIO[i]}
+                style={{ width: 14, textAlign: "center", fontSize: 10,
+                         color: v > alerta ? "var(--red)" : "var(--ink-soft)", fontWeight: v > alerta ? 700 : 400 }}>
+            {v}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /** Celda de estado clínico por superficie (sincronizada con el odontograma). */
 export function SurfaceStateCell({ code, surface, state, active, onSelect, surfaceLabel }) {
   return (

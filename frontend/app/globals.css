@@ -1586,3 +1586,62 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
 .campo-clave button:hover { color: var(--ink); background: color-mix(in srgb, var(--line) 60%, transparent); }
 .campo-clave button:focus-visible { outline: 2px solid var(--petrol); outline-offset: 1px; }
 .campo-clave button[aria-pressed="true"] { color: var(--petrol); }
+
+/* Vista previa de documentos antes de descargar (lib/VistaPreviaPDF.js). */
+.vista-pdf {
+  position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column;
+  background: #0f172a; color: #fff;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.vista-pdf-barra { display: flex; align-items: center; gap: 8px; padding: 10px 14px; flex-wrap: wrap; }
+.vista-pdf-barra strong { font-size: 15px; }
+.vista-pdf-espacio { flex: 1; }
+.vista-pdf-boton {
+  border: none; border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: rgba(255, 255, 255, .14); color: #fff;
+}
+.vista-pdf-boton:hover:not(:disabled) { background: rgba(255, 255, 255, .24); }
+.vista-pdf-boton:disabled { opacity: .5; cursor: default; }
+.vista-pdf-principal { background: var(--petrol); color: var(--on-brand, #fff); }
+.vista-pdf-principal:hover:not(:disabled) { background: var(--petrol-deep); }
+.vista-pdf-solo-movil { display: none; }
+.vista-pdf-cuerpo { flex: 1; min-height: 0; display: flex; gap: 14px; padding: 0 14px 14px; }
+.vista-pdf-panel {
+  width: 270px; flex-shrink: 0; overflow-y: auto; background: var(--card); color: var(--ink);
+  border-radius: 12px; padding: 16px;
+}
+.vista-pdf-panel h3 { margin: 0 0 4px; font-size: 15px; }
+.vista-pdf-panel > p { margin: 0 0 12px; font-size: 12.5px; color: var(--ink-soft); }
+.vista-pdf-opcion { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; font-size: 14px; cursor: pointer; }
+.vista-pdf-opcion input { margin-top: 3px; }
+.vista-pdf-opcion small { display: block; font-size: 12px; color: var(--ink-soft); }
+.vista-pdf-atajos { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.vista-pdf-atajos button {
+  flex: 1; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px;
+  padding: 6px; font-size: 12.5px; cursor: pointer;
+}
+.vista-pdf-hoja { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.vista-pdf-hoja iframe { flex: 1; width: 100%; border: none; border-radius: 10px; background: #fff; }
+.vista-pdf-cargando {
+  position: absolute; top: 12px; right: 12px; z-index: 1; font-size: 12.5px; font-weight: 600;
+  padding: 5px 10px; border-radius: 999px; background: rgba(15, 23, 42, .75); color: #fff;
+}
+@media (max-width: 760px) {
+  .vista-pdf-solo-movil { display: inline-block; }
+  .vista-pdf-cuerpo { flex-direction: column; }
+  .vista-pdf-panel { width: auto; max-height: 42vh; }
+}
+
+/* Periodontograma (lib/periodontal/PeriodontalMatrix.js). */
+.perio-barra { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.perio-barra .btn { font-size: 12.5px; }
+.perio-exploracion { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+.perio-exploracion span { font-weight: 700; letter-spacing: .05em; text-transform: uppercase; font-size: 11px; color: var(--ink-faint); }
+.perio-exploracion select { font-size: 13px; padding: 4px 8px; }
+.perio-borrar { color: var(--red); }
+.perio-derecha { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.perio-indices {
+  display: flex; gap: 8px 20px; flex-wrap: wrap; padding: 10px 12px; border-top: 1px solid var(--line);
+  background: var(--paper); font-size: 12.5px;
+}
+.perio-indices > span > span { color: var(--ink-soft); }

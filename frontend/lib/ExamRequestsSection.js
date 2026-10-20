@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, readList } from "./api";
+import VistaPreviaPDF from "./VistaPreviaPDF";
 
 const CATEGORIES = {
   biometria: "Biometría", quimica_sanguinea: "Química sanguínea",
@@ -20,6 +21,7 @@ export default function ExamRequestsSection({ patientId }) {
   const [reportText, setReportText] = useState("");
   const [form, setForm] = useState({ category: "biometria", detail: "", justification: "", observations: "", priority: "normal" });
   const [error, setError] = useState("");
+  const [vistaExamen, setVistaExamen] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,16 +46,10 @@ export default function ExamRequestsSection({ patientId }) {
     } catch (err) { setError(err.message); }
   }
 
-  async function openExamPdf(exam) {
+  // Antes de descargar o imprimir, la vista previa (lib/VistaPreviaPDF.js).
+  function openExamPdf(exam) {
     setError("");
-    try {
-      const resp = await api(`/patients/${patientId}/exam-requests/${exam.id}/pdf/`);
-      if (!resp.ok) throw new Error(`No se pudo generar el PDF (error ${resp.status}).`);
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      setTimeout(() => URL.revokeObjectURL(url), 15000);
-    } catch (err) { setError(err.message); }
+    setVistaExamen(exam);
   }
 
   async function saveReport(exam) {
@@ -70,6 +66,10 @@ export default function ExamRequestsSection({ patientId }) {
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
+      {vistaExamen && (
+        <VistaPreviaPDF titulo="Solicitud de examen" ruta={`/patients/${patientId}/exam-requests/${vistaExamen.id}/pdf/`}
+                        nombre="solicitud_examen.pdf" onCerrar={() => setVistaExamen(null)} />
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Exámenes complementarios</h3>
         {!adding && (

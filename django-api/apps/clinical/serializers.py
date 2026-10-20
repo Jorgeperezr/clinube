@@ -211,8 +211,8 @@ class PeriodontalToothSerializer(serializers.ModelSerializer):
         fields = [
             "id", "tooth_code", "is_present", "has_implant", "mobility",
             "furcation_buccal", "furcation_lingual", "gum_width",
-            "probing_depth", "gingival_margin", "bleeding", "plaque",
-            "attachment_level", "notes",
+            "probing_depth", "gingival_margin", "bleeding", "suppuration", "plaque",
+            "prognosis", "attachment_level", "notes",
         ]
         read_only_fields = ["id"]
 
@@ -251,6 +251,21 @@ class PeriodontalToothSerializer(serializers.ModelSerializer):
     def validate_plaque(self, v):
         return self._series(v, "Placa", bool)
 
+    def validate_suppuration(self, v):
+        return self._series(v, "Supuración", bool)
+
+    def validate_furcation_buccal(self, v):
+        if not 0 <= v <= 3:
+            raise serializers.ValidationError("La furcación va de 0 a 3.")
+        return v
+
+    validate_furcation_lingual = validate_furcation_buccal
+
+    def validate_gum_width(self, v):
+        if not 0 <= v <= 15:
+            raise serializers.ValidationError("El ancho de encía va de 0 a 15 mm.")
+        return v
+
     def validate_mobility(self, v):
         if not 0 <= v <= 3:
             raise serializers.ValidationError("La movilidad va de 0 a 3.")
@@ -261,16 +276,22 @@ class PeriodontalExamSerializer(serializers.ModelSerializer):
     teeth = PeriodontalToothSerializer(many=True, read_only=True)
     statistics = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
 
     class Meta:
         from apps.clinical.models import PeriodontalExam
         model = PeriodontalExam
-        fields = ["id", "date", "notes", "teeth", "statistics",
+        fields = ["id", "date", "notes", "teeth", "statistics", "patient_name",
                   "created_by_name", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+        # Sin fecha, la de hoy en la clínica (la pone la vista al crear).
+        extra_kwargs = {"date": {"required": False}}
 
     def get_created_by_name(self, obj):
         return (obj.created_by.full_name or obj.created_by.email) if obj.created_by else "—"
+
+    def get_patient_name(self, obj):
+        return obj.patient.full_name
 
     def get_statistics(self, obj):
         """
@@ -284,30 +305,43 @@ class PeriodontalExamSerializer(serializers.ModelSerializer):
         suma_cal = 0
         con_placa = 0
         con_sangrado = 0
+        con_supuracion = 0
+        bolsas = 0
+        piezas = 0
         for t in obj.teeth.all():
             if not t.is_present:
                 continue
+            piezas += 1
             pd = t.probing_depth or []
             gm = t.gingival_margin or []
             bl = t.bleeding or []
             pl = t.plaque or []
+            su = t.suppuration or []
             for i in range(t.SITES):
                 sitios += 1
                 p = pd[i] if i < len(pd) else 0
                 g = gm[i] if i < len(gm) else 0
                 suma_pd += p
                 suma_cal += p + g
+                bolsas += 1 if p > 4 else 0
                 if i < len(bl) and bl[i]:
                     con_sangrado += 1
                 if i < len(pl) and pl[i]:
                     con_placa += 1
+                if i < len(su) and su[i]:
+                    con_supuracion += 1
         if sitios == 0:
-            return {"sites": 0, "mean_probing_depth": 0, "mean_attachment_level": 0,
-                    "plaque_percent": 0, "bleeding_percent": 0}
+            return {"sites": 0, "teeth": 0, "mean_probing_depth": 0, "mean_attachment_level": 0,
+                    "plaque_percent": 0, "bleeding_percent": 0, "suppuration_percent": 0,
+                    "deep_sites": 0}
         return {
             "sites": sitios,
+            "teeth": piezas,
             "mean_probing_depth": round(suma_pd / sitios, 2),
             "mean_attachment_level": round(suma_cal / sitios, 2),
             "plaque_percent": round(con_placa * 100 / sitios, 2),
             "bleeding_percent": round(con_sangrado * 100 / sitios, 2),
+            "suppuration_percent": round(con_supuracion * 100 / sitios, 2),
+            # Sitios con más de 4 mm de sondaje: la bolsa que pide tratamiento.
+            "deep_sites": bolsas,
         }

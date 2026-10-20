@@ -672,6 +672,14 @@ class PeriodontalTooth(TenantAwareModel):
     gingival_margin = models.JSONField(default=list, blank=True, help_text="6 enteros (mm).")
     bleeding = models.JSONField(default=list, blank=True, help_text="6 booleanos.")
     plaque = models.JSONField(default=list, blank=True, help_text="6 booleanos.")
+    # Supuración al sondaje, por sitio: va con el sangrado en la misma fila
+    # de la ficha («Sangrado / Supuración»), pero es otro signo clínico.
+    suppuration = models.JSONField(default=list, blank=True, help_text="6 booleanos.")
+
+    # Pronóstico individual de la pieza (McGuire y Nunn).
+    PRONOSTICOS = [("", "Sin valorar"), ("bueno", "Bueno"), ("reservado", "Reservado"),
+                   ("malo", "Malo"), ("imposible", "Imposible")]
+    prognosis = models.CharField(max_length=10, choices=PRONOSTICOS, blank=True, default="")
 
     notes = models.CharField(max_length=255, blank=True)
 

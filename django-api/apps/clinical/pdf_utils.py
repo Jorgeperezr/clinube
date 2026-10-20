@@ -146,9 +146,14 @@ def generate_consent_pdf(consent, signature_path=None, style=None, clinic=None,
     return pdf
 
 
+# Secciones que se pueden quitar en la vista previa (?incluir=…). El
+# título con el nombre y la identificación del paciente sale siempre.
+SECCIONES_HISTORIA = ("datos", "antecedentes", "diagnosticos", "periodontograma", "evoluciones", "planes")
+
+
 def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
                                   style=None, clinic=None, background=None,
-                                  periodontal=None, _total_paginas=None) -> bytes:
+                                  periodontal=None, incluir=None, _total_paginas=None) -> bytes:
     """
     Exporta la historia clínica completa de un paciente a PDF (RF-HCL-08).
 
@@ -158,7 +163,9 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
 
     `periodontal` es la última exploración periodontal (`PeriodontalExam`),
     o None: se dibuja con sus líneas de margen y de fondo de bolsa.
+    `incluir` es el conjunto de SECCIONES_HISTORIA que se quieren (None: todas).
     """
+    incluir = set(SECCIONES_HISTORIA) if incluir is None else set(incluir)
     from apps.common.document_style import ahora_local, fecha_documento, get_document_style
 
     style = style or get_document_style(None)
@@ -187,15 +194,17 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
         story.append(style.section_flowable(titulo, numero))
 
     # Datos del paciente
-    seccion("Datos del paciente")
-    sexo = {"H": "Masculino", "M": "Femenino"}.get(getattr(patient, "sex", ""), getattr(patient, "sex", "") or "—")
-    story.append(style.fields_table([
-        [("Nombre", patient.full_name, 2), ("Identificación", patient.national_id)],
-        [("Fecha de nacimiento", fecha_documento(patient.birth_date) if patient.birth_date else "—"),
-         ("Sexo", sexo), ("Teléfono", getattr(patient, "phone", "") or "—")],
-    ]))
+    if "datos" in incluir:
+        seccion("Datos del paciente")
+        sexo = {"H": "Masculino", "M": "Femenino"}.get(getattr(patient, "sex", ""),
+                                                       getattr(patient, "sex", "") or "—")
+        story.append(style.fields_table([
+            [("Nombre", patient.full_name, 2), ("Identificación", patient.national_id)],
+            [("Fecha de nacimiento", fecha_documento(patient.birth_date) if patient.birth_date else "—"),
+             ("Sexo", sexo), ("Teléfono", getattr(patient, "phone", "") or "—")],
+        ]))
 
-    if background is not None:
+    if background is not None and "antecedentes" in incluir:
         seccion("Antecedentes médicos")
         embarazo = {True: "Sí", False: "No"}.get(background.is_pregnant, "Sin dato")
         story.append(style.fields_table([
@@ -206,18 +215,19 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
         ]))
 
     # Diagnósticos
-    seccion("Diagnósticos")
-    if diagnoses:
-        story.append(tabla(
-            ["Fecha", "Pieza", "CIE-10", "Diagnóstico"],
-            [[fecha_documento(d.date), d.tooth_fdi_code or "—", d.code or "—", d.description]
-             for d in diagnoses],
-            [0.14, 0.09, 0.12, 0.65]))
-    else:
-        story.append(Paragraph("Sin diagnósticos registrados.", styles["Normal"]))
+    if "diagnosticos" in incluir:
+        seccion("Diagnósticos")
+        if diagnoses:
+            story.append(tabla(
+                ["Fecha", "Pieza", "CIE-10", "Diagnóstico"],
+                [[fecha_documento(d.date), d.tooth_fdi_code or "—", d.code or "—", d.description]
+                 for d in diagnoses],
+                [0.14, 0.09, 0.12, 0.65]))
+        else:
+            story.append(Paragraph("Sin diagnósticos registrados.", styles["Normal"]))
 
     # Periodontograma: la última exploración, dibujada como en el panel.
-    if periodontal is not None:
+    if periodontal is not None and "periodontograma" in incluir:
         from reportlab.platypus import KeepTogether
 
         from apps.clinical.periodontograma_pdf import Periodontograma, resumen
@@ -235,6 +245,7 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
                        '<font color="#2f6fd6"><b>——</b></font> Fondo de bolsa &nbsp;&nbsp; '
                        '<font backColor="#d5e2f7">&nbsp;&nbsp;&nbsp;&nbsp;</font> Bolsa &nbsp;&nbsp; '
                        '<font color="#d64545"><b>•</b></font> Sangrado al sondaje &nbsp;&nbsp; '
+                       '<font color="#d99a00"><b>o</b></font> Supuración &nbsp;&nbsp; '
                        'En rojo, sondajes de más de 4 mm.')
             story.append(KeepTogether([
                 Paragraph(texto, styles["Normal"]), Spacer(1, 4),
@@ -246,41 +257,43 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
                 story.append(_p(periodontal.notes, styles["Normal"]))
 
     # Evoluciones
-    seccion("Evoluciones, recetas e indicaciones")
-    if evolutions:
-        def autor(e):
-            if e.doctor_id:
-                return e.doctor.full_name
-            return getattr(e.created_by, "full_name", "") or "—"
-        story.append(tabla(
-            ["Fecha", "Tipo", "Profesional", "Detalle"],
-            [[fecha_documento(e.date), e.get_type_display(), autor(e), e.notes] for e in evolutions],
-            [0.13, 0.14, 0.2, 0.53]))
-    else:
-        story.append(Paragraph("Sin evoluciones registradas.", styles["Normal"]))
+    if "evoluciones" in incluir:
+        seccion("Evoluciones, recetas e indicaciones")
+        if evolutions:
+            def autor(e):
+                if e.doctor_id:
+                    return e.doctor.full_name
+                return getattr(e.created_by, "full_name", "") or "—"
+            story.append(tabla(
+                ["Fecha", "Tipo", "Profesional", "Detalle"],
+                [[fecha_documento(e.date), e.get_type_display(), autor(e), e.notes] for e in evolutions],
+                [0.13, 0.14, 0.2, 0.53]))
+        else:
+            story.append(Paragraph("Sin evoluciones registradas.", styles["Normal"]))
 
     # Planes de tratamiento
-    seccion("Planes de tratamiento")
-    if plans:
-        for plan in plans:
-            story.append(Paragraph(
-                f"<b>Plan {plan.get_status_display().lower()}</b> · creado el "
-                f"{fecha_documento(plan.created_at)}"
-                + (f" · {plan.description}" if getattr(plan, "description", "") else ""),
-                styles["Normal"]))
-            story.append(Spacer(1, 3))
-            items = list(plan.items.all())
-            if items:
-                story.append(tabla(
-                    ["Tratamiento", "Pieza", "Estado"],
-                    [[i.treatment.name, i.tooth_fdi_code or "—", i.get_status_display()] for i in items],
-                    [0.6, 0.12, 0.28]))
-            story.append(Spacer(1, 8))
-    else:
-        story.append(Paragraph("Sin planes de tratamiento.", styles["Normal"]))
+    if "planes" in incluir:
+        seccion("Planes de tratamiento")
+        if plans:
+            for plan in plans:
+                story.append(Paragraph(
+                    f"<b>Plan {plan.get_status_display().lower()}</b> · creado el "
+                    f"{fecha_documento(plan.created_at)}"
+                    + (f" · {plan.description}" if getattr(plan, "description", "") else ""),
+                    styles["Normal"]))
+                story.append(Spacer(1, 3))
+                items = list(plan.items.all())
+                if items:
+                    story.append(tabla(
+                        ["Tratamiento", "Pieza", "Estado"],
+                        [[i.treatment.name, i.tooth_fdi_code or "—", i.get_status_display()] for i in items],
+                        [0.6, 0.12, 0.28]))
+                story.append(Spacer(1, 8))
+        else:
+            story.append(Paragraph("Sin planes de tratamiento.", styles["Normal"]))
 
     pdf, paginas = _construir(style, clinic, "Historia clínica", story, _total_paginas)
     if _total_paginas is None:
         return generate_clinical_history_pdf(patient, evolutions, diagnoses, plans, style, clinic,
-                                             background, periodontal, _total_paginas=paginas)
+                                             background, periodontal, incluir, _total_paginas=paginas)
     return pdf
