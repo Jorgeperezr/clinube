@@ -2,12 +2,13 @@
 
 /**
  * Literal J del formulario MSP 033 — Índices CPO-ceo, calculados
- * automáticamente desde el odontograma, con botón de export del
- * formulario completo a PDF oficial.
+ * automáticamente desde el odontograma, con los botones de export: la
+ * historia clínica completa con el membrete y los colores de la clínica,
+ * y el formulario 033 en PDF y en la plantilla oficial del MSP.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./api";
+import { api, currentUser } from "./api";
 
 export default function CpoCeoCard({ patientId, refreshKey }) {
   const [data, setData] = useState(null);
@@ -22,10 +23,13 @@ export default function CpoCeoCard({ patientId, refreshKey }) {
 
   useEffect(() => { load(); }, [load, refreshKey]);
 
-  async function exportPdf() {
+  // La historia completa la exporta quien escribe en ella (admin y doctor).
+  const puedeHistoria = ["admin", "doctor"].includes(currentUser()?.role);
+
+  async function exportPdf(ruta = "form033/export-pdf/") {
     setError("");
     try {
-      const resp = await api(`/patients/${patientId}/form033/export-pdf/`);
+      const resp = await api(`/patients/${patientId}/${ruta}`);
       if (!resp.ok) throw new Error(`No se pudo generar el PDF (error ${resp.status}).`);
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);
@@ -65,7 +69,15 @@ export default function CpoCeoCard({ patientId, refreshKey }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Índices CPO-ceo</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={exportPdf}>
+          {puedeHistoria && (
+            <button className="btn btn-primary" style={{ fontSize: 13 }}
+                    onClick={() => exportPdf("clinical-record/export-pdf/")}
+                    title="Datos, antecedentes, diagnósticos, evoluciones y planes, con el membrete de la clínica">
+              Historia clínica (PDF)
+            </button>
+          )}
+          <button className={`btn ${puedeHistoria ? "btn-ghost" : "btn-primary"}`} style={{ fontSize: 13 }}
+                  onClick={() => exportPdf()}>
             Formulario 033 (PDF)
           </button>
           <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={exportXlsx}

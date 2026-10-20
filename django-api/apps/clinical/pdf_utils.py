@@ -148,13 +148,16 @@ def generate_consent_pdf(consent, signature_path=None, style=None, clinic=None,
 
 def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
                                   style=None, clinic=None, background=None,
-                                  _total_paginas=None) -> bytes:
+                                  periodontal=None, _total_paginas=None) -> bytes:
     """
     Exporta la historia clínica completa de un paciente a PDF (RF-HCL-08).
 
     `style` es el DocumentStyle de la clínica (Sprint 60). Antes eran
     párrafos corridos («2026-09-30 — Receta: …»); ahora cada bloque es una
     tabla con sus columnas, que es como se lee y se archiva una historia.
+
+    `periodontal` es la última exploración periodontal (`PeriodontalExam`),
+    o None: se dibuja con sus líneas de margen y de fondo de bolsa.
     """
     from apps.common.document_style import ahora_local, fecha_documento, get_document_style
 
@@ -213,6 +216,35 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
     else:
         story.append(Paragraph("Sin diagnósticos registrados.", styles["Normal"]))
 
+    # Periodontograma: la última exploración, dibujada como en el panel.
+    if periodontal is not None:
+        from reportlab.platypus import KeepTogether
+
+        from apps.clinical.periodontograma_pdf import Periodontograma, resumen
+
+        piezas = {t.tooth_code: t for t in periodontal.teeth.all()}
+        if piezas:
+            seccion("Periodontograma")
+            datos = resumen(piezas)
+            texto = f"Exploración del {fecha_documento(periodontal.date)}"
+            if datos:
+                texto += (f" · sondaje medio {datos['sondaje_medio']} mm · sangrado al sondaje "
+                          f"{datos['sangrado']} % · {datos['bolsas']} sitio(s) de más de 4 mm")
+            # Solo caracteres que tienen todas las fuentes del motor (WinAnsi).
+            leyenda = ('<font color="#d64545"><b>——</b></font> Margen gingival &nbsp;&nbsp; '
+                       '<font color="#2f6fd6"><b>——</b></font> Fondo de bolsa &nbsp;&nbsp; '
+                       '<font backColor="#d5e2f7">&nbsp;&nbsp;&nbsp;&nbsp;</font> Bolsa &nbsp;&nbsp; '
+                       '<font color="#d64545"><b>•</b></font> Sangrado al sondaje &nbsp;&nbsp; '
+                       'En rojo, sondajes de más de 4 mm.')
+            story.append(KeepTogether([
+                Paragraph(texto, styles["Normal"]), Spacer(1, 4),
+                Periodontograma(piezas, style.content_width), Spacer(1, 3),
+                Paragraph(leyenda, styles["Small"]),
+            ]))
+            if periodontal.notes:
+                story.append(Spacer(1, 3))
+                story.append(_p(periodontal.notes, styles["Normal"]))
+
     # Evoluciones
     seccion("Evoluciones, recetas e indicaciones")
     if evolutions:
@@ -250,5 +282,5 @@ def generate_clinical_history_pdf(patient, evolutions, diagnoses, plans,
     pdf, paginas = _construir(style, clinic, "Historia clínica", story, _total_paginas)
     if _total_paginas is None:
         return generate_clinical_history_pdf(patient, evolutions, diagnoses, plans, style, clinic,
-                                             background, _total_paginas=paginas)
+                                             background, periodontal, _total_paginas=paginas)
     return pdf

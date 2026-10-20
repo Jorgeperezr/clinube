@@ -261,8 +261,10 @@ class Form033PDFExportView(APIView):
             ExamRequest,
             Form033Record,
             InformedConsent,
+            PeriodontalExam,
             TreatmentPlanItem,
         )
+        from apps.common.document_style import clinic_snapshot, get_document_style
         from apps.patients.models import PatientDocument
 
         patient = _get_patient(request, pk)
@@ -316,6 +318,9 @@ class Form033PDFExportView(APIView):
             patient, request.tenant, form_record, diagnoses, cpo_ceo, professional,
             indicadores=indicadores, plan_items=plan_items, exams=exams,
             documents=documents, consents=consents,
+            clinic=clinic_snapshot(request.tenant), color=get_document_style(request.tenant).primary,
+            periodontal=PeriodontalExam.objects.filter(tenant=request.tenant, patient=patient)
+            .prefetch_related("teeth").first(),
         )
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         filename = f"form033_{patient.national_id or patient.id}.pdf"

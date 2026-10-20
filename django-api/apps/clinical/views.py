@@ -433,7 +433,7 @@ class ClinicalHistoryExportView(generics.GenericAPIView):
     def get(self, request, pk):
         from django.http import HttpResponse
 
-        from apps.clinical.models import Diagnosis, Evolution, TreatmentPlan
+        from apps.clinical.models import Diagnosis, Evolution, PeriodontalExam, TreatmentPlan
         from apps.clinical.pdf_utils import generate_clinical_history_pdf
 
         patient = _get_patient(request, pk)
@@ -455,12 +455,14 @@ class ClinicalHistoryExportView(generics.GenericAPIView):
             style=get_document_style(request.tenant),
             clinic=clinic_snapshot(request.tenant),
             background=MedicalBackground.objects.filter(patient=patient).first(),
+            periodontal=PeriodontalExam.objects.filter(tenant=request.tenant, patient=patient)
+            .prefetch_related("teeth").first(),
         )
         _audit(request, "export_clinical_history", "ClinicalRecord", patient.id)
 
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = (
-            f'attachment; filename="historia_clinica_{patient.national_id}.pdf"'
+            f'inline; filename="historia_clinica_{patient.national_id}.pdf"'
         )
         return response
 

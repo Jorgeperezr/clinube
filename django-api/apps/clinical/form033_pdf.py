@@ -2,6 +2,12 @@
 Export del formulario MSP HCU-form.033/2021 a PDF (Sprint 25).
 Reúne los literales A-P del paciente en un documento imprimible con el
 formato oficial del Ministerio de Salud Pública del Ecuador.
+
+Conserva su propio diseño —bandas lavanda, orden de los literales— y no
+pasa por el motor de estilos de documentos. Lo único de la clínica es el
+membrete: su logotipo, su nombre y su contacto arriba, y una línea en su
+color bajo el encabezado y en el pie. Sin logotipo, el nombre va centrado
+como antes.
 """
 
 import io
@@ -39,22 +45,97 @@ def _line(c, y, label, value, width):
     return yy - 1 * mm
 
 
+def _renglones(partes, fuente, cuerpo, ancho):
+    """Reparte los datos de contacto en renglones que caben en `ancho` (máximo dos)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    renglones, actual = [], ""
+    for parte in partes:
+        prueba = f"{actual}  ·  {parte}" if actual else parte
+        if actual and stringWidth(prueba, fuente, cuerpo) > ancho:
+            renglones.append(actual)
+            actual = parte
+        else:
+            actual = prueba
+    if actual:
+        renglones.append(actual)
+    return renglones[:2]
+
+
+def _membrete(c, y, width, tenant, clinic, color):
+    """Logotipo, nombre y contacto de la clínica; devuelve la nueva altura."""
+    clinic = clinic or {}
+    nombre = (clinic.get("name") or tenant.name).upper()
+    partes = [x for x in (
+        f"RUC {clinic['ruc']}" if clinic.get("ruc") else "",
+        clinic.get("address") or "", clinic.get("phone") or "", clinic.get("email") or "",
+    ) if x]
+    logo = clinic.get("logo_reader")
+    izquierda = 15 * mm
+    if logo is not None:
+        try:
+            iw, ih = logo.getSize()
+            alto = 16 * mm
+            ancho = min(alto * iw / ih, 42 * mm)
+            alto = ancho * ih / iw
+            c.drawImage(logo, izquierda, y - alto + 3 * mm, width=ancho, height=alto,
+                        mask="auto", preserveAspectRatio=True)
+            x = izquierda + ancho + 5 * mm
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(x, y - 2 * mm, nombre)
+            c.setFont("Helvetica", 7.5)
+            c.setFillColor(colors.HexColor("#4c6367"))
+            renglones = _renglones(partes, "Helvetica", 7.5, width - 15 * mm - x)
+            for i, renglon in enumerate(renglones):
+                c.drawString(x, y - (6.5 + 3.6 * i) * mm, renglon)
+            c.setFillColor(colors.black)
+            y -= max(alto, (6.5 + 3.6 * len(renglones)) * mm) + 1 * mm
+        except Exception:
+            logo = None     # logotipo ilegible: el membrete sale sin él
+    if logo is None:
+        c.setFont("Helvetica-Bold", 11)
+        c.setFillColor(colors.black)
+        c.drawCentredString(width / 2, y, nombre)
+        c.setFont("Helvetica", 7.5)
+        c.setFillColor(colors.HexColor("#4c6367"))
+        for renglon in _renglones(partes, "Helvetica", 7.5, width - 30 * mm):
+            y -= 4 * mm
+            c.drawCentredString(width / 2, y, renglon)
+        c.setFillColor(colors.black)
+        y -= 5 * mm
+    c.setStrokeColor(color)
+    c.setLineWidth(1.4)
+    c.line(15 * mm, y, width - 15 * mm, y)
+    y -= 5 * mm
+    c.setFont("Helvetica-Bold", 8)
+    c.setFillColor(colors.black)
+    c.drawCentredString(width / 2, y, "HISTORIA CLÍNICA ODONTOLÓGICA — SNS-MSP / HCU-form.033/2021")
+    return y - 8 * mm
+
+
 def build_form033_pdf(patient, tenant, form_record, diagnoses, cpo_ceo, professional,
                       indicadores=None, plan_items=None, exams=None,
-                      documents=None, consents=None):
-    """Devuelve los bytes del PDF del formulario 033 completo del paciente."""
+                      documents=None, consents=None, clinic=None, color=None, periodontal=None):
+    """
+    Devuelve los bytes del PDF del formulario 033 completo del paciente.
+
+    `clinic` es `clinic_snapshot(tenant)` y `color`, el principal de la
+    paleta de documentos de la clínica; sin ellos sale el encabezado de
+    siempre, solo con el nombre. `periodontal` es la última exploración
+    periodontal: se dibuja como en el panel, con sus líneas.
+    """
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
+    c.setTitle("Historia clínica odontológica (HCU-form.033)")
     width, height = A4
     y = height - 15 * mm
+    color = color or colors.HexColor("#4c6367")
 
-    # Encabezado institucional
-    c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(width / 2, y, tenant.name.upper())
-    y -= 5 * mm
-    c.setFont("Helvetica", 8)
-    c.drawCentredString(width / 2, y, "HISTORIA CLÍNICA ODONTOLÓGICA — SNS-MSP / HCU-form.033/2021")
-    y -= 8 * mm
+    def pie():
+        _footer(c, width, color, (clinic or {}).get("name") or tenant.name)
+
+    y = _membrete(c, y, width, tenant, clinic, color)
 
     # A. Datos del paciente
     y = _header_band(c, y, width, "DATOS DEL PACIENTE")
@@ -95,7 +176,7 @@ def build_form033_pdf(patient, tenant, form_record, diagnoses, cpo_ceo, professi
     def ensure(space):
         nonlocal y
         if y - space < 22 * mm:
-            _footer(c, width)
+            pie()
             c.showPage()
             y = height - 15 * mm
 
@@ -160,6 +241,24 @@ def build_form033_pdf(patient, tenant, form_record, diagnoses, cpo_ceo, professi
         for co in consents[:10]:
             y = _line(c, y, co["status"] + ":", f"{co['title']}  ({co['date']})", width)
 
+    # Periodontograma de la última exploración
+    piezas = {t.tooth_code: t for t in periodontal.teeth.all()} if periodontal is not None else {}
+    if piezas:
+        from apps.clinical.periodontograma_pdf import Periodontograma
+
+        dibujo = Periodontograma(piezas, width - 34 * mm)
+        _, alto = dibujo.wrap(0, 0)
+        ensure(alto + 18 * mm)
+        y = _header_band(c, y, width, f"PERIODONTOGRAMA — EXPLORACIÓN DEL {periodontal.date:%d/%m/%Y}")
+        dibujo.drawOn(c, 17 * mm, y - alto)
+        y -= alto + 2 * mm
+        c.setFont("Helvetica", 6.5)
+        c.setFillColor(colors.HexColor("#4c6367"))
+        c.drawString(17 * mm, y, "Rojo: margen gingival · Azul: fondo de bolsa · Sombreado: bolsa · "
+                                 "Punto rojo: sangrado al sondaje · En rojo, sondajes de más de 4 mm.")
+        c.setFillColor(colors.black)
+        y -= 7 * mm
+
     # Profesional (automático desde la credencial)
     ensure(26 * mm)
     y = _header_band(c, y, width, "PROFESIONAL RESPONSABLE")
@@ -167,15 +266,18 @@ def build_form033_pdf(patient, tenant, form_record, diagnoses, cpo_ceo, professi
     y = _line(c, y, "Registro:", professional.get("license_number") or "—", width)
     y = _line(c, y, "Fecha/hora:", professional.get("recorded_at", "—")[:19].replace("T", " "), width)
 
-    _footer(c, width)
+    pie()
     c.showPage()
     c.save()
     buf.seek(0)
     return buf.getvalue()
 
 
-def _footer(c, width):
+def _footer(c, width, color, clinica):
+    c.setStrokeColor(color)
+    c.setLineWidth(0.6)
+    c.line(15 * mm, 15 * mm, width - 15 * mm, 15 * mm)
     c.setFont("Helvetica-Oblique", 6)
     c.setFillColor(colors.HexColor("#4c6367"))
-    c.drawCentredString(width / 2, 12 * mm,
-                        "Documento generado por el sistema de gestión clínica — SNS-MSP / HCU-form.033/2021")
+    c.drawCentredString(width / 2, 11.5 * mm,
+                        f"{clinica} — SNS-MSP / HCU-form.033/2021 · Página {c.getPageNumber()}")
