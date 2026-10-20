@@ -23,6 +23,7 @@
 import { useEffect, useState } from "react";
 import { api, cambiarContrasena, currentUser, logout } from "../../lib/api";
 import PantallaAcceso from "../../lib/PantallaAcceso";
+import CampoClave from "../../lib/CampoClave";
 
 export default function CambiarContrasenaPage() {
   const [obligatorio, setObligatorio] = useState(null);   // null = averiguándolo
@@ -89,14 +90,14 @@ export default function CambiarContrasenaPage() {
         {!obligatorio && (
           <div className="field">
             <label htmlFor="actual">Contraseña actual</label>
-            <input id="actual" type="password" required autoComplete="current-password"
+            <CampoClave id="actual" required autoComplete="current-password"
                    value={actual} onChange={(e) => setActual(e.target.value)} />
           </div>
         )}
 
         <div className="field">
           <label htmlFor="nueva">Contraseña nueva</label>
-          <input id="nueva" type="password" required minLength={10} autoComplete="new-password"
+          <CampoClave id="nueva" required minLength={10} autoComplete="new-password"
                  value={nueva} onChange={(e) => setNueva(e.target.value)} />
           <small style={{ color: "var(--ink-soft)", fontSize: 12 }}>
             Al menos 10 caracteres. No puede ser la temporal ni una contraseña común.
@@ -105,7 +106,7 @@ export default function CambiarContrasenaPage() {
 
         <div className="field">
           <label htmlFor="repetida">Repítela</label>
-          <input id="repetida" type="password" required autoComplete="new-password"
+          <CampoClave id="repetida" required autoComplete="new-password"
                  value={repetida} onChange={(e) => setRepetida(e.target.value)} />
         </div>
 

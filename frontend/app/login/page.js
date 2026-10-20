@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { currentUser, login, loginConGoogle, RUTA_CAMBIO, RUTA_CONDICIONES } from "../../lib/api";
 import BotonGoogle from "../../lib/BotonGoogle";
+import CampoClave from "../../lib/CampoClave";
 import PantallaAcceso from "../../lib/PantallaAcceso";
 
 export default function LoginPage() {
@@ -60,8 +61,8 @@ export default function LoginPage() {
         </div>
         <div className="field">
           <label htmlFor="password">Contraseña</label>
-          <input
-            id="password" type="password" required autoComplete="current-password"
+          <CampoClave
+            id="password" required autoComplete="current-password"
             value={password} onChange={(e) => setPassword(e.target.value)}
           />
         </div>

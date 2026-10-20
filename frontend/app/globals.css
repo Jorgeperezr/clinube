@@ -1574,3 +1574,15 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
   .web-acciones .web-boton { flex: 1 1 100%; }
   .web-pie nav { margin-left: 0; }
 }
+
+/* Contraseña con el botón del ojo (lib/CampoClave.js). */
+.campo-clave { position: relative; display: block; }
+.campo-clave input { width: 100%; padding-right: 44px; }
+.campo-clave button {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 36px; height: 36px; display: grid; place-items: center; padding: 0;
+  border: none; border-radius: 8px; background: transparent; color: var(--ink-soft); cursor: pointer;
+}
+.campo-clave button:hover { color: var(--ink); background: color-mix(in srgb, var(--line) 60%, transparent); }
+.campo-clave button:focus-visible { outline: 2px solid var(--petrol); outline-offset: 1px; }
+.campo-clave button[aria-pressed="true"] { color: var(--petrol); }

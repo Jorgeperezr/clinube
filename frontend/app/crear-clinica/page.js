@@ -16,6 +16,7 @@ import CampoTelefono from "../../lib/CampoTelefono";
 import { LogoClinube, MARCA } from "../../lib/marca";
 import { useUrlApp } from "../../lib/sitio";
 import { initColorMode } from "../../lib/theme";
+import CampoClave from "../../lib/CampoClave";
 
 const TIPOS = [
   ["odontologia", "Odontología"],
@@ -191,11 +192,11 @@ function CrearClinica() {
                        className="web-codigo" value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))} />
               </Campo>
               <Campo etiqueta="Elige tu contraseña">
-                <input type="password" required minLength={10} autoComplete="new-password"
+                <CampoClave required minLength={10} autoComplete="new-password"
                        value={clave.una} onChange={(e) => setClave({ ...clave, una: e.target.value })} />
               </Campo>
               <Campo etiqueta="Repítela">
-                <input type="password" required minLength={10} autoComplete="new-password"
+                <CampoClave required minLength={10} autoComplete="new-password"
                        value={clave.otra} onChange={(e) => setClave({ ...clave, otra: e.target.value })} />
               </Campo>
             </div>

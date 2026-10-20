@@ -16,6 +16,7 @@ import { useSearchParams } from "next/navigation";
 
 import { apiBase, apiErrorMessage, sinRed } from "../../lib/api";
 import PantallaAcceso from "../../lib/PantallaAcceso";
+import CampoClave from "../../lib/CampoClave";
 
 async function enviar(paso, cuerpo) {
   const resp = await sinRed(() => fetch(`${apiBase()}/api/v1/auth/recovery/${paso}/`, {
@@ -147,12 +148,12 @@ function ElegirContrasena({ token, bienvenida }) {
       {error && <div className="error-box">{error}</div>}
       <div className="field">
         <label htmlFor="nueva">Contraseña nueva</label>
-        <input id="nueva" type="password" required minLength={10} autoComplete="new-password" autoFocus
+        <CampoClave id="nueva" required minLength={10} autoComplete="new-password" autoFocus
                value={nueva} onChange={(e) => setNueva(e.target.value)} />
       </div>
       <div className="field">
         <label htmlFor="repetida">Repítela</label>
-        <input id="repetida" type="password" required autoComplete="new-password"
+        <CampoClave id="repetida" required autoComplete="new-password"
                value={repetida} onChange={(e) => setRepetida(e.target.value)} />
       </div>
       <button className="btn btn-primary" style={anchoCompleto} disabled={ocupado}>
