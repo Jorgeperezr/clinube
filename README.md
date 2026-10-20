@@ -21,15 +21,17 @@ solicitud; por eso el nombre no dice «dental».
 | Área | Lo que incluye |
 |---|---|
 | **Pacientes y agenda** | Ficha completa, citas por profesional, sala de espera, recordatorios y confirmación desde la app. |
-| **Historia clínica** | Odontograma clásico y 3D, periodontograma, evoluciones, diagnósticos, índices CPO-ceo y formulario MSP 033 con su propio diseño. |
-| **Documentos** | Recetas y certificados con la firma y el registro del profesional, consentimientos, exámenes complementarios. Todos en PDF con el membrete de la clínica. |
+| **Historia clínica** | Odontograma en cuatro modelos (Esquema MSP, Anatómico, Periodontograma y 3D), evoluciones, diagnósticos, índices CPO-ceo y formulario MSP 033 con su propio diseño y el membrete de la clínica. |
+| **Periodontograma** | Por exploración con fecha: sondaje, margen gingival, nivel de inserción calculado, sangrado, supuración, placa, furcas, movilidad, encía queratinizada y pronóstico por pieza. Dibuja el margen y el fondo de bolsa sobre las piezas, calcula los índices y se exporta en PDF o en imagen PNG. Una exploración nueva hereda las ausencias y los implantes. |
+| **Documentos** | Historia clínica, formulario 033, periodontograma, recetas, certificados y solicitudes de examen en PDF con el membrete de la clínica. Antes de descargar se ve una vista previa, y donde el documento tiene partes opcionales se eligen ahí. |
 | **Cobros** | Presupuestos, planes de pago, convenios y tarifarios, bloqueo por morosidad. |
 | **Finanzas** | Ingresos y egresos, caja, honorarios con retención, rol de pagos con IESS, décimos, fondos de reserva, horas extra y anticipos (normativa de Ecuador). |
 | **App del paciente** | Sus citas, recetas y documentos, y mensajes con su consulta. El paciente crea su cuenta con su correo o con Google y la clínica le da acceso. |
-| **Cuentas** | Entrada con correo o Google, invitación al personal con la marca de la clínica, funciones a medida de cada persona. |
+| **Cuentas** | Entrada con correo o Google (con botón para ver la contraseña al escribirla), invitación al personal con la marca de la clínica, funciones a medida de cada persona. |
 | **Consultorio o clínica** | Un consultorio es la cuenta de una sola persona que administra y atiende. En una clínica, cualquier administrador puede marcarse «Atiende pacientes». |
 | **Copias de seguridad** | Cifradas, descargables por la administración de la clínica y verificadas restaurándolas. |
 | **Plataforma** | Alta de clínicas, solicitudes que llegan de la página pública, funciones contratadas por clínica y una clínica de pruebas para estrenar lo nuevo. |
+| **Buscadores e IA** | La portada se indexa en buscadores, pero los rastreadores de IA están excluidos (`robots.txt` y `X-Robots-Tag: noai`). El panel no se indexa en ningún sitio. El bloqueo de bots de Cloudflare se activa según DEPLOY.md. |
 
 Algunas funciones son **adicionales** y se activan por clínica desde
 Plataforma: WhatsApp, odontograma 3D, rachas y logros, entre otras (el
@@ -109,7 +111,7 @@ python manage.py test --settings=config.settings_test
 ```
 
 `config.settings_test` usa SQLite en memoria y tarda unos 20 segundos. Hoy
-son **764 pruebas**. El CI las pasa dos veces: la segunda con
+son **772 pruebas**. El CI las pasa dos veces: la segunda con
 `DJANGO_TIME_ZONE=Pacific/Kiritimati` (UTC+14), para que la fecha del
 servidor y la de la clínica no coincidan nunca. También corre con
 `DJANGO_DEBUG=True`.
