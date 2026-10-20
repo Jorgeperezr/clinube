@@ -1,0 +1,4 @@
+# app.clinube.com — el panel de las clínicas. Nada que indexar ni que
+# leer para nadie: todo lo que tiene valor está detrás del inicio de sesión.
+User-agent: *
+Disallow: /

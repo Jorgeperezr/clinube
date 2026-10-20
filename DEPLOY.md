@@ -859,3 +859,23 @@ clínica; Google no crea cuentas del equipo.
 
 No hay secreto que guardar: el panel solo usa el ID público, y la API
 comprueba la firma de Google con sus claves públicas.
+
+## Rastreadores de IA y buscadores
+
+Nginx ya pide que no se use nada para IA: la portada sirve un
+`robots.txt` que excluye a los rastreadores de IA conocidos (GPTBot,
+ClaudeBot, Google-Extended, CCBot, PerplexityBot…) y manda
+`X-Robots-Tag: noai, noimageai`; `app.clinube.com` sirve
+`robots-panel.txt` (`Disallow: /`) y `noindex, nofollow, noarchive`. Es
+una petición, y la respetan los rastreadores serios.
+
+El bloqueo de verdad lo hace Cloudflare, antes de que la petición llegue
+al servidor:
+
+1. dash.cloudflare.com → el dominio `clinube.com`.
+2. **Security** → **Bots** (en algunas cuentas, **AI Crawl Control**).
+3. Activar **Block AI bots** (o «Bloquear rastreadores de IA») para
+   todas las páginas.
+
+Nada de esto protege los datos de las clínicas: esos ya no son visibles
+para ningún rastreador porque están detrás del inicio de sesión.
