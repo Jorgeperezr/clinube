@@ -10,7 +10,7 @@ from calendar import monthrange
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from django.db.models import Sum
+from django.db.models import Count, Sum
 
 CERO = Decimal("0.00")
 CIEN = Decimal("100")
@@ -64,8 +64,13 @@ def resumen(tenant, desde, hasta):
     from apps.finanzas.models import Egreso, Liquidacion, RolPagos
 
     pagos = cobros(tenant, desde, hasta)
-    ingresos = _suma(pagos, "amount")
-    por_forma = [{"forma": FORMAS_COBRO.get(m, m), "total": str(_suma(pagos.filter(method=m), "amount"))}
+    # Una consulta agrupada por forma de pago da el total, el número de
+    # cobros y el desglose (antes eran cinco consultas con la misma suma).
+    por_metodo = {m: (centavos(t or 0), n) for m, t, n in
+                  pagos.values_list("method").annotate(t=Sum("amount"), n=Count("id")).order_by()}
+    ingresos = centavos(sum((t for t, _ in por_metodo.values()), CERO))
+    n_cobros = sum(n for _, n in por_metodo.values())
+    por_forma = [{"forma": FORMAS_COBRO.get(m, m), "total": str(por_metodo.get(m, (CERO, 0))[0])}
                  for m in FORMAS_COBRO]
 
     egresos = egresos_pagados(tenant, desde, hasta)
@@ -75,13 +80,18 @@ def resumen(tenant, desde, hasta):
         for fila in egresos.values("categoria__nombre").annotate(t=Sum("monto")).order_by("-t")
     ]
 
-    pendientes = Installment.objects.filter(
-        tenant=tenant, status__in=[Installment.Status.PENDING, Installment.Status.OVERDUE])
-    por_cobrar = centavos(sum((c.balance for c in pendientes.prefetch_related("payments")), CERO))
     from django.utils import timezone
 
-    vencido = centavos(sum((c.balance for c in pendientes.filter(due_date__lt=timezone.localdate())
-                            .prefetch_related("payments")), CERO))
+    # Las cuotas pendientes se leen una vez y de ahí sale lo vencido.
+    hoy = timezone.localdate()
+    por_cobrar = vencido = CERO
+    for cuota in Installment.objects.filter(
+            tenant=tenant, status__in=[Installment.Status.PENDING, Installment.Status.OVERDUE],
+    ).prefetch_related("payments"):
+        por_cobrar += cuota.balance
+        if cuota.due_date < hoy:
+            vencido += cuota.balance
+    por_cobrar, vencido = centavos(por_cobrar), centavos(vencido)
 
     cuentas = Egreso.objects.filter(tenant=tenant, anulado=False, estado=Egreso.Estado.POR_PAGAR)
     honorarios_pendientes = _suma(Liquidacion.objects.filter(
@@ -93,7 +103,7 @@ def resumen(tenant, desde, hasta):
         "desde": desde.isoformat(), "hasta": hasta.isoformat(),
         "ingresos": str(ingresos),
         "ingresos_por_forma": por_forma,
-        "cobros": pagos.count(),
+        "cobros": n_cobros,
         "egresos": str(total_egresos),
         "egresos_por_categoria": por_categoria,
         "utilidad": str(ingresos - total_egresos),
@@ -115,20 +125,35 @@ def obligaciones_pendientes(tenant, inicio):
 
 
 def serie(tenant, hasta, meses=6):
-    """Ingresos y egresos de los últimos meses, para el gráfico."""
-    filas = []
+    """
+    Ingresos y egresos de los últimos meses, para el gráfico: dos consultas
+    agrupadas por mes en lugar de dos por cada mes.
+    """
+    from django.db.models.functions import TruncMonth
+
+    meses_lista = []
     anio, mes = hasta.year, hasta.month
     for _ in range(meses):
-        desde_m = date(anio, mes, 1)
-        hasta_m = date(anio, mes, monthrange(anio, mes)[1])
-        ing = _suma(cobros(tenant, desde_m, hasta_m), "amount")
-        egr = _suma(egresos_pagados(tenant, desde_m, hasta_m))
-        filas.append({"mes": f"{anio}-{mes:02d}", "ingresos": str(ing), "egresos": str(egr),
-                      "utilidad": str(ing - egr)})
+        meses_lista.append((anio, mes))
         mes -= 1
         if mes == 0:
             anio, mes = anio - 1, 12
-    return list(reversed(filas))
+    meses_lista.reverse()
+    inicio = date(*meses_lista[0], 1)
+    fin = date(hasta.year, hasta.month, monthrange(hasta.year, hasta.month)[1])
+
+    def por_mes(qs, campo_fecha, campo):
+        return {(m.year, m.month): centavos(t or 0) for m, t in
+                qs.annotate(m=TruncMonth(campo_fecha)).values_list("m").annotate(t=Sum(campo)).order_by()}
+
+    ingresos = por_mes(cobros(tenant, inicio, fin), "date", "amount")
+    egresos = por_mes(egresos_pagados(tenant, inicio, fin), "fecha", "monto")
+    filas = []
+    for clave in meses_lista:
+        ing, egr = ingresos.get(clave, CERO), egresos.get(clave, CERO)
+        filas.append({"mes": f"{clave[0]}-{clave[1]:02d}", "ingresos": str(ing), "egresos": str(egr),
+                      "utilidad": str(ing - egr)})
+    return filas
 
 
 # ── Caja del día ─────────────────────────────────────────────────────

@@ -93,6 +93,7 @@ class InventoryMovement(TenantAwareModel):
         verbose_name = "Movimiento de inventario"
         verbose_name_plural = "Movimientos de inventario"
         ordering = ["-date"]
+        indexes = [models.Index(fields=["tenant", "-date"])]
 
     def __str__(self):
         return f"{self.get_movement_type_display()} {self.quantity} {self.product.name}"

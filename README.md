@@ -111,7 +111,7 @@ python manage.py test --settings=config.settings_test
 ```
 
 `config.settings_test` usa SQLite en memoria y tarda unos 20 segundos. Hoy
-son **772 pruebas**. El CI las pasa dos veces: la segunda con
+son **776 pruebas**. El CI las pasa dos veces: la segunda con
 `DJANGO_TIME_ZONE=Pacific/Kiritimati` (UTC+14), para que la fecha del
 servidor y la de la clínica no coincidan nunca. También corre con
 `DJANGO_DEBUG=True`.
@@ -164,6 +164,15 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 Las migraciones se aplican solas al arrancar.
+
+PostgreSQL arranca afinado para el servidor y Django reutiliza las
+conexiones. Con un servidor más grande se ajusta en el `.env` sin tocar
+el código (tabla por memoria en DEPLOY.md, «Base de datos y tamaño del
+servidor»). Para ver qué consultas gastan más tiempo con datos reales:
+
+```bash
+docker compose -f docker-compose.prod.yml exec django-api python manage.py consultas_lentas
+```
 
 ## Marca
 

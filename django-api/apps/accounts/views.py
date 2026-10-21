@@ -458,7 +458,7 @@ class AuditLogListView(generics.ListAPIView):
     filterset_fields = ["user", "entity_type", "action"]
 
     def get_queryset(self):
-        return AuditLog.objects.filter(tenant=self.request.tenant).order_by("-created_at")
+        return AuditLog.objects.filter(tenant=self.request.tenant).select_related("user").order_by("-created_at")
 
 
 class DeviceTokenRegisterView(generics.CreateAPIView):

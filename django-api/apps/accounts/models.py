@@ -153,6 +153,8 @@ class AuditLog(models.Model):
         indexes = [
             models.Index(fields=["user", "created_at"]),
             models.Index(fields=["entity_type", "entity_id"]),
+            # La lista de auditoría de una clínica, de la más reciente.
+            models.Index(fields=["tenant", "-created_at"]),
         ]
 
     def __str__(self):

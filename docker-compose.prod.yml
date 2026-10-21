@@ -17,6 +17,43 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Configuración para el tamaño del servidor. Los valores de fábrica de
+    # PostgreSQL son para una máquina de 512 MB; cada uno se ajusta en el
+    # .env sin tocar este archivo (tabla por memoria en DEPLOY.md, «Base de
+    # datos»). Los valores por omisión sirven para un servidor de 4 GB.
+    #   · shared_buffers ≈ 25 % de la RAM; effective_cache_size ≈ 60–75 %.
+    #   · random_page_cost 1.1 y effective_io_concurrency: el disco es SSD.
+    #   · jit off: compila cada consulta y en las cortas (todas las de
+    #     Clinube) tarda más en compilar que en ejecutar.
+    #   · pg_stat_statements: qué consultas gastan más tiempo, para medir en
+    #     vez de adivinar (`python manage.py consultas_lentas`).
+    #   · log_min_duration_statement: deja en el registro toda consulta que
+    #     pase de ese tiempo.
+    command: >
+      postgres
+      -c shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-3GB}
+      -c work_mem=${PG_WORK_MEM:-16MB}
+      -c maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-256MB}
+      -c max_connections=${PG_MAX_CONNECTIONS:-100}
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c wal_buffers=16MB
+      -c min_wal_size=512MB
+      -c max_wal_size=2GB
+      -c checkpoint_completion_target=0.9
+      -c default_statistics_target=100
+      -c autovacuum_vacuum_scale_factor=0.05
+      -c autovacuum_analyze_scale_factor=0.02
+      -c idle_in_transaction_session_timeout=60s
+      -c jit=off
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=top
+      -c log_min_duration_statement=${PG_LOG_LENTAS_MS:-500}
+    # Docker da 64 MB de memoria compartida y PostgreSQL la usa para las
+    # consultas en paralelo: con menos de lo que pide, fallan con «could not
+    # resize shared memory segment».
+    shm_size: ${PG_SHM_SIZE:-512mb}
     # El compose de desarrollo tenía esta sonda y el de producción no, así
     # que aquí `depends_on: postgres` solo esperaba a que el contenedor
     # arrancara. En un arranque en frío o tras reiniciar el host, `migrate`
@@ -49,7 +86,7 @@ services:
       sh -c "python manage.py migrate &&
              python manage.py bootstrap &&
              python manage.py collectstatic --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60"
     volumes:
       - media_data:/app/media
     depends_on:
@@ -72,7 +109,7 @@ services:
     # No arranca con claves de ejemplo ni con DEBUG (config/produccion.py).
     environment:
       DJANGO_ENTORNO: produccion
-    command: celery -A config worker -l info --concurrency 2
+    command: celery -A config worker -l info --concurrency ${CELERY_CONCURRENCY:-2}
     depends_on:
       django-api:
         condition: service_healthy

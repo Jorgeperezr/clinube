@@ -11,9 +11,11 @@ reevaluar el pasado, y las pruebas no dependen de la fecha en que se
 ejecuten, que es de donde han salido varios fallos de este proyecto.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Q
+
+from apps.common.fechas import rango_dias
 
 
 def _limites_del_mes(mes):
@@ -35,8 +37,8 @@ def asistio_a_sus_citas(paciente, mes):
 
     inicio, fin = _limites_del_mes(mes)
     citas = Appointment.objects.filter(
+        rango_dias("scheduled_start", inicio, fin - timedelta(days=1)),
         patient=paciente, tenant=paciente.tenant,
-        scheduled_start__date__gte=inicio, scheduled_start__date__lt=fin,
     )
     completadas = citas.filter(status=Appointment.Status.COMPLETED).count()
     faltas = citas.filter(

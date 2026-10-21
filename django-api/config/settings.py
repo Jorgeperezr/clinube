@@ -159,6 +159,12 @@ DATABASES = {
         "PASSWORD": config("POSTGRES_PASSWORD", default="clinica"),
         "HOST": config("POSTGRES_HOST", default="postgres"),
         "PORT": config("POSTGRES_PORT", default="5432"),
+        # Conexiones persistentes: cada proceso de gunicorn reutiliza la suya
+        # durante este tiempo en vez de abrir una nueva (y autenticarse) en
+        # cada petición, que era lo que más tardaba en las peticiones cortas.
+        # La comprobación de salud la descarta si PostgreSQL se reinició.
+        "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=60, cast=int),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 

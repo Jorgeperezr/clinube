@@ -24,6 +24,7 @@ from apps.billing.serializers import (
     PayInstallmentSerializer,
     PaymentPlanSerializer,
 )
+from apps.common.fechas import rango_dias
 from apps.common.permisos_funcionalidad import RequiereFuncionalidad
 from apps.common.permissions import HasRole
 from apps.patients.models import Patient
@@ -441,11 +442,11 @@ class NewPatientsReportView(APIView):
         patients = Patient.objects.filter(tenant=request.tenant, is_active=True)
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
-        if date_from:
-            patients = patients.filter(created_at__date__gte=parse_date(date_from))
-        if date_to:
-            patients = patients.filter(created_at__date__lte=parse_date(date_to))
-        patients = patients.order_by("created_at")
+        patients = patients.filter(rango_dias("created_at", parse_date(date_from or ""), parse_date(date_to or "")))
+        # Solo las columnas que se muestran, y una sola lectura (antes se
+        # contaba con una consulta y se volvía a leer todo con otra).
+        patients = list(patients.order_by("created_at").only(
+            "first_name", "last_name", "national_id", "phone", "created_at"))
 
         if request.query_params.get("export") == "excel":
             rows = [
@@ -466,7 +467,7 @@ class NewPatientsReportView(APIView):
             return response
 
         return Response({
-            "count": patients.count(),
+            "count": len(patients),
             "patients": [
                 {"name": p.full_name, "national_id": p.national_id,
                  "registered": p.created_at.strftime("%Y-%m-%d")}
@@ -538,14 +539,12 @@ class AppointmentsSummaryReportView(APIView):
         appts = Appointment.objects.filter(tenant=request.tenant)
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
-        if date_from:
-            appts = appts.filter(scheduled_start__date__gte=parse_date(date_from))
-        if date_to:
-            appts = appts.filter(scheduled_start__date__lte=parse_date(date_to))
+        appts = appts.filter(rango_dias("scheduled_start", parse_date(date_from or ""), parse_date(date_to or "")))
 
-        by_status = {}
-        for a in appts.values_list("status", flat=True):
-            by_status[a] = by_status.get(a, 0) + 1
+        # Se cuentan en la base, no fila a fila en Python.
+        from django.db.models import Count
+
+        by_status = dict(appts.values_list("status").annotate(n=Count("id")).order_by())
 
         completed = by_status.get("completed", 0)
         no_show = by_status.get("no_show", 0)

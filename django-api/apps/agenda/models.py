@@ -119,6 +119,9 @@ class Appointment(TenantAwareModel):
             models.Index(fields=["tenant", "doctor", "scheduled_start"]),
             models.Index(fields=["tenant", "scheduled_start"]),
             models.Index(fields=["status"]),
+            # Las citas de un paciente y su próxima cita (lista de pacientes,
+            # ficha y app).
+            models.Index(fields=["patient", "scheduled_start"]),
         ]
 
     def __str__(self):

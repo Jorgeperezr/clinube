@@ -879,3 +879,38 @@ al servidor:
 
 Nada de esto protege los datos de las clínicas: esos ya no son visibles
 para ningún rastreador porque están detrás del inicio de sesión.
+
+## Base de datos y tamaño del servidor
+
+`docker-compose.prod.yml` arranca PostgreSQL con una configuración pensada
+para un servidor real (los valores de fábrica son para 512 MB) y Django
+reutiliza las conexiones (`DB_CONN_MAX_AGE`, 60 s) en vez de abrir una
+por petición. Sin tocar nada sirve para la máquina de Oracle de 6 GB.
+
+Con un servidor mayor, se ponen en el `.env` del servidor y se reinicia
+(`docker compose -f docker-compose.prod.yml up -d`; los datos no se tocan):
+
+| RAM del servidor | PG_SHARED_BUFFERS | PG_EFFECTIVE_CACHE_SIZE | PG_WORK_MEM | GUNICORN_WORKERS | CELERY_CONCURRENCY |
+|---|---|---|---|---|---|
+| 4–6 GB (por omisión) | 1GB | 3GB | 16MB | 3 | 2 |
+| 8 GB, 2 núcleos | 2GB | 5GB | 16MB | 5 | 2 |
+| 12 GB, 2–3 núcleos | 3GB | 8GB | 24MB | 5–7 | 3 |
+| 24 GB, 4 núcleos | 6GB | 16GB | 32MB | 9 | 4 |
+
+- `PG_SHARED_BUFFERS` ≈ 25 % de la RAM y `PG_EFFECTIVE_CACHE_SIZE` ≈ 65 %.
+- `GUNICORN_WORKERS` ≈ 2 × núcleos + 1. Cada proceso usa ~120 MB y una
+  conexión a PostgreSQL; `PG_MAX_CONNECTIONS` (100) sobra mientras
+  procesos de gunicorn + Celery no pasen de ~80.
+- Con más de 2 GB de `shared_buffers`, subir también `PG_SHM_SIZE` a `1gb`.
+
+Para ver qué consultas gastan más tiempo con los datos reales (el
+registro de PostgreSQL además deja toda consulta de más de 500 ms):
+
+```bash
+docker compose -f docker-compose.prod.yml exec django-api python manage.py consultas_lentas
+```
+```bash
+docker compose -f docker-compose.prod.yml exec django-api python manage.py consultas_lentas --por media
+```
+
+`--reiniciar` empieza a medir de cero (útil antes y después de un cambio).

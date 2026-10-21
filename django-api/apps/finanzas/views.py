@@ -86,12 +86,13 @@ class ResumenView(APIView):
             desde, hasta = calculos.mes_de(request.query_params.get("mes"))
         except (ValueError, TypeError):
             return Response({"detail": "El mes va como 2026-10."}, status=400)
-        anterior_hasta = desde - timezone.timedelta(days=1)
-        anterior = calculos.resumen(request.tenant, anterior_hasta.replace(day=1), anterior_hasta)
+        # El mes anterior es el penúltimo de la serie: no hace falta
+        # recalcular un resumen completo solo para tres cifras.
+        serie = calculos.serie(request.tenant, hasta)
         return Response({
             **calculos.resumen(request.tenant, desde, hasta),
-            "mes_anterior": {k: anterior[k] for k in ("ingresos", "egresos", "utilidad")},
-            "serie": calculos.serie(request.tenant, hasta),
+            "mes_anterior": {k: serie[-2][k] for k in ("ingresos", "egresos", "utilidad")},
+            "serie": serie,
         })
 
 

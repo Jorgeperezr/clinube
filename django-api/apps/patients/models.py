@@ -62,6 +62,8 @@ class Patient(TenantAwareModel, SoftDeleteModel):
         indexes = [
             models.Index(fields=["tenant", "national_id"]),
             models.Index(fields=["tenant", "last_name", "first_name"]),
+            # Pacientes nuevos por período y la lista ordenada por alta.
+            models.Index(fields=["tenant", "created_at"]),
         ]
 
     def __str__(self):

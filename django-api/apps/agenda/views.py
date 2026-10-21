@@ -14,6 +14,7 @@ from apps.agenda.serializers import (
     DoctorSerializer,
     RescheduleSerializer,
 )
+from apps.common.fechas import rango_dias
 from apps.common.permissions import HasRole
 
 logger = logging.getLogger("apps.agenda")
@@ -64,10 +65,7 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
 
         date_from = self.request.query_params.get("date_from")
         date_to = self.request.query_params.get("date_to")
-        if date_from:
-            qs = qs.filter(scheduled_start__date__gte=parse_date(date_from))
-        if date_to:
-            qs = qs.filter(scheduled_start__date__lte=parse_date(date_to))
+        qs = qs.filter(rango_dias("scheduled_start", parse_date(date_from or ""), parse_date(date_to or "")))
         return qs.order_by("scheduled_start")
 
     def create(self, request, *args, **kwargs):
@@ -243,9 +241,7 @@ class AgendaViewList(generics.ListAPIView):
             start = end = anchor
 
         qs = Appointment.objects.filter(
-            tenant=self.request.tenant,
-            scheduled_start__date__gte=start,
-            scheduled_start__date__lte=end,
+            rango_dias("scheduled_start", start, end), tenant=self.request.tenant,
         ).select_related("patient", "doctor", "doctor__user")
 
         doctor_id = self.request.query_params.get("doctor_id")
@@ -382,10 +378,10 @@ class WaitingPatientsView(APIView):
 
         today = timezone.localdate()
         qs = Appointment.objects.filter(
+            rango_dias("scheduled_start", today, today),
             tenant=request.tenant,
             checkin_at__isnull=False,
             attention_started_at__isnull=True,
-            scheduled_start__date=today,
         ).exclude(status__in=["cancelled", "no_show"]).select_related("patient", "doctor__user")
 
         if request.user.role == "doctor":

@@ -175,7 +175,11 @@ class Payment(TenantAwareModel):
     class Meta:
         verbose_name = "Pago"
         verbose_name_plural = "Pagos"
-        indexes = [models.Index(fields=["patient", "date"])]
+        indexes = [
+            models.Index(fields=["patient", "date"]),
+            # Reportes e ingresos de la clínica por período.
+            models.Index(fields=["tenant", "date"]),
+        ]
 
     def __str__(self):
         return f"Pago ${self.amount} — {self.patient} ({self.date})"

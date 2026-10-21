@@ -1,4 +1,5 @@
-from django.db.models import Count, Min, Q
+from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models.functions import Coalesce
 from rest_framework import generics
 from rest_framework.response import Response
 
@@ -60,12 +61,20 @@ class PatientListCreateView(generics.ListCreateAPIView):
             )
 
         # Anotaciones para ordenar/mostrar: nº de atenciones y próxima cita.
+        # Como subconsultas por paciente y no con un JOIN + GROUP BY: así
+        # PostgreSQL solo las calcula para las filas de la página (ordenando
+        # por nombre) y el conteo del paginador no toca las citas. Con miles
+        # de pacientes, el JOIN agrupaba todas las citas de la clínica en
+        # cada carga de la lista.
+        from apps.agenda.models import Appointment
+
+        citas = Appointment.objects.filter(patient=OuterRef("pk")).order_by()
         qs = qs.annotate(
-            attention_count=Count("appointments", distinct=True),
-            next_appointment=Min(
-                "appointments__scheduled_start",
-                filter=Q(appointments__scheduled_start__gte=timezone.now()),
-            ),
+            attention_count=Coalesce(
+                Subquery(citas.values("patient").annotate(n=Count("id")).values("n")[:1]), 0),
+            next_appointment=Subquery(
+                citas.filter(scheduled_start__gte=timezone.now())
+                .order_by("scheduled_start").values("scheduled_start")[:1]),
         )
 
         order = self.request.query_params.get("ordering", "name_asc")
