@@ -73,3 +73,21 @@ class DespliegueTests(SimpleTestCase):
     def test_celery_no_guarda_resultados(self):
         self.assertTrue(settings.CELERY_TASK_IGNORE_RESULT)
         self.assertEqual(settings.CELERY_WORKER_PREFETCH_MULTIPLIER, 1)
+
+
+class ContratoTests(SimpleTestCase):
+    """`exportar_contrato` sigue sacando las rutas y el modelo de datos (docs/contrato/)."""
+
+    def test_exporta_rutas_y_modelo(self):
+        import tempfile
+
+        from django.core.management import call_command
+
+        with tempfile.TemporaryDirectory() as carpeta:
+            call_command("exportar_contrato", destino=carpeta, sin_openapi=True, stdout=open(os.devnull, "w"))
+            rutas = (Path(carpeta) / "RUTAS.md").read_text()
+            modelo = (Path(carpeta) / "MODELO_DE_DATOS.md").read_text()
+        self.assertIn("| `/api/v1/auth/login/` | POST | StaffLoginView |", rutas)
+        self.assertIn("| `/api/v1/patients/` | GET POST |", rutas)
+        self.assertIn("### Appointment — `agenda_appointment`", modelo)
+        self.assertIn("opciones: `pending`, `confirmed`", modelo)

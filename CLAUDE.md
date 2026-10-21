@@ -122,6 +122,20 @@ procedural, y el sistema de lóbulos de desarrollo se mantiene.
 - **Las copias de seguridad son del administrador de la clínica**, no del
   superadministrador de la plataforma.
 
+## Contrato para la versión en Java/Kotlin
+
+`docs/contrato/` describe lo que `clinube_java` tiene que respetar: rutas,
+modelo de datos y OpenAPI (generados) y las reglas transversales
+(`LEEME.md`, a mano). **Si cambias rutas, modelos o el formato de una
+respuesta**, regenera y súbelo en el mismo commit:
+
+```sh
+bash scripts/exportar-contrato.sh
+```
+
+Si cambia una regla transversal (autenticación, errores, fechas, límites,
+PDF), actualiza también `docs/contrato/LEEME.md`.
+
 ## Idioma
 
 Código, comentarios, mensajes de commit y textos de interfaz en

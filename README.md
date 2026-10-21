@@ -113,7 +113,7 @@ python manage.py test --settings=config.settings_test
 ```
 
 `config.settings_test` usa SQLite en memoria y tarda unos 20 segundos. Hoy
-son **782 pruebas**. El CI las pasa dos veces: la segunda con
+son **783 pruebas**. El CI las pasa dos veces: la segunda con
 `DJANGO_TIME_ZONE=Pacific/Kiritimati` (UTC+14), para que la fecha del
 servidor y la de la clínica no coincidan nunca. También corre con
 `DJANGO_DEBUG=True`.
@@ -198,6 +198,8 @@ cómo está hecho y cómo regenerar los iconos.
 | [movil/EN-MI-MAC.md](movil/EN-MI-MAC.md) | Compilar y probar la app en un Mac, paso a paso. |
 | [movil/PUBLICAR.md](movil/PUBLICAR.md) | Publicar la app en App Store y Google Play. |
 | [QA-CHECKLIST.md](QA-CHECKLIST.md) | Recorrido manual del panel. |
+| [docs/contrato/](docs/contrato/LEEME.md) | El contrato del sistema (rutas, modelo de datos, OpenAPI y reglas transversales) para la versión en Java/Kotlin. Se regenera con `bash scripts/exportar-contrato.sh`. |
+| [docs/PROMPT_CLINUBE_JAVA.md](docs/PROMPT_CLINUBE_JAVA.md) | El encargo con el que se inició `clinube_java`. |
 | [docs/HISTORIAL.md](docs/HISTORIAL.md) | El diario de desarrollo, sprint a sprint, hasta el 91. |
 
 Código, comentarios, commits y textos de la interfaz van en castellano.
