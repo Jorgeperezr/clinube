@@ -25,7 +25,7 @@ Un sistema de gestión clínica multi-clínica, en castellano y para Ecuador:
 - finanzas con normativa ecuatoriana (IESS, décimos, rol de pagos, honorarios
   con retención);
 - inventario y reportes;
-- app del paciente en Flutter;
+- app del paciente (hoy en Flutter);
 - cuentas con correo y Google, e invitaciones;
 - panel de plataforma (superadministrador) y alta pública de clínicas;
 - consultorio de una sola persona o clínica con equipo;
@@ -36,11 +36,19 @@ Un sistema de gestión clínica multi-clínica, en castellano y para Ecuador:
 
 **Las mismas funcionalidades y la misma apariencia.** Para conseguirlo:
 
-- **El panel web (`frontend/`, Next.js) y la app (`movil/`, Flutter) se copian
-  de `clinube` tal cual.** Lo que reescribes es el **servidor**: tiene que
-  responder exactamente como el de Django, para que ninguno de los dos
-  clientes note el cambio. Si para que algo funcione tienes que tocar el
-  panel o la app, es que el servidor no respeta el contrato: corrígelo en el servidor.
+- **El panel web (`frontend/`, Next.js) se copia de `clinube` tal cual.** Lo
+  que reescribes es el **servidor**: tiene que responder exactamente como el
+  de Django, para que el panel no note el cambio. Si para que algo funcione
+  tienes que tocar el panel, es que el servidor no respeta el contrato:
+  corrígelo en el servidor.
+- **La app del paciente se reescribe en Kotlin** (Kotlin Multiplatform con
+  Compose Multiplatform: un solo código para Android e iOS), pero **al
+  final**, cuando el servidor ya responda igual que Django. Hasta entonces la
+  app Flutter (`movil/`) se copia sin tocarla y sirve de testigo: si funciona
+  contra el servidor de Kotlin, el contrato se cumple. Si se reescribieran los
+  dos lados a la vez, no se sabría de qué lado está cada fallo.
+- Al terminar, todo el proyecto es Kotlin salvo el panel web (ver «Por qué el
+  panel sigue en Next.js», en el punto 3).
 - **Base de datos compatible con la actual:** mismas tablas, columnas, tipos y
   restricciones (ver `docs/contrato/MODELO_DE_DATOS.md`). Así se podrá usar
   una copia de la base de producción y, llegado el día, cambiar un servidor
@@ -62,10 +70,23 @@ Un sistema de gestión clínica multi-clínica, en castellano y para Ecuador:
 | PDF | **OpenPDF** (LGPL/MPL) | **No uses iText 7: es AGPL.** |
 | Excel | Apache POI | Para la plantilla oficial MSP del 033 se reutiliza el mismo .xlsx de `clinube`. |
 | Correo | Spring Mail con el SMTP guardado en la base, mismas plantillas HTML | — |
-| Tareas programadas | `@Scheduled` con `zone = "America/Guayaquil"`; asíncronas con `@Async` o una cola en Redis | — |
+| Tareas programadas | `@Scheduled` con `zone = "America/Guayaquil"`; las asíncronas con `@Async` sobre hilos virtuales; ShedLock solo si algún día corre más de una instancia | Sustituyen a Celery y Celery Beat sin un proceso aparte. |
 | Concurrencia | Hilos virtuales (`spring.threads.virtual.enabled=true`) y HikariCP | — |
 | Pruebas | JUnit 5, Spring Boot Test, **Testcontainers** (PostgreSQL 16 y Redis 7), MockMvc o RestAssured | — |
 | JSON | Jackson con `SNAKE_CASE`, decimales como texto, fechas ISO con zona, UUID en texto | Igual que DRF. |
+| WhatsApp | Un módulo más del servidor | El gateway de clinube (FastAPI) es pequeño; así no queda Python en el proyecto. |
+| Estructura | Un solo proyecto Gradle con tres módulos: `backend`, `compartido` y `app` | El servidor y la app comparten código Kotlin. |
+| Modelos de la API | Módulo `compartido` (Kotlin Multiplatform) con las clases de las respuestas que usa la app, con kotlinx.serialization | Los usan la app y las pruebas del servidor, que leen sus propias respuestas con esas clases. Si se renombra un campo, el fallo sale al compilar o en las pruebas, no en el teléfono del paciente. |
+| App del paciente | Compose Multiplatform (Android e iOS), Ktor Client, kotlinx.serialization y kotlinx-datetime; los tokens en el Keychain (iOS) y en el Keystore (Android), nunca en almacenamiento en claro | Cubre lo mismo que hoy `http`, `flutter_secure_storage` e `intl` en la app Flutter. |
+
+### Por qué el panel sigue en Next.js
+
+Las alternativas del mundo Java (Vaadin, Thymeleaf con HTMX, Compose para web)
+obligarían a rehacer el panel entero, y lo más delicado no se puede portar:
+el odontograma 3D (three.js) y el periodontograma interactivo son JavaScript
+que corre en el navegador. Además, Spring Boot con un frontend React es la
+combinación habitual en los equipos Java. Si en algún momento crees que
+conviene cambiarlo, dímelo antes de tocar nada.
 
 ## 4. De dónde sacar la verdad
 
@@ -137,15 +158,19 @@ regenera con `bash ../clinube/scripts/exportar-contrato.sh` y mira el diff de
 ## 6. Estructura del repositorio
 
 ```
-backend/            Kotlin + Spring Boot (lo nuevo)
+backend/            Kotlin + Spring Boot: el servidor, con WhatsApp como un módulo más
+compartido/         Kotlin Multiplatform: modelos de la API para la app y las pruebas
+app/                Kotlin Multiplatform + Compose: la app del paciente (fase 14)
 frontend/           copia exacta de clinube/frontend
-movil/              copia exacta de clinube/movil
-whatsapp-gateway/   al final: portar el de clinube (FastAPI) o reutilizarlo tal cual
+movil/              copia exacta de clinube/movil (Flutter): testigo hasta que app/ la sustituya
 docs/               decisiones, progreso y diferencias encontradas
 scripts/            arranque local, comprobación del entorno, comparador de contrato
 docker-compose.yml  PostgreSQL 16, Redis 7 y Mailpit (correo de prueba) para desarrollo
-CLAUDE.md           convenciones (ver punto 10)
+settings.gradle.kts los tres módulos de Kotlin
+CLAUDE.md           convenciones (ver punto 11)
 ```
+
+`compartido/` y `app/` se crean cuando les toque; al principio basta con `backend/`.
 
 Haz un guion `scripts/sincronizar-clientes.sh` que copie `frontend/` y
 `movil/` desde `../clinube`, para traer los cambios cuando el original avance.
@@ -165,6 +190,16 @@ brew install --cask temurin@21
 ```sh
 brew install --cask docker
 ```
+
+Para la app de Kotlin, más adelante:
+
+```sh
+brew install --cask android-studio
+```
+
+Y para compilarla en iOS, **Xcode completo** desde la App Store: las Command
+Line Tools no bastan (`xcodebuild` falla con «requires Xcode»). Android se
+prueba con el emulador de Android Studio sin necesidad de Xcode.
 
 - Las dependencias de servicio (PostgreSQL, Redis, Mailpit) corren con
   `docker compose up -d`.
@@ -208,13 +243,23 @@ con un commit propio. Lleva un `docs/PROGRESO.md` generado a partir de
 8. Inventario y reportes (con Excel).
 9. Finanzas: ingresos, egresos, caja, honorarios, rol de pagos, IESS/SRI,
    décimos y exportación. **Las pruebas de cálculo de clinube se portan una a una.**
-10. App del paciente: código por correo, cuenta propia, Google, citas,
-    solicitudes, mensajes, saldo, logros.
+10. Rutas de la app del paciente en el servidor: código por correo, cuenta
+    propia, Google, citas, solicitudes, mensajes, saldo, logros. *Al terminar,
+    la app Flutter tiene que funcionar entera contra el servidor de Kotlin.*
 11. Plataforma: clínicas, solicitudes públicas, funcionalidades, correo SMTP,
     condiciones legales, auditoría.
 12. Copias de seguridad cifradas (compatibles con las de Django) y tareas
     programadas.
-13. WhatsApp (gateway y recordatorios).
+13. WhatsApp: lo que hoy hace `whatsapp-gateway`, como módulo del servidor,
+    y los recordatorios.
+14. **App del paciente en Kotlin** (`compartido/` y `app/`):
+    - las mismas pantallas, textos, colores y logotipo que la de Flutter
+      (`movil/lib/pantallas/`, `movil/lib/tema.dart`, `movil/lib/logo.dart`);
+    - el mismo identificador, `com.clinube.paciente`, en Android y en iOS,
+      para que llegue a las tiendas como una **actualización** de la actual y
+      no como otra app; en Android, firmada con la misma clave de subida (ver
+      `movil/PUBLICAR.md`);
+    - la app Flutter se retira solo cuando la nueva haga todo lo que hacía.
 
 ## 9. Cómo se demuestra la paridad
 
@@ -231,6 +276,9 @@ con un commit propio. Lleva un `docs/PROGRESO.md` generado a partir de
 - **La app Flutter:** sus pruebas usan respuestas capturadas de la API real
   (`movil/test/fixtures/`). Recaptúralas contra el servidor de Kotlin y
   comprueba que `flutter test` sigue pasando sin tocar las pruebas.
+- **La app de Kotlin:** pasa sus pruebas con esas mismas respuestas
+  capturadas, leídas con los modelos de `compartido/`, y se compara pantalla
+  por pantalla con capturas de la de Flutter.
 - **En el navegador:** abre el panel contra el servidor de Kotlin y recorre el
   módulo terminado, con capturas. Si algo se ve o se comporta distinto que
   con Django, el fallo está en el servidor.
@@ -262,7 +310,8 @@ con un commit propio. Lleva un `docs/PROGRESO.md` generado a partir de
   (`frontend/lib/odontogram/meshProvider.js`, `contract.js`, `registry.js`,
   `Odontogram3D.js`), `frontend/lib/ClinicalTabs.js`,
   `frontend/lib/Odontogram.js` y `frontend/lib/periodontal/PeriodontalMatrix.js`.
-  En general, el panel y la app no se modifican.
+  El panel y la app Flutter (`movil/`) no se modifican: llegan de `clinube`
+  con `scripts/sincronizar-clientes.sh`.
 - **Sin dependencias que no hagan falta**, y ninguna con licencia AGPL o GPL
   incompatible.
 - **Validar antes de cada commit:**
@@ -285,7 +334,7 @@ con un commit propio. Lleva un `docs/PROGRESO.md` generado a partir de
 
 1. Clona `clinube` al lado y lee lo del punto 4.
 2. Crea los cimientos de la fase 0:
-   - el proyecto Gradle con Spring Boot y Kotlin;
+   - el proyecto Gradle con el módulo `backend` (Spring Boot y Kotlin);
    - `CLAUDE.md`;
    - `docker-compose.yml` con PostgreSQL, Redis y Mailpit;
    - `scripts/comprobar-entorno.sh` y `scripts/start-local.sh`;
