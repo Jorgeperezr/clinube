@@ -159,7 +159,7 @@ DATABASES = {
         "PASSWORD": config("POSTGRES_PASSWORD", default="clinica"),
         "HOST": config("POSTGRES_HOST", default="postgres"),
         "PORT": config("POSTGRES_PORT", default="5432"),
-        # Conexiones persistentes: cada proceso de gunicorn reutiliza la suya
+        # Conexiones persistentes: cada hilo de gunicorn reutiliza la suya
         # durante este tiempo en vez de abrir una nueva (y autenticarse) en
         # cada petición, que era lo que más tardaba en las peticiones cortas.
         # La comprobación de salud la descarta si PostgreSQL se reinició.
@@ -283,11 +283,45 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition", "X-Backup-Records", "X-Backup-Arch
 # --------------------------------------------------------------------------
 # Celery / Redis (recordatorios, tareas programadas — ver Arquitectura v1.2)
 # --------------------------------------------------------------------------
+# ── Caché ───────────────────────────────────────────────────────────
+# Los límites de intentos (20/min por IP sin sesión, 5/min para pedir un
+# código) se cuentan en la caché. La de serie de Django vive en la memoria
+# de CADA proceso: con 3 procesos de gunicorn cada uno contaba por su lado
+# y quien insistiera tenía el triple de intentos. En Docker la caché es
+# Redis (base 1; la 0 es la cola de Celery), compartida por todos.
+# Sin CACHE_URL —el arranque local y las pruebas— sigue en memoria.
+CACHE_URL = config("CACHE_URL", default="")
+if CACHE_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_URL,
+            "KEY_PREFIX": "clinube",
+            "TIMEOUT": 300,
+        }
+    }
+
 CELERY_BROKER_URL = config("REDIS_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = config("REDIS_URL", default="redis://redis:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+# Nadie lee el resultado de una tarea (recordatorios, avisos): no se
+# guarda en Redis. Antes cada ejecución dejaba allí una entrada por un día.
+CELERY_TASK_IGNORE_RESULT = True
+# Una tarea por proceso a la vez: un lote de recordatorios largo no
+# acapara tareas que otro proceso libre podría hacer ya.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Cada proceso se renueva tras 200 tareas: PDF, imágenes y librerías
+# de red van dejando memoria que Python no devuelve.
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 200
+# Una tarea colgada (la API de WhatsApp que no contesta) no bloquea al
+# proceso para siempre. Holgado: los recordatorios de muchas clínicas
+# tardan, y cortar uno a medias es peor que esperar.
+CELERY_TASK_SOFT_TIME_LIMIT = 900
+CELERY_TASK_TIME_LIMIT = 960
+# Si Redis tarda en arrancar, el worker reintenta en vez de morir.
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # --------------------------------------------------------------------------
 # Integración con el microservicio de WhatsApp (FastAPI)

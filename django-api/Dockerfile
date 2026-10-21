@@ -5,10 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev gcc \
-    && rm -rf /var/lib/apt/lists/*
-
+# Sin compilador: todas las dependencias (psycopg2-binary incluido) llegan
+# ya compiladas para x86 y para el ARM del servidor de Oracle. Antes se
+# instalaban gcc y libpq-dev en cada imagen sin usarlos: cientos de MB y
+# un paso más en cada actualización.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

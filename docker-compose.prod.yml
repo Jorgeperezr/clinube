@@ -69,6 +69,18 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Cola de Celery (base 0) y caché de Django (base 1).
+    #   · appendonly: las tareas en cola sobreviven a un reinicio del
+    #     contenedor (antes se perdían: un recordatorio pendiente no salía).
+    #   · maxmemory + volatile-lru: con el tope lleno solo se descartan
+    #     claves con caducidad —las de la caché—, nunca las de la cola.
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory ${REDIS_MAXMEMORY:-256mb}
+      --maxmemory-policy volatile-lru
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 10s
@@ -82,11 +94,12 @@ services:
     # No arranca con claves de ejemplo ni con DEBUG (config/produccion.py).
     environment:
       DJANGO_ENTORNO: produccion
+      CACHE_URL: redis://redis:6379/1
     command: >
       sh -c "python manage.py migrate &&
              python manage.py bootstrap &&
              python manage.py collectstatic --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 60"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --threads ${GUNICORN_THREADS:-2} --timeout 60 --keep-alive 5"
     volumes:
       - media_data:/app/media
     depends_on:
@@ -109,6 +122,7 @@ services:
     # No arranca con claves de ejemplo ni con DEBUG (config/produccion.py).
     environment:
       DJANGO_ENTORNO: produccion
+      CACHE_URL: redis://redis:6379/1
     command: celery -A config worker -l info --concurrency ${CELERY_CONCURRENCY:-2}
     depends_on:
       django-api:
@@ -123,6 +137,7 @@ services:
     # No arranca con claves de ejemplo ni con DEBUG (config/produccion.py).
     environment:
       DJANGO_ENTORNO: produccion
+      CACHE_URL: redis://redis:6379/1
     command: celery -A config beat -l info
     depends_on:
       django-api:
@@ -177,5 +192,6 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
   media_data:
   frontend_static:

@@ -890,18 +890,25 @@ por petición. Sin tocar nada sirve para la máquina de Oracle de 6 GB.
 Con un servidor mayor, se ponen en el `.env` del servidor y se reinicia
 (`docker compose -f docker-compose.prod.yml up -d`; los datos no se tocan):
 
-| RAM del servidor | PG_SHARED_BUFFERS | PG_EFFECTIVE_CACHE_SIZE | PG_WORK_MEM | GUNICORN_WORKERS | CELERY_CONCURRENCY |
+| Servidor | PG_SHARED_BUFFERS | PG_EFFECTIVE_CACHE_SIZE | PG_WORK_MEM | GUNICORN_WORKERS | CELERY_CONCURRENCY |
 |---|---|---|---|---|---|
-| 4–6 GB (por omisión) | 1GB | 3GB | 16MB | 3 | 2 |
-| 8 GB, 2 núcleos | 2GB | 5GB | 16MB | 5 | 2 |
-| 12 GB, 2–3 núcleos | 3GB | 8GB | 24MB | 5–7 | 3 |
-| 24 GB, 4 núcleos | 6GB | 16GB | 32MB | 9 | 4 |
+| 4–6 GB, 1–2 núcleos (por omisión) | 1GB | 3GB | 16MB | 3 | 2 |
+| 8 GB, 2 núcleos | 2GB | 5GB | 16MB | 3 | 2 |
+| 12 GB, 3 núcleos | 3GB | 8GB | 24MB | 4 | 3 |
+| 24 GB, 4 núcleos | 6GB | 16GB | 32MB | 5 | 4 |
 
 - `PG_SHARED_BUFFERS` ≈ 25 % de la RAM y `PG_EFFECTIVE_CACHE_SIZE` ≈ 65 %.
-- `GUNICORN_WORKERS` ≈ 2 × núcleos + 1. Cada proceso usa ~120 MB y una
-  conexión a PostgreSQL; `PG_MAX_CONNECTIONS` (100) sobra mientras
-  procesos de gunicorn + Celery no pasen de ~80.
+- Gunicorn corre con **hilos**: `GUNICORN_WORKERS` ≈ núcleos (+1) y
+  `GUNICORN_THREADS` = 2. Medido con 6 descargas de PDF a la vez y alguien
+  navegando: 4 procesos × 2 hilos generan los mismos PDF por segundo que
+  3 procesos sin hilos, y quien navega pasa de 243 ms de mediana (475 ms
+  en el peor caso) a 13 ms (95 ms). Más hilos por proceso no ayuda: los
+  PDF compiten por el mismo núcleo.
+- Cada hilo tiene su conexión a PostgreSQL: procesos × hilos + Celery
+  tiene que quedar por debajo de `PG_MAX_CONNECTIONS` (100).
 - Con más de 2 GB de `shared_buffers`, subir también `PG_SHM_SIZE` a `1gb`.
+- Redis guarda la cola de Celery y la caché, con un tope de
+  `REDIS_MAXMEMORY` (256mb); si se llena, solo se descarta caché.
 
 Para ver qué consultas gastan más tiempo con los datos reales (el
 registro de PostgreSQL además deja toda consulta de más de 500 ms):

@@ -26,6 +26,8 @@ services:
   django-api:
     build: ./django-api
     env_file: .env
+    environment:
+      CACHE_URL: redis://redis:6379/1
     volumes:
       - ./django-api:/app
     ports:
@@ -54,6 +56,8 @@ services:
   celery-worker:
     build: ./django-api
     env_file: .env
+    environment:
+      CACHE_URL: redis://redis:6379/1
     volumes:
       - ./django-api:/app
     depends_on:
@@ -66,6 +70,8 @@ services:
   celery-beat:
     build: ./django-api
     env_file: .env
+    environment:
+      CACHE_URL: redis://redis:6379/1
     volumes:
       - ./django-api:/app
     depends_on:

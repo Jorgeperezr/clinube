@@ -1,0 +1,9 @@
+# Lo que no va dentro de la imagen. Los archivos subidos viven en el
+# volumen media_data; un .env aquí se quedaría grabado en la imagen.
+**/__pycache__
+**/*.pyc
+media/
+staticfiles/
+.env
+.env.*
+*.sqlite3

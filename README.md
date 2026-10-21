@@ -48,8 +48,10 @@ nginx/              Proxy de producción: dominio raíz → portada, app. → pa
 scripts/            Arranque local, servidor, copias de seguridad, Oracle
 ```
 
-PostgreSQL guarda los datos y Redis con Celery mueve las tareas en segundo
-plano (recordatorios, correos, copias). En producción todo corre con
+PostgreSQL guarda los datos; Redis es la cola de Celery (recordatorios y
+avisos en segundo plano) y la caché compartida, donde se cuentan los
+límites de intentos. Django corre en gunicorn con hilos detrás de nginx,
+que comprime las respuestas y reutiliza las conexiones. En producción todo corre con
 `docker-compose.prod.yml` en una máquina de Oracle Cloud *Always Free*,
 publicada con un túnel de Cloudflare: el servidor no abre puertos web a
 internet.
@@ -111,7 +113,7 @@ python manage.py test --settings=config.settings_test
 ```
 
 `config.settings_test` usa SQLite en memoria y tarda unos 20 segundos. Hoy
-son **776 pruebas**. El CI las pasa dos veces: la segunda con
+son **782 pruebas**. El CI las pasa dos veces: la segunda con
 `DJANGO_TIME_ZONE=Pacific/Kiritimati` (UTC+14), para que la fecha del
 servidor y la de la clínica no coincidan nunca. También corre con
 `DJANGO_DEBUG=True`.

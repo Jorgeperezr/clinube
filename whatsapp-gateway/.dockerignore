@@ -1,0 +1,6 @@
+# Lo que no va dentro de la imagen; un .env aquí se quedaría grabado en ella.
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+*.sqlite3
