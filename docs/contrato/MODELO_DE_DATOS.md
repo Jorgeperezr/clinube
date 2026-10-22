@@ -716,7 +716,7 @@ _Solicitud de clínica_
 | `created_at` | DateTimeField |  |  | se fija al crear |
 | `updated_at` | DateTimeField |  |  | se actualiza al guardar |
 | `tipo` | CharField |  |  | máx. 12; opciones: `odontologia`, `medicina`, `psicologia` |
-| `estado` | CharField |  |  | máx. 12; opciones: `verificando`, `pendiente`, `creada`, `atendida`, `descartada` |
+| `estado` | CharField |  |  | máx. 12; opciones: `pendiente`, `creada`, `atendida`, `descartada` |
 | `clinica` | CharField |  |  | máx. 150 |
 | `ruc` | CharField |  |  | máx. 13 |
 | `ciudad` | CharField |  |  | máx. 80 |
@@ -725,9 +725,6 @@ _Solicitud de clínica_
 | `telefono` | CharField |  |  | máx. 20 |
 | `mensaje` | TextField |  |  |  |
 | `modalidad` | CharField |  | 'clinica' | máx. 12; opciones: `clinica`, `consultorio` |
-| `codigo_hash` | CharField |  |  | máx. 128 |
-| `codigo_vence` | DateTimeField | sí |  |  |
-| `intentos` | PositiveSmallIntegerField |  | 0 |  |
 | `tenant_id` | ForeignKey | sí |  | → common.Tenant (SET_NULL) |
 | `ip` | GenericIPAddressField | sí |  | máx. 39 |
 | `nota` | CharField |  |  | máx. 300 |

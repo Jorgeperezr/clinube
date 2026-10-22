@@ -72,6 +72,16 @@ no se traducen ni se reescriben.
 - **Atender:** se atiende si hay ficha `Doctor` activa, no solo por rol (un
   administrador de consultorio atiende).
 
+## Altas desde la página pública
+
+Nadie crea una clínica desde la página: `POST /api/v1/publico/solicitudes/`
+deja una solicitud «pendiente» y responde `plazo_horas` (12 para medicina y
+psicología, `null` para odontología, que se responde a la brevedad). El
+Super Administrador la aprueba con `platform/solicitudes/{id}/aprobar/`:
+se crea la clínica con un administrador **sin contraseña** y le llega un
+enlace de un solo uso (72 horas) para elegirla, el mismo que el de las
+invitaciones del personal (`/recuperar/?token=…&bienvenida=1`).
+
 ## Fechas y zona horaria
 
 - Se guarda en UTC; «hoy», «este mes» y los filtros por día van en la zona

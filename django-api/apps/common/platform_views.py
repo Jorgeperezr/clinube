@@ -25,7 +25,7 @@ from rest_framework.views import APIView
 
 from apps.accounts import atencion
 from apps.accounts.models import AuditLog, User
-from apps.common.models import PlatformConfiguration, Tenant
+from apps.common.models import PlatformConfiguration, SolicitudClinica, Tenant
 from apps.common.permissions import HasRole
 
 IS_SUPERADMIN = HasRole.for_roles("superadmin")
@@ -36,6 +36,7 @@ PLATFORM_ACTIONS = [
     "create_clinic_admin", "update_clinic_admin", "reset_clinic_admin_password",
     "update_platform_config", "update_clinic_identity",
     "publish_feature", "unpublish_feature", "test_email",
+    "approve_clinic_request", "request_descartada", "request_atendida", "request_pendiente",
 ]
 
 
@@ -440,6 +441,8 @@ class PlatformOverviewView(APIView):
             "clinics_active": clinics.filter(is_active=True).count(),
             "clinics_suspended": clinics.filter(is_active=False).count(),
             "clinic_admins_total": User.objects.filter(role=User.Role.ADMIN).count(),
+            "solicitudes_pendientes": SolicitudClinica.objects.filter(
+                estado=SolicitudClinica.Estado.PENDIENTE).count(),
         })
 
 

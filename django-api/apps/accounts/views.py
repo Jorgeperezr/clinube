@@ -373,20 +373,25 @@ class UserListCreateView(generics.ListCreateAPIView):
 INVITACION_HORAS = 72
 
 
-def invitar(request, user):
-    """Manda la invitación y dice cómo fue: «enviada» o «fallo»."""
-    from apps.accounts.correos_personal import enviar_invitacion
-    from apps.accounts.google import client_id
-
+def enlace_de_bienvenida(request, user):
+    """Enlace de un solo uso para que la persona elija su primera contraseña."""
     raw_token = secrets.token_urlsafe(32)
     PasswordResetToken.objects.create(
         user=user, token_hash=_hash_value(raw_token),
         expires_at=timezone.now() + timedelta(hours=INVITACION_HORAS),
     )
     base = settings.PANEL_URL or request.build_absolute_uri("/").rstrip("/")
+    return f"{base}/recuperar/?token={raw_token}&bienvenida=1"
+
+
+def invitar(request, user):
+    """Manda la invitación y dice cómo fue: «enviada» o «fallo»."""
+    from apps.accounts.correos_personal import enviar_invitacion
+    from apps.accounts.google import client_id
+
+    enlace = enlace_de_bienvenida(request, user)
     try:
-        enviar_invitacion(user, f"{base}/recuperar/?token={raw_token}&bienvenida=1", INVITACION_HORAS,
-                          con_google=bool(client_id()))
+        enviar_invitacion(user, enlace, INVITACION_HORAS, con_google=bool(client_id()))
     except Exception:
         logging.getLogger(__name__).exception("No se pudo enviar la invitación", extra={"user_id": str(user.id)})
         return "fallo"

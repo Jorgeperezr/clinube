@@ -1,31 +1,28 @@
 """
-Alta y solicitudes desde la página pública (clinube.com).
+Solicitudes de alta desde la página pública (clinube.com).
 
-    POST /api/v1/publico/solicitudes/                 datos de la clínica
-    POST /api/v1/publico/solicitudes/{id}/confirmar/  {codigo, password} (odontología)
-    GET  /api/v1/platform/solicitudes/                lo que ve el Super Administrador
-    PATCH /api/v1/platform/solicitudes/{id}/          {estado, nota}
+    POST  /api/v1/publico/solicitudes/                   datos de la clínica
+    GET   /api/v1/platform/solicitudes/                  lo que ve el Super Administrador
+    PATCH /api/v1/platform/solicitudes/{id}/             {estado, nota, avisar}
+    POST  /api/v1/platform/solicitudes/{id}/aprobar/     {clinica, modalidad}: crea la clínica
+    POST  /api/v1/platform/solicitudes/{id}/reenviar/    otro enlace para elegir la contraseña
 
-Odontología se crea al momento, pero solo con el código que llega al
-correo: sin él cualquiera podría abrir una clínica con la dirección de
-otro. Medicina y psicología todavía no existen como producto: queda la
-solicitud y se avisa a la plataforma.
+Desde la página nadie crea una clínica: deja una solicitud y la
+plataforma decide. Al aprobarla se crea la clínica con su administrador
+sin contraseña, y le llega un enlace de un solo uso para elegirla. Ese
+enlace es también la prueba de que el correo es suyo.
+
+Odontología se responde a la brevedad; medicina y psicología, en un
+plazo de hasta 12 horas (SolicitudClinica.PLAZO_HORAS).
 """
 
-import hashlib
-import hmac
 import io
 import logging
-import secrets
-from datetime import timedelta
 from html import escape
 
 from django.conf import settings
-from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError as ErrorDjango
 from django.core.management import call_command
 from django.db import transaction
-from django.utils import timezone
 from rest_framework import generics, serializers
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -37,17 +34,21 @@ from apps.common.models import PlatformConfiguration, SolicitudClinica, Tenant
 from apps.common.permissions import HasRole
 
 logger = logging.getLogger(__name__)
-MINUTOS = 30
-INTENTOS = 5
-
-
-def _resumen(codigo):
-    return hmac.new(settings.SECRET_KEY.encode(), codigo.encode(), hashlib.sha256).hexdigest()
+SUPERADMIN = HasRole.for_roles("superadmin")
 
 
 def _ip(request):
     reenviada = request.META.get("HTTP_X_FORWARDED_FOR", "")
     return (reenviada.split(",")[0].strip() or request.META.get("REMOTE_ADDR")) or None
+
+
+def _ocupado(correo, clinica):
+    """El motivo por el que no se puede crear, o None."""
+    if User.objects.filter(email__iexact=correo).exists():
+        return {"correo": "Ya hay una cuenta con ese correo. Entra a la app o usa otro correo."}
+    if Tenant.objects.filter(name__iexact=clinica).exists():
+        return {"clinica": "Ya hay una clínica con ese nombre. Añade la ciudad o el sector."}
+    return None
 
 
 class SolicitudSerializer(serializers.ModelSerializer):
@@ -75,13 +76,14 @@ class SolicitudSerializer(serializers.ModelSerializer):
         return valor.strip().lower()
 
     def validate(self, datos):
-        if datos.get("tipo") == SolicitudClinica.Tipo.ODONTOLOGIA:
-            if User.objects.filter(email__iexact=datos["correo"]).exists():
-                raise serializers.ValidationError(
-                    {"correo": "Ya hay una cuenta con ese correo. Entra a la app o usa otro correo."})
-            if Tenant.objects.filter(name__iexact=datos["clinica"]).exists():
-                raise serializers.ValidationError(
-                    {"clinica": "Ya hay una clínica con ese nombre. Añade la ciudad o el sector."})
+        motivo = _ocupado(datos["correo"], datos["clinica"])
+        if motivo:
+            raise serializers.ValidationError(motivo)
+        if SolicitudClinica.objects.filter(correo__iexact=datos["correo"],
+                                           estado=SolicitudClinica.Estado.PENDIENTE).exists():
+            raise serializers.ValidationError(
+                {"correo": "Ya tenemos una solicitud con este correo y la estamos revisando. "
+                           "Te escribiremos en cuanto esté lista."})
         return datos
 
 
@@ -95,23 +97,10 @@ class SolicitudPublicaView(APIView):
         s = SolicitudSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         datos = dict(s.validated_data)
+        plazo = SolicitudClinica.PLAZO_HORAS.get(datos["tipo"])
         if datos.pop("sitio_web", ""):
             # Robot: se le responde como a cualquiera y no se guarda nada.
-            return Response({"estado": "pendiente"}, status=201)
-
-        if datos["tipo"] == SolicitudClinica.Tipo.ODONTOLOGIA:
-            codigo = f"{secrets.randbelow(10**6):06d}"
-            solicitud = SolicitudClinica.objects.create(
-                **datos, estado=SolicitudClinica.Estado.VERIFICANDO, ip=_ip(request),
-                codigo_hash=_resumen(codigo), codigo_vence=timezone.now() + timedelta(minutes=MINUTOS))
-            try:
-                _correo_codigo(solicitud, codigo)
-            except Exception:
-                logger.exception("No se pudo enviar el código del alta de clínica")
-                solicitud.delete()
-                return Response({"detail": "No pudimos enviar el correo. Revisa la dirección e inténtalo de nuevo."},
-                                status=503)
-            return Response({"id": str(solicitud.id), "estado": solicitud.estado, "minutos": MINUTOS}, status=201)
+            return Response({"estado": "pendiente", "plazo_horas": plazo}, status=201)
 
         solicitud = SolicitudClinica.objects.create(**datos, estado=SolicitudClinica.Estado.PENDIENTE,
                                                     ip=_ip(request))
@@ -121,75 +110,40 @@ class SolicitudPublicaView(APIView):
             except Exception:
                 # La solicitud ya está guardada y se ve en Plataforma.
                 logger.exception("No se pudo enviar un correo de la solicitud %s", solicitud.id)
-        return Response({"id": str(solicitud.id), "estado": solicitud.estado}, status=201)
-
-
-class ConfirmarSolicitudView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "otp"
-
-    def post(self, request, pk):
-        solicitud = SolicitudClinica.objects.filter(
-            pk=pk, estado=SolicitudClinica.Estado.VERIFICANDO).first()
-        if solicitud is None or solicitud.codigo_vence < timezone.now() or solicitud.intentos >= INTENTOS:
-            return Response({"detail": "El código caducó. Vuelve a llenar el formulario para recibir otro."},
-                            status=400)
-        codigo = str(request.data.get("codigo") or "").strip()
-        if not hmac.compare_digest(_resumen(codigo), solicitud.codigo_hash):
-            solicitud.intentos += 1
-            solicitud.save(update_fields=["intentos", "updated_at"])
-            return Response({"detail": "Ese código no es el que enviamos."}, status=400)
-        password = str(request.data.get("password") or "")
-        provisional = User(email=solicitud.correo, full_name=solicitud.nombre)
-        try:
-            validate_password(password, user=provisional)
-        except ErrorDjango as e:
-            return Response({"detail": " ".join(e.messages)}, status=400)
-        if User.objects.filter(email__iexact=solicitud.correo).exists() or \
-                Tenant.objects.filter(name__iexact=solicitud.clinica).exists():
-            return Response({"detail": "Ese correo o ese nombre de clínica se registraron hace un momento."},
-                            status=400)
-
-        tenant = _crear_clinica(solicitud, password)
-        try:
-            _correo_bienvenida(solicitud)
-        except Exception:
-            logger.exception("No se pudo enviar la bienvenida a la clínica %s", tenant.id)
-        return Response({"estado": "creada", "clinica": tenant.name, "correo": solicitud.correo}, status=201)
+        return Response({"id": str(solicitud.id), "estado": solicitud.estado, "plazo_horas": plazo}, status=201)
 
 
 @transaction.atomic
-def _crear_clinica(solicitud, password):
-    from apps.accounts.models import AuditLog
+def _crear_clinica(solicitud, clinica, modalidad):
     from apps.common.funcionalidades import normalizar
     from apps.configuration.models import ClinicBranding
 
-    tenant = Tenant.objects.create(name=solicitud.clinica, ruc=solicitud.ruc, is_active=True,
+    funcionalidades = normalizar(None)
+    if solicitud.tipo != SolicitudClinica.Tipo.ODONTOLOGIA:
+        # El HCU-033 es el formulario de odontología del MSP.
+        funcionalidades["formulario_033"] = False
+    tenant = Tenant.objects.create(name=clinica, ruc=solicitud.ruc, is_active=True,
                                    phone=solicitud.telefono, email=solicitud.correo,
-                                   modalidad=solicitud.modalidad, funcionalidades=normalizar(None))
+                                   modalidad=modalidad, funcionalidades=funcionalidades)
     call_command("bootstrap", tenant_name=tenant.name, stdout=io.StringIO())
+    # Sin contraseña: la elige con el enlace que le llega al correo.
     admin = User(tenant=tenant, email=solicitud.correo, full_name=solicitud.nombre, role=User.Role.ADMIN)
-    admin.set_password(password)
+    admin.set_unusable_password()
     admin.save()
     if tenant.modalidad == "consultorio":
         # Quien trabaja solo administra y atiende con la misma cuenta.
         from apps.accounts import atencion
         atencion.cambiar(admin, True)
     branding, _ = ClinicBranding.objects.get_or_create(tenant=tenant)
-    branding.display_name = branding.display_name or solicitud.clinica
+    branding.display_name = branding.display_name or clinica
     branding.phone = branding.phone or solicitud.telefono
     branding.email = branding.email or solicitud.correo
     branding.address = branding.address or solicitud.ciudad
     branding.save()
     solicitud.estado = SolicitudClinica.Estado.CREADA
     solicitud.tenant = tenant
-    solicitud.codigo_hash = ""
-    solicitud.save(update_fields=["estado", "tenant", "codigo_hash", "updated_at"])
-    AuditLog.objects.create(tenant=tenant, user=admin, action="self_signup_clinic", entity_type="Tenant",
-                            entity_id=str(tenant.id), metadata={"solicitud": str(solicitud.id)})
-    return tenant
+    solicitud.save(update_fields=["estado", "tenant", "updated_at"])
+    return tenant, admin
 
 
 # ── Plataforma ───────────────────────────────────────────────────────
@@ -197,35 +151,147 @@ def _crear_clinica(solicitud, password):
 class SolicitudPlataformaSerializer(serializers.ModelSerializer):
     tipo_nombre = serializers.CharField(source="get_tipo_display", read_only=True)
     estado_nombre = serializers.CharField(source="get_estado_display", read_only=True)
+    modalidad_nombre = serializers.CharField(source="get_modalidad_display", read_only=True)
+    plazo_horas = serializers.IntegerField(read_only=True)
+    responder_antes = serializers.DateTimeField(read_only=True)
+    admin_pendiente = serializers.SerializerMethodField()
+    # Al descartar: mandar o no el correo a quien la pidió.
+    avisar = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = SolicitudClinica
-        fields = ["id", "created_at", "tipo", "tipo_nombre", "modalidad", "estado", "estado_nombre", "clinica", "ruc",
-                  "ciudad", "nombre", "correo", "telefono", "mensaje", "nota", "tenant"]
-        read_only_fields = [f for f in fields if f not in ("estado", "nota")]
+        fields = ["id", "created_at", "tipo", "tipo_nombre", "modalidad", "modalidad_nombre", "estado",
+                  "estado_nombre", "clinica", "ruc", "ciudad", "nombre", "correo", "telefono", "mensaje", "nota",
+                  "tenant", "plazo_horas", "responder_antes", "admin_pendiente", "avisar"]
+        read_only_fields = [f for f in fields if f not in ("estado", "nota", "avisar")]
+
+    def get_admin_pendiente(self, s):
+        """Creada, pero su administrador todavía no eligió contraseña."""
+        if s.estado != SolicitudClinica.Estado.CREADA or not s.tenant_id:
+            return False
+        pendientes = self.context.get("sin_entrar")
+        if pendientes is None:
+            pendientes = _sin_entrar([s])
+        return (s.tenant_id, s.correo.lower()) in pendientes
 
     def validate_estado(self, valor):
         if valor not in (SolicitudClinica.Estado.PENDIENTE, SolicitudClinica.Estado.ATENDIDA,
                          SolicitudClinica.Estado.DESCARTADA):
             raise serializers.ValidationError("Solo se marca como pendiente, atendida o descartada.")
+        if self.instance and self.instance.estado == SolicitudClinica.Estado.CREADA:
+            raise serializers.ValidationError("Esta solicitud ya tiene su clínica creada.")
         return valor
 
 
+def _sin_entrar(solicitudes):
+    """(clínica, correo) de los administradores que aún no tienen contraseña."""
+    tenants = {s.tenant_id for s in solicitudes if s.tenant_id}
+    if not tenants:
+        return set()
+    return {(t, c.lower()) for t, c in User.objects.filter(
+        tenant_id__in=tenants, role=User.Role.ADMIN, password__startswith="!").values_list("tenant_id", "email")}
+
+
 class SolicitudesPlataformaView(generics.ListAPIView):
-    permission_classes = [HasRole.for_roles("superadmin")]
+    permission_classes = [SUPERADMIN]
     serializer_class = SolicitudPlataformaSerializer
     pagination_class = None
 
     def get_queryset(self):
-        # Las que esperan el código no son de nadie todavía: no se enseñan.
-        return SolicitudClinica.objects.exclude(estado=SolicitudClinica.Estado.VERIFICANDO)[:300]
+        return SolicitudClinica.objects.all()[:300]
+
+    def list(self, request, *args, **kwargs):
+        filas = list(self.get_queryset())
+        datos = self.get_serializer(filas, many=True, context={**self.get_serializer_context(),
+                                                               "sin_entrar": _sin_entrar(filas)}).data
+        return Response(datos)
 
 
 class SolicitudPlataformaView(generics.UpdateAPIView):
-    permission_classes = [HasRole.for_roles("superadmin")]
+    permission_classes = [SUPERADMIN]
     serializer_class = SolicitudPlataformaSerializer
     queryset = SolicitudClinica.objects.all()
     http_method_names = ["patch"]
+
+    def perform_update(self, serializer):
+        from apps.common.platform_views import _audit_platform
+
+        antes = serializer.instance.estado
+        avisar = serializer.validated_data.pop("avisar", False)
+        solicitud = serializer.save()
+        if solicitud.estado == antes:
+            return
+        _audit_platform(self.request, f"request_{solicitud.estado}", "SolicitudClinica", solicitud.id,
+                        {"clinica": solicitud.clinica})
+        if avisar and solicitud.estado == SolicitudClinica.Estado.DESCARTADA:
+            try:
+                _correo_descartada(solicitud)
+            except Exception:
+                logger.exception("No se pudo avisar del descarte de la solicitud %s", solicitud.id)
+
+
+class AprobarSolicitudView(APIView):
+    """Crea la clínica de una solicitud y manda el enlace a su administrador."""
+
+    permission_classes = [SUPERADMIN]
+
+    def post(self, request, pk):
+        from apps.common.platform_views import _audit_platform
+
+        with transaction.atomic():
+            solicitud = generics.get_object_or_404(SolicitudClinica.objects.select_for_update(), pk=pk)
+            if solicitud.estado == SolicitudClinica.Estado.CREADA:
+                return Response({"detail": "Esta solicitud ya tiene su clínica creada."}, status=409)
+            if solicitud.estado != SolicitudClinica.Estado.PENDIENTE:
+                return Response({"detail": "Solo se aprueba una solicitud pendiente. Vuelve a marcarla "
+                                           "como pendiente si quieres aprobarla."}, status=400)
+            clinica = str(request.data.get("clinica") or solicitud.clinica).strip()
+            modalidad = request.data.get("modalidad") or solicitud.modalidad
+            if len(clinica) < 3:
+                return Response({"detail": "Escribe el nombre de la clínica."}, status=400)
+            if modalidad not in dict(Tenant.MODALIDADES):
+                return Response({"detail": "Elige consultorio o clínica con equipo."}, status=400)
+            motivo = _ocupado(solicitud.correo, clinica)
+            if motivo:
+                return Response({"detail": next(iter(motivo.values()))}, status=400)
+            tenant, admin = _crear_clinica(solicitud, clinica, modalidad)
+            _audit_platform(request, "approve_clinic_request", "Tenant", tenant.id,
+                            {"name": tenant.name, "solicitud": str(solicitud.id), "admin": admin.email})
+
+        correo = _mandar_enlace(request, solicitud, admin)
+        datos = SolicitudPlataformaSerializer(solicitud).data
+        return Response({**datos, "correo_enviado": correo}, status=201)
+
+
+class ReenviarEnlaceView(APIView):
+    """Otro enlace para el administrador que aún no eligió su contraseña."""
+
+    permission_classes = [SUPERADMIN]
+
+    def post(self, request, pk):
+        solicitud = generics.get_object_or_404(SolicitudClinica, pk=pk, estado=SolicitudClinica.Estado.CREADA)
+        admin = User.objects.filter(tenant_id=solicitud.tenant_id, email__iexact=solicitud.correo,
+                                    role=User.Role.ADMIN, is_active=True).first()
+        if admin is None:
+            return Response({"detail": "El administrador de esta clínica ya no existe."}, status=404)
+        if admin.has_usable_password():
+            return Response({"detail": "Ya eligió su contraseña y puede entrar."}, status=400)
+        if not _mandar_enlace(request, solicitud, admin):
+            return Response({"detail": "No se pudo enviar el correo. Revisa el correo saliente en Plataforma."},
+                            status=503)
+        return Response({"detail": f"Enviamos un enlace nuevo a {admin.email}."})
+
+
+def _mandar_enlace(request, solicitud, admin):
+    from apps.accounts.google import client_id
+    from apps.accounts.views import INVITACION_HORAS, enlace_de_bienvenida
+
+    try:
+        _correo_aprobada(solicitud, enlace_de_bienvenida(request, admin), INVITACION_HORAS, bool(client_id()))
+    except Exception:
+        logger.exception("No se pudo enviar el enlace de la clínica %s", solicitud.tenant_id)
+        return False
+    return True
 
 
 # ── Correos ──────────────────────────────────────────────────────────
@@ -259,62 +325,82 @@ def _enviar(asunto, texto, cuerpo_html, destino, motivo):
     enviar(asunto, texto, html, destino, marca)
 
 
-def _correo_codigo(s, codigo):
-    _enviar(
-        f"{codigo} es tu código para crear {s.clinica} en {settings.MARCA}",
-        f"Hola, {s.nombre}:\n\nTu código para crear {s.clinica} en {settings.MARCA} es {codigo}.\n"
-        f"Vale {MINUTOS} minutos. Si no lo pediste, ignora este correo: sin el código no se crea nada.\n",
-        _parrafo(f"Hola, {escape(s.nombre)}:")
-        + '<h1 style="margin:0 0 16px;font-size:22px;">Tu código para crear tu clínica</h1>'
-        + f'<div style="font-size:34px;font-weight:700;letter-spacing:8px;margin:0 0 18px;'
-          f"font-family:'SF Mono',Menlo,Consolas,monospace;\">{codigo}</div>"
-        + _parrafo(f"Escríbelo en la página para terminar de crear <strong>{escape(s.clinica)}</strong>. "
-                   f"Vale durante {MINUTOS} minutos."),
-        s.correo, "Recibes este correo porque alguien quiso crear una clínica con tu dirección. "
-                  "Si no fuiste tú, ignóralo: sin el código no se crea nada.")
-
-
-def _correo_bienvenida(s):
-    from apps.accounts.correos_paciente import _boton
-
-    enlace = f"{(settings.PANEL_URL or '').rstrip('/')}/login/"
-    _enviar(
-        f"{s.clinica} ya está en {settings.MARCA}",
-        f"Hola, {s.nombre}:\n\n{s.clinica} ya está creada. Entra con {s.correo} en {enlace}\n\n"
-        "Lo primero: completa los datos de la clínica en Configuración (logotipo, dirección y teléfono), "
-        "crea los usuarios de tu equipo y registra los tratamientos con sus precios.\n",
-        _parrafo(f"Hola, {escape(s.nombre)}:")
-        + f'<h1 style="margin:0 0 16px;font-size:22px;">{escape(s.clinica)} ya está lista</h1>'
-        + _parrafo(f"Entra con <strong>{escape(s.correo)}</strong> y la contraseña que elegiste.")
-        + _boton("Entrar a Clinube", enlace, "#0E7490")
-        + _parrafo("<br>Para empezar: completa en <strong>Configuración</strong> el logotipo, la dirección y "
-                   "el teléfono (salen en recetas y certificados), crea los usuarios de tu equipo y registra "
-                   "tus tratamientos con sus precios."),
-        s.correo, "Recibes este correo porque acabas de crear tu clínica.")
+def _plazo(s):
+    """Cuándo respondemos, dicho como se le diría a la persona."""
+    return f"en un plazo de hasta {s.plazo_horas} horas" if s.plazo_horas else "a la brevedad"
 
 
 def _correo_recibida(s):
+    servicio = s.get_tipo_display().lower()
     _enviar(
-        f"Recibimos tu solicitud para {s.get_tipo_display().lower()}",
-        f"Hola, {s.nombre}:\n\nRecibimos tu solicitud para {s.clinica} ({s.get_tipo_display()}). "
-        "Te escribiremos a este correo en cuanto esté disponible.\n",
+        f"Recibimos tu solicitud para {s.clinica}",
+        f"Hola, {s.nombre}:\n\nRecibimos tu solicitud para abrir {s.clinica} en {settings.MARCA} "
+        f"({servicio}). La revisamos y te respondemos {_plazo(s)}.\n\n"
+        "Si la aprobamos, te llegará a este correo un enlace para elegir tu contraseña y entrar. "
+        "No tienes que hacer nada más por ahora.\n",
         _parrafo(f"Hola, {escape(s.nombre)}:")
         + '<h1 style="margin:0 0 16px;font-size:22px;">Recibimos tu solicitud</h1>'
-        + _parrafo(f"Anotamos <strong>{escape(s.clinica)}</strong> para <strong>"
-                   f"{escape(s.get_tipo_display().lower())}</strong>. Por ahora Clinube está disponible para "
-                   "odontología; te escribiremos a este correo en cuanto podamos abrir tu consulta."),
+        + _parrafo(f"Anotamos <strong>{escape(s.clinica)}</strong> para <strong>{escape(servicio)}</strong>. "
+                   f"Revisamos cada solicitud antes de abrir la cuenta y te respondemos {_plazo(s)}.")
+        + _parrafo("Si la aprobamos, te llegará a este correo un enlace para elegir tu contraseña y entrar. "
+                   "No tienes que hacer nada más por ahora."),
+        s.correo, "Recibes este correo porque enviaste una solicitud desde clinube.com.")
+
+
+def _correo_aprobada(s, enlace, horas, con_google):
+    from apps.accounts.correos_paciente import _boton
+
+    google = ("\nTambién puedes entrar con tu cuenta de Google, con este mismo correo.\n" if con_google else "")
+    _enviar(
+        f"Aprobamos {s.clinica} en {settings.MARCA}",
+        f"Hola, {s.nombre}:\n\nAprobamos tu solicitud: {s.clinica} ya tiene su cuenta.\n\n"
+        f"Elige tu contraseña aquí: {enlace}\nEl enlace vale {horas} horas y se usa una sola vez.{google}\n"
+        f"Entras con tu correo: {s.correo}\n\n"
+        "Para empezar: completa en Configuración el logotipo, la dirección y el teléfono (salen en recetas y "
+        "certificados), crea los usuarios de tu equipo y registra tus tratamientos con sus precios.\n",
+        _parrafo(f"Hola, {escape(s.nombre)}:")
+        + f'<h1 style="margin:0 0 16px;font-size:22px;">{escape(s.clinica)} ya tiene su cuenta</h1>'
+        + _parrafo(f"Aprobamos tu solicitud. Entras con tu correo <strong>{escape(s.correo)}</strong>; "
+                   "solo falta que elijas tu contraseña.")
+        + _boton("Elegir mi contraseña", enlace, "#0E7490")
+        + _parrafo(f'<br><span style="color:#5B6474;font-size:13.5px;">El enlace vale {horas} horas y se usa '
+                   "una sola vez." + (" También puedes entrar con tu cuenta de Google, con este mismo correo."
+                                      if con_google else "") + "</span>")
+        + _parrafo("Para empezar: completa en <strong>Configuración</strong> el logotipo, la dirección y el "
+                   "teléfono (salen en recetas y certificados), crea los usuarios de tu equipo y registra tus "
+                   "tratamientos con sus precios."),
+        s.correo, "Recibes este correo porque pediste abrir una cuenta en clinube.com.")
+
+
+def _correo_descartada(s):
+    _enviar(
+        f"Tu solicitud para {s.clinica}",
+        f"Hola, {s.nombre}:\n\nRevisamos tu solicitud para {s.clinica} y por ahora no podemos abrir la "
+        "cuenta. Si crees que hay un error o quieres contarnos algo más, responde a este correo.\n",
+        _parrafo(f"Hola, {escape(s.nombre)}:")
+        + '<h1 style="margin:0 0 16px;font-size:22px;">Sobre tu solicitud</h1>'
+        + _parrafo(f"Revisamos tu solicitud para <strong>{escape(s.clinica)}</strong> y por ahora no podemos "
+                   "abrir la cuenta.")
+        + _parrafo("Si crees que hay un error o quieres contarnos algo más, responde a este correo."),
         s.correo, "Recibes este correo porque enviaste una solicitud desde clinube.com.")
 
 
 def _aviso_a_la_plataforma(s):
+    from apps.accounts.correos_paciente import _boton
+
     filas = "".join(f"<tr><td style='padding:3px 12px 3px 0;color:#5B6474;'>{k}</td><td>{escape(v)}</td></tr>"
-                    for k, v in (("Servicio", s.get_tipo_display()), ("Clínica", s.clinica), ("RUC", s.ruc),
-                                 ("Ciudad", s.ciudad), ("Contacto", s.nombre), ("Correo", s.correo),
-                                 ("Teléfono", s.telefono), ("Mensaje", s.mensaje)) if v)
+                    for k, v in (("Servicio", s.get_tipo_display()), ("Modalidad", s.get_modalidad_display()),
+                                 ("Clínica", s.clinica), ("RUC", s.ruc), ("Ciudad", s.ciudad),
+                                 ("Contacto", s.nombre), ("Correo", s.correo), ("Teléfono", s.telefono),
+                                 ("Mensaje", s.mensaje)) if v)
+    plazo = f"Prometimos responder {_plazo(s)}."
+    enlace = f"{(settings.PANEL_URL or '').rstrip('/')}/panel/plataforma/?tab=solicitudes"
     _enviar(
         f"Nueva solicitud: {s.get_tipo_display()} — {s.clinica}",
-        f"{s.get_tipo_display()} — {s.clinica}\n{s.nombre} · {s.correo} · {s.telefono}\n{s.mensaje}\n",
+        f"{s.get_tipo_display()} — {s.clinica}\n{s.nombre} · {s.correo} · {s.telefono}\n{s.mensaje}\n\n"
+        f"{plazo}\nSe aprueba o se descarta en Plataforma → Solicitudes: {enlace}\n",
         '<h1 style="margin:0 0 16px;font-size:20px;">Nueva solicitud desde la página</h1>'
         + f'<table style="font-size:14px;margin-bottom:14px;">{filas}</table>'
-        + _parrafo("La ves también en Plataforma → Solicitudes."),
+        + _parrafo(f"{plazo} Nada se crea hasta que la apruebes.")
+        + _boton("Revisar la solicitud", enlace, "#0E7490"),
         _destino_plataforma(), "Aviso automático de la página pública.")

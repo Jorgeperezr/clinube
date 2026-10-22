@@ -5489,6 +5489,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/SolicitudPlataforma'
           description: ''
+  /api/v1/platform/solicitudes/{id}/aprobar/:
+    post:
+      operationId: api_v1_platform_solicitudes_aprobar_create
+      description: Crea la clínica de una solicitud y manda el enlace a su administrador.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      responses:
+        '200':
+          description: No response body
+  /api/v1/platform/solicitudes/{id}/reenviar/:
+    post:
+      operationId: api_v1_platform_solicitudes_reenviar_create
+      description: Otro enlace para el administrador que aún no eligió su contraseña.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - api
+      responses:
+        '200':
+          description: No response body
   /api/v1/products/:
     get:
       operationId: api_v1_products_list
@@ -5671,23 +5703,6 @@ paths:
   /api/v1/publico/solicitudes/:
     post:
       operationId: api_v1_publico_solicitudes_create
-      tags:
-      - api
-      security:
-      - {}
-      responses:
-        '200':
-          description: No response body
-  /api/v1/publico/solicitudes/{id}/confirmar/:
-    post:
-      operationId: api_v1_publico_solicitudes_confirmar_create
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: string
-          format: uuid
-        required: true
       tags:
       - api
       security:
@@ -9265,6 +9280,9 @@ components:
           allOf:
           - $ref: '#/components/schemas/ModalidadEnum'
           readOnly: true
+        modalidad_nombre:
+          type: string
+          readOnly: true
         estado:
           $ref: '#/components/schemas/SolicitudPlataformaEstadoEnum'
         estado_nombre:
@@ -9303,6 +9321,20 @@ components:
           format: uuid
           readOnly: true
           nullable: true
+        plazo_horas:
+          type: integer
+          readOnly: true
+        responder_antes:
+          type: string
+          format: date-time
+          readOnly: true
+        admin_pendiente:
+          type: string
+          readOnly: true
+        avisar:
+          type: boolean
+          writeOnly: true
+          default: false
     PatchedSpecialty:
       type: object
       properties:
@@ -9985,6 +10017,9 @@ components:
           allOf:
           - $ref: '#/components/schemas/ModalidadEnum'
           readOnly: true
+        modalidad_nombre:
+          type: string
+          readOnly: true
         estado:
           $ref: '#/components/schemas/SolicitudPlataformaEstadoEnum'
         estado_nombre:
@@ -10023,7 +10058,22 @@ components:
           format: uuid
           readOnly: true
           nullable: true
+        plazo_horas:
+          type: integer
+          readOnly: true
+        responder_antes:
+          type: string
+          format: date-time
+          readOnly: true
+        admin_pendiente:
+          type: string
+          readOnly: true
+        avisar:
+          type: boolean
+          writeOnly: true
+          default: false
       required:
+      - admin_pendiente
       - ciudad
       - clinica
       - correo
@@ -10033,7 +10083,10 @@ components:
       - id
       - mensaje
       - modalidad
+      - modalidad_nombre
       - nombre
+      - plazo_horas
+      - responder_antes
       - ruc
       - telefono
       - tenant
@@ -10041,14 +10094,12 @@ components:
       - tipo_nombre
     SolicitudPlataformaEstadoEnum:
       enum:
-      - verificando
       - pendiente
       - creada
       - atendida
       - descartada
       type: string
       description: |-
-        * `verificando` - Esperando el código del correo
         * `pendiente` - Pendiente
         * `creada` - Clínica creada
         * `atendida` - Atendida

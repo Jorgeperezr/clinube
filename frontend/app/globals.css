@@ -1481,6 +1481,9 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
 .web-incluye > div { padding: 26px 24px 28px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .web-incluye h3 { font-family: var(--w-titular); font-weight: 520; font-size: 21px; letter-spacing: -.01em; margin: 0 0 8px; }
 .web-incluye p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--ink-soft); }
+.web-incluye--pasos { list-style: none; margin: 0; padding: 0; }
+.web-incluye--pasos > li { padding: 26px 24px 28px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.web-incluye--pasos .web-numero { display: block; margin-bottom: 14px; }
 
 .web-apps { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .web-app {
@@ -1540,7 +1543,26 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
 .web-campo--completo { grid-column: 1 / -1; }
 /* 16 px: con menos, Safari del iPhone acerca la página al tocar el campo. */
 .web-campo input, .web-campo textarea { font-size: 16px; }
-.web-codigo { letter-spacing: .5em; font-size: 24px !important; text-align: center; font-variant-numeric: tabular-nums; }
+/* Cuándo respondemos: a la brevedad o en hasta 12 horas. */
+.web-plazo {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border-radius: 999px; background: var(--petrol-soft); color: var(--petrol); font-size: 13px; font-weight: 600;
+}
+.web-plazo::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.web-centro .web-plazo { align-self: center; }
+/* Lo que pasa después de enviar la solicitud. */
+.web-pasos { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 14px; width: 100%; text-align: left; counter-reset: paso; }
+.web-pasos li {
+  display: grid; grid-template-columns: 32px minmax(0, 1fr); column-gap: 12px; counter-increment: paso;
+  font-size: 14.5px; line-height: 1.5; color: var(--ink-soft);
+}
+.web-pasos li::before {
+  content: counter(paso); grid-row: span 2; width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--line); display: flex; align-items: center; justify-content: center;
+  font-family: var(--w-titular); font-size: 15px; color: var(--petrol);
+}
+.web-pasos li.web-paso--hecho::before { content: "✓"; background: var(--petrol-soft); border-color: transparent; font-family: inherit; font-weight: 700; }
+.web-pasos strong { color: var(--ink); font-weight: 600; }
 .web-trampa { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .web-centro { align-items: center; text-align: center; }
 .web-volver { align-self: center; }
@@ -1553,6 +1575,7 @@ button.tema-tarjeta:hover { border-color: var(--line-strong); }
   .web-heroe { grid-template-columns: 1fr; }
   .web-muestra { max-width: 520px; width: 100%; }
   .web-incluye { grid-template-columns: 1fr 1fr; }
+  .web-incluye--pasos { grid-template-columns: 1fr; }
   .web-encabezado { grid-template-columns: 48px minmax(0, 1fr); }
   .web-encabezado p { grid-column: 2; }
   .web-especialidades a { grid-template-columns: minmax(0, 1fr) auto 24px; }

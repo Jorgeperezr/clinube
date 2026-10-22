@@ -63,6 +63,12 @@ cubre la API; este checklist cubre lo que solo se ve en el navegador.
 - [ ] Editar parámetro "dias_morosidad" → el bloqueo de agenda respeta el nuevo valor.
 - [ ] Especialidad duplicada → error claro.
 
+## Solicitudes de cuenta (página pública y Plataforma)
+- [ ] Enviar una solicitud desde /crear-clinica/ no crea la clínica: queda «Pendiente» en Plataforma → Solicitudes.
+- [ ] Medicina y psicología muestran «Responder antes de las…» con las 12 horas; odontología, «A la brevedad».
+- [ ] «Aprobar y crear» crea la clínica, el correo trae el enlace y con él se elige la contraseña y se entra.
+- [ ] «Descartar» con aviso manda el correo; sin aviso, no.
+
 ## Dashboard
 - [ ] Indicadores correctos para el rol; tarjetas rojas cuando corresponde.
 - [ ] "Agenda de hoy" coincide con la Agenda.

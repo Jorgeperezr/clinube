@@ -3,9 +3,7 @@ El profesional que trabaja solo: administra su consultorio y atiende con
 la misma cuenta. Y el administrador de una clínica que también atiende.
 """
 
-import re
 
-from django.core import mail
 from django.core.cache import cache
 from django.test import override_settings
 from rest_framework.test import APITestCase
@@ -99,9 +97,10 @@ class ConsultorioDesdeLaPaginaPublicaTests(APITestCase):
                                    "ciudad": "Cuenca", "nombre": "Pablo Paz", "correo": "pablo@paz.ec"},
                              format="json")
         self.assertEqual(r.status_code, 201, r.data)
-        codigo = re.search(r"\b(\d{6})\b", mail.outbox[-1].subject).group(1)
-        r = self.client.post(f"{url}{r.data['id']}/confirmar/", {"codigo": codigo, "password": "Larga-y-segura-26"},
-                             format="json")
+        self.assertFalse(Tenant.objects.filter(name="Consultorio Paz").exists())    # hasta que se apruebe
+        sa = User.objects.create_user(email="sa@clinube.ec", password="x-larga-123", role="superadmin")
+        self.client.force_authenticate(sa)
+        r = self.client.post(f"/api/v1/platform/solicitudes/{r.data['id']}/aprobar/")
         self.assertEqual(r.status_code, 201, r.data)
         tenant = Tenant.objects.get(name="Consultorio Paz")
         self.assertEqual(tenant.modalidad, "consultorio")

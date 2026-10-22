@@ -28,6 +28,11 @@ const TABS = [
 
 export default function PlataformaPage() {
   const [tab, setTab] = useState("dashboard");
+  // El correo de una solicitud nueva enlaza a ?tab=solicitudes.
+  useEffect(() => {
+    const pedida = new URLSearchParams(window.location.search).get("tab");
+    if (TABS.some(([k]) => k === pedida)) setTab(pedida);
+  }, []);
 
   return (
     <div>
@@ -85,6 +90,8 @@ function DashboardTab() {
       <Stat label="Activas" value={data.clinics_active} accent />
       <Stat label="Suspendidas" value={data.clinics_suspended} danger={data.clinics_suspended > 0} />
       <Stat label="Administradores de clínica" value={data.clinic_admins_total} />
+      <Stat label="Solicitudes por revisar" value={data.solicitudes_pendientes ?? 0}
+            danger={data.solicitudes_pendientes > 0} />
     </div>
   );
 }
@@ -973,6 +980,8 @@ const ACTION_LABELS = {
   reset_clinic_admin_password: "Restableció contraseña", update_platform_config: "Cambió configuración",
   update_clinic_identity: "Cambió identidad visual",
   publish_feature: "Publicó función", unpublish_feature: "Devolvió función a prueba",
+  approve_clinic_request: "Aprobó una solicitud", request_descartada: "Descartó una solicitud",
+  request_atendida: "Marcó atendida una solicitud", request_pendiente: "Reabrió una solicitud",
 };
 
 function AuditTab() {

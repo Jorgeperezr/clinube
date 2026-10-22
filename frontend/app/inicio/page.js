@@ -3,9 +3,10 @@
 /**
  * Portada pública de Clinube (clinube.com).
  *
- * Qué servicios hay (odontología ya, medicina y psicología por
- * solicitud), para quién (el profesional que trabaja solo o la clínica
- * con equipo), cómo entrar y dónde descargar las apps. Nginx la sirve en
+ * Qué servicios hay, para quién (el profesional que trabaja solo o la
+ * clínica con equipo), cómo se pide una cuenta y dónde descargar las
+ * apps. Toda cuenta se abre después de revisar la solicitud: odontología
+ * a la brevedad; medicina y psicología, en un plazo de hasta 12 horas. Nginx la sirve en
  * la raíz del dominio; en app.clinube.com la raíz sigue llevando al panel.
  *
  * Tono editorial: titulares en Fraunces (public/fonts, OFL) sobre el
@@ -24,23 +25,29 @@ const MODALIDADES = [
     clave: "consultorio", titulo: "Trabajo por mi cuenta",
     texto: "Una sola cuenta para todo: agendas, atiendes, escribes la historia y firmas la receta.",
     puntos: ["Tu agenda y tus pacientes", "Tu firma y tu registro en cada documento", "Sumas a alguien cuando lo necesites"],
-    accion: "Crear mi consultorio",
+    accion: "Solicitar mi consultorio",
   },
   {
     clave: "clinica", titulo: "Tenemos un equipo",
     texto: "Recepción agenda y cobra, cada profesional ve a sus pacientes y la administración lleva las cuentas.",
     puntos: ["Funciones a medida de cada persona", "Caja, honorarios y rol de pagos", "Varios profesionales en una agenda"],
-    accion: "Crear mi clínica",
+    accion: "Solicitar mi clínica",
   },
 ];
 
 const SERVICIOS = [
-  { clave: "odontologia", nombre: "Odontología", disponible: true,
+  { clave: "odontologia", nombre: "Odontología", disponible: true, estado: "Respuesta a la brevedad",
     texto: "Odontograma, periodontograma, historia clínica, recetas y certificados." },
-  { clave: "medicina", nombre: "Medicina", disponible: false,
+  { clave: "medicina", nombre: "Medicina", estado: "Respuesta en 12 horas",
     texto: "Historia clínica general, agenda y documentos para consultorios médicos." },
-  { clave: "psicologia", nombre: "Psicología", disponible: false,
+  { clave: "psicologia", nombre: "Psicología", estado: "Respuesta en 12 horas",
     texto: "Agenda de sesiones, notas clínicas privadas y seguimiento de cada paciente." },
+];
+
+const PASOS = [
+  ["Envías la solicitud", "Los datos de tu consulta y un correo de contacto. Toma un par de minutos."],
+  ["La revisamos", "Odontología, a la brevedad. Medicina y psicología, en un plazo de hasta 12 horas."],
+  ["Eliges tu contraseña", "Te llega un enlace al correo, entras y completas tu logotipo y tus tratamientos."],
 ];
 
 const INCLUYE = [
@@ -65,6 +72,7 @@ export default function Portada() {
         <nav className="web-nav" aria-label="Secciones">
           <a href="#para-quien">Para quién</a>
           <a href="#servicios">Especialidades</a>
+          <a href="#como-empezar">Cómo empezar</a>
           <a href="#apps">Descargas</a>
         </nav>
         <a className="web-boton web-boton--chico web-boton--menta" href={entrar}>Entrar</a>
@@ -74,7 +82,7 @@ export default function Portada() {
         <section className="web-heroe">
           <div className="web-heroe-texto">
             <p className="web-antetitulo web-aparece" style={{ "--d": "0ms" }}>
-              <span className="web-punto" aria-hidden="true" />Odontología · medicina y psicología, muy pronto
+              <span className="web-punto" aria-hidden="true" />Odontología · medicina y psicología bajo solicitud
             </p>
             <h1 className="web-aparece" style={{ "--d": "80ms" }}>
               Tu consulta, <em>en orden</em> y contigo a donde vayas.
@@ -84,7 +92,7 @@ export default function Portada() {
               y para la clínica con equipo, en el ordenador, la tableta o el teléfono.
             </p>
             <div className="web-acciones web-acciones--izq web-aparece" style={{ "--d": "240ms" }}>
-              <a className="web-boton web-boton--menta" href="/crear-clinica/?tipo=odontologia">Crear mi cuenta</a>
+              <a className="web-boton web-boton--menta" href="/crear-clinica/?tipo=odontologia">Solicitar mi cuenta</a>
               <a className="web-boton web-boton--fantasma" href={entrar}>Ya tengo cuenta</a>
             </div>
           </div>
@@ -93,7 +101,7 @@ export default function Portada() {
 
         <section id="para-quien" className="web-seccion">
           <Encabezado numero="01" titulo="Hecho para cómo trabajas">
-            Lo eliges al crear tu cuenta. Si empiezas solo y luego crece el equipo, no cambias de sistema.
+            Lo eliges al pedir tu cuenta. Si empiezas solo y luego crece el equipo, no cambias de sistema.
           </Encabezado>
           <div className="web-modalidades">
             {MODALIDADES.map((m) => (
@@ -109,7 +117,7 @@ export default function Portada() {
 
         <section id="servicios" className="web-seccion">
           <Encabezado numero="02" titulo="Especialidades">
-            Empezamos por la odontología. Las demás se abren en orden de solicitud.
+            Odontología se aprueba a la brevedad. Medicina y psicología necesitan preparar la cuenta para su especialidad: respondemos en un plazo de hasta 12 horas.
           </Encabezado>
           <ol className="web-especialidades">
             {SERVICIOS.map((s) => (
@@ -118,7 +126,7 @@ export default function Portada() {
                   <span className="web-especialidad-nombre">{s.nombre}</span>
                   <span className="web-especialidad-texto">{s.texto}</span>
                   <span className={`web-estado${s.disponible ? " web-estado--si" : ""}`}>
-                    {s.disponible ? "Disponible" : "Solicitar acceso"}
+                    {s.estado}
                   </span>
                   <span className="web-flecha" aria-hidden="true">→</span>
                 </a>
@@ -127,8 +135,19 @@ export default function Portada() {
           </ol>
         </section>
 
+        <section id="como-empezar" className="web-seccion">
+          <Encabezado numero="03" titulo="Cómo empezar">
+            Cada cuenta se abre después de revisar la solicitud. Así nadie puede abrir una consulta a tu nombre.
+          </Encabezado>
+          <ol className="web-incluye web-incluye--pasos">
+            {PASOS.map(([t, d], i) => (
+              <li key={t}><span className="web-numero">{String(i + 1).padStart(2, "0")}</span><h3>{t}</h3><p>{d}</p></li>
+            ))}
+          </ol>
+        </section>
+
         <section className="web-seccion">
-          <Encabezado numero="03" titulo="Lo que incluye">
+          <Encabezado numero="04" titulo="Lo que incluye">
             Lo del día a día de una consulta, en la misma cuenta.
           </Encabezado>
           <div className="web-incluye">
@@ -139,7 +158,7 @@ export default function Portada() {
         </section>
 
         <section id="apps" className="web-seccion">
-          <Encabezado numero="04" titulo="Apps">
+          <Encabezado numero="05" titulo="Apps">
             El panel funciona en el navegador y se instala como app. Tus pacientes tienen la suya.
           </Encabezado>
           <div className="web-apps">
@@ -166,8 +185,8 @@ export default function Portada() {
         <section className="web-cierre">
           <IconoClinube alto={44} tinta="#fff" acento="var(--w-menta)" />
           <h2>Empieza hoy, con tus pacientes de siempre.</h2>
-          <p>Creas la cuenta con tu correo en un par de minutos.</p>
-          <a className="web-boton web-boton--menta" href="/crear-clinica/?tipo=odontologia">Crear mi cuenta</a>
+          <p>Envías la solicitud en un par de minutos y te respondemos a la brevedad.</p>
+          <a className="web-boton web-boton--menta" href="/crear-clinica/?tipo=odontologia">Solicitar mi cuenta</a>
         </section>
       </main>
 

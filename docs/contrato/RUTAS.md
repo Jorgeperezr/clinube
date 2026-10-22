@@ -6,7 +6,7 @@ Convenciones que valen para todas (ver `docs/contrato/LEEME.md`): prefijo `/api/
 JSON en snake_case, autenticación `Authorization: Bearer <access>`, listas paginadas como
 `{count, next, previous, results}` con 20 por página.
 
-203 rutas.
+204 rutas.
 
 | Ruta | Métodos | Vista | Código | Permisos | Serializador | Paginada |
 |---|---|---|---|---|---|---|
@@ -30,13 +30,13 @@ JSON en snake_case, autenticación `Authorization: Bearer <access>`, listas pagi
 | `/api/v1/appointments/<uuid:pk>/reschedule/` | POST | AppointmentRescheduleView | `django-api/apps/agenda/views.py:147` | TieneFuncion(agenda) |  |  |
 | `/api/v1/appointments/<uuid:pk>/start/` | POST | AppointmentStartView | `django-api/apps/agenda/views.py:259` | TieneFuncion(agenda) |  |  |
 | `/api/v1/appointments/waiting/` | GET | WaitingPatientsView | `django-api/apps/agenda/views.py:362` | rol: admin/reception/doctor/auxiliary |  |  |
-| `/api/v1/audit-logs/` | GET | AuditLogListView | `django-api/apps/accounts/views.py:453` | rol: admin | AuditLogSerializer | sí |
+| `/api/v1/audit-logs/` | GET | AuditLogListView | `django-api/apps/accounts/views.py:458` | rol: admin | AuditLogSerializer | sí |
 | `/api/v1/auth/change-password/` | POST | CambiarMiContrasenaView | `django-api/apps/accounts/password_views.py:17` | IsAuthenticated |  |  |
 | `/api/v1/auth/google/` | POST | GoogleLoginView | `django-api/apps/accounts/google.py:83` | AllowAny |  |  |
 | `/api/v1/auth/google/config/` | GET | GoogleConfigView | `django-api/apps/accounts/google.py:75` | AllowAny |  |  |
 | `/api/v1/auth/login/` | POST | StaffLoginView | `django-api/apps/accounts/views.py:53` | público | StaffLoginSerializer |  |
-| `/api/v1/auth/me/` | GET | MeView | `django-api/apps/accounts/views.py:483` | IsAuthenticated |  |  |
-| `/api/v1/auth/me/preferencias/` | GET PATCH | PreferenciasView | `django-api/apps/accounts/views.py:552` | IsAuthenticated |  |  |
+| `/api/v1/auth/me/` | GET | MeView | `django-api/apps/accounts/views.py:488` | IsAuthenticated |  |  |
+| `/api/v1/auth/me/preferencias/` | GET PATCH | PreferenciasView | `django-api/apps/accounts/views.py:557` | IsAuthenticated |  |  |
 | `/api/v1/auth/otp/canal/` | GET | OTPCanalView | `django-api/apps/accounts/views.py:59` | AllowAny |  |  |
 | `/api/v1/auth/otp/request/` | POST | OTPRequestView | `django-api/apps/accounts/views.py:72` | AllowAny |  |  |
 | `/api/v1/auth/otp/verify/` | POST | OTPVerifyView | `django-api/apps/accounts/views.py:209` | AllowAny |  |  |
@@ -130,7 +130,7 @@ JSON en snake_case, autenticación `Authorization: Bearer <access>`, listas pagi
 | `/api/v1/logros/<uuid:pk>/` | GET PUT PATCH DELETE | LogroDetailView | `django-api/apps/logros/views.py:42` | PuedeGestionarLogros, RequiereFuncionalidad(logros) | LogroSerializer |  |
 | `/api/v1/logros/evaluar/` | POST | EvaluarLogrosView | `django-api/apps/logros/views.py:105` | PuedeGestionarLogros, RequiereFuncionalidad(logros) |  |  |
 | `/api/v1/logros/otorgar/` | POST | OtorgarLogroView | `django-api/apps/logros/views.py:60` | PuedeGestionarLogros, RequiereFuncionalidad(logros) |  |  |
-| `/api/v1/me/device-tokens/` | POST | DeviceTokenRegisterView | `django-api/apps/accounts/views.py:464` | IsAuthenticated | DeviceTokenSerializer |  |
+| `/api/v1/me/device-tokens/` | POST | DeviceTokenRegisterView | `django-api/apps/accounts/views.py:469` | IsAuthenticated | DeviceTokenSerializer |  |
 | `/api/v1/odontogram-states/` | GET | OdontogramStateListView | `django-api/apps/clinical/views.py:208` | rol: admin/doctor/auxiliary |  |  |
 | `/api/v1/patients/` | GET POST | PatientListCreateView | `django-api/apps/patients/views.py:23` | IsAuthenticated · varía por método (get_permissions) |  | sí |
 | `/api/v1/patients/<uuid:pk>/` | GET PUT PATCH DELETE | PatientDetailView | `django-api/apps/patients/views.py:92` | IsAuthenticated · varía por método (get_permissions) | PatientSerializer |  |
@@ -172,24 +172,25 @@ JSON en snake_case, autenticación `Authorization: Bearer <access>`, listas pagi
 | `/api/v1/periodontal-exams/<uuid:pk>/` | GET PUT PATCH DELETE | PeriodontalExamDetailView | `django-api/apps/clinical/views.py:677` | rol: admin/doctor |  |  |
 | `/api/v1/periodontal-exams/<uuid:pk>/pdf/` | GET | PeriodontalExamPDFView | `django-api/apps/clinical/views.py:699` | rol: admin/doctor |  |  |
 | `/api/v1/periodontal-teeth/<uuid:pk>/` | GET PUT PATCH | PeriodontalToothUpdateView | `django-api/apps/clinical/views.py:742` | rol: admin/doctor |  |  |
-| `/api/v1/platform/audit/` | GET | PlatformAuditView | `django-api/apps/common/platform_views.py:448` | rol: superadmin |  |  |
-| `/api/v1/platform/clinics/` | GET POST | ClinicListCreateView | `django-api/apps/common/platform_views.py:145` | rol: superadmin | ClinicSerializer |  |
-| `/api/v1/platform/clinics/<uuid:pk>/` | GET PUT PATCH | ClinicDetailView | `django-api/apps/common/platform_views.py:216` | rol: superadmin | ClinicSerializer |  |
-| `/api/v1/platform/clinics/<uuid:pk>/admin/` | GET POST PATCH | ClinicAdminView | `django-api/apps/common/platform_views.py:308` | rol: superadmin |  |  |
-| `/api/v1/platform/clinics/<uuid:pk>/admin/reset-password/` | POST | ClinicAdminResetPasswordView | `django-api/apps/common/platform_views.py:398` | rol: superadmin |  |  |
-| `/api/v1/platform/clinics/<uuid:pk>/identidad/` | GET PATCH | ClinicIdentidadView | `django-api/apps/common/platform_views.py:249` | rol: superadmin |  |  |
-| `/api/v1/platform/config/` | GET PATCH | PlatformConfigView | `django-api/apps/common/platform_views.py:575` | rol: superadmin |  |  |
-| `/api/v1/platform/config/correo-de-prueba/` | POST | CorreoDePruebaView | `django-api/apps/common/platform_views.py:591` | rol: superadmin |  |  |
-| `/api/v1/platform/funcionalidades/` | GET | FuncionalidadesView | `django-api/apps/common/platform_views.py:522` | rol: superadmin |  |  |
-| `/api/v1/platform/funcionalidades/<str:clave>/` | PATCH | FuncionalidadPublicacionView | `django-api/apps/common/platform_views.py:548` | rol: superadmin |  |  |
-| `/api/v1/platform/overview/` | GET | PlatformOverviewView | `django-api/apps/common/platform_views.py:431` | rol: superadmin |  |  |
-| `/api/v1/platform/solicitudes/` | GET | SolicitudesPlataformaView | `django-api/apps/common/solicitudes.py:214` | rol: superadmin | SolicitudPlataformaSerializer |  |
-| `/api/v1/platform/solicitudes/<uuid:pk>/` | PUT PATCH | SolicitudPlataformaView | `django-api/apps/common/solicitudes.py:224` | rol: superadmin | SolicitudPlataformaSerializer |  |
+| `/api/v1/platform/audit/` | GET | PlatformAuditView | `django-api/apps/common/platform_views.py:451` | rol: superadmin |  |  |
+| `/api/v1/platform/clinics/` | GET POST | ClinicListCreateView | `django-api/apps/common/platform_views.py:146` | rol: superadmin | ClinicSerializer |  |
+| `/api/v1/platform/clinics/<uuid:pk>/` | GET PUT PATCH | ClinicDetailView | `django-api/apps/common/platform_views.py:217` | rol: superadmin | ClinicSerializer |  |
+| `/api/v1/platform/clinics/<uuid:pk>/admin/` | GET POST PATCH | ClinicAdminView | `django-api/apps/common/platform_views.py:309` | rol: superadmin |  |  |
+| `/api/v1/platform/clinics/<uuid:pk>/admin/reset-password/` | POST | ClinicAdminResetPasswordView | `django-api/apps/common/platform_views.py:399` | rol: superadmin |  |  |
+| `/api/v1/platform/clinics/<uuid:pk>/identidad/` | GET PATCH | ClinicIdentidadView | `django-api/apps/common/platform_views.py:250` | rol: superadmin |  |  |
+| `/api/v1/platform/config/` | GET PATCH | PlatformConfigView | `django-api/apps/common/platform_views.py:578` | rol: superadmin |  |  |
+| `/api/v1/platform/config/correo-de-prueba/` | POST | CorreoDePruebaView | `django-api/apps/common/platform_views.py:594` | rol: superadmin |  |  |
+| `/api/v1/platform/funcionalidades/` | GET | FuncionalidadesView | `django-api/apps/common/platform_views.py:525` | rol: superadmin |  |  |
+| `/api/v1/platform/funcionalidades/<str:clave>/` | PATCH | FuncionalidadPublicacionView | `django-api/apps/common/platform_views.py:551` | rol: superadmin |  |  |
+| `/api/v1/platform/overview/` | GET | PlatformOverviewView | `django-api/apps/common/platform_views.py:432` | rol: superadmin |  |  |
+| `/api/v1/platform/solicitudes/` | GET | SolicitudesPlataformaView | `django-api/apps/common/solicitudes.py:195` | rol: superadmin | SolicitudPlataformaSerializer |  |
+| `/api/v1/platform/solicitudes/<uuid:pk>/` | PUT PATCH | SolicitudPlataformaView | `django-api/apps/common/solicitudes.py:210` | rol: superadmin | SolicitudPlataformaSerializer |  |
+| `/api/v1/platform/solicitudes/<uuid:pk>/aprobar/` | POST | AprobarSolicitudView | `django-api/apps/common/solicitudes.py:233` | rol: superadmin |  |  |
+| `/api/v1/platform/solicitudes/<uuid:pk>/reenviar/` | POST | ReenviarEnlaceView | `django-api/apps/common/solicitudes.py:266` | rol: superadmin |  |  |
 | `/api/v1/products/` | GET POST | ProductListCreateView | `django-api/apps/inventory/views.py:24` | IsAuthenticated · varía por método (get_permissions) | ProductSerializer | sí |
 | `/api/v1/products/<uuid:pk>/` | GET PUT PATCH | ProductDetailView | `django-api/apps/inventory/views.py:42` | TieneFuncion(inventario), RequiereFuncionalidad(inventario) | ProductSerializer |  |
 | `/api/v1/products/<uuid:pk>/batches/` | GET POST | BatchListCreateView | `django-api/apps/inventory/views.py:50` | TieneFuncion(inventario), RequiereFuncionalidad(inventario) | BatchSerializer | sí |
-| `/api/v1/publico/solicitudes/` | POST | SolicitudPublicaView | `django-api/apps/common/solicitudes.py:88` | AllowAny |  |  |
-| `/api/v1/publico/solicitudes/<uuid:pk>/confirmar/` | POST | ConfirmarSolicitudView | `django-api/apps/common/solicitudes.py:127` | AllowAny |  |  |
+| `/api/v1/publico/solicitudes/` | POST | SolicitudPublicaView | `django-api/apps/common/solicitudes.py:90` | AllowAny |  |  |
 | `/api/v1/ready/` | GET | ReadyView | `django-api/apps/common/health.py:55` | AllowAny |  |  |
 | `/api/v1/reports/appointments-summary/` | GET | AppointmentsSummaryReportView | `django-api/apps/billing/views.py:525` | TieneFuncion(reportes) |  |  |
 | `/api/v1/reports/delinquency/` | GET | DelinquencyReportView | `django-api/apps/billing/views.py:342` | TieneFuncion(cobros) |  |  |
@@ -209,7 +210,7 @@ JSON en snake_case, autenticación `Authorization: Bearer <access>`, listas pagi
 | `/api/v1/treatment-plans/<uuid:pk>/generate-budget/` | POST | PlanToBudgetView | `django-api/apps/clinical/sprint22_views.py:143` | rol: admin/reception/doctor |  |  |
 | `/api/v1/treatment-plans/<uuid:pk>/items/` | POST | TreatmentPlanItemCreateView | `django-api/apps/clinical/views.py:135` | rol: admin/doctor/auxiliary | TreatmentPlanItemSerializer |  |
 | `/api/v1/users/` | GET POST | UserListCreateView | `django-api/apps/accounts/views.py:348` | rol: admin | UserSerializer | sí |
-| `/api/v1/users/<uuid:pk>/` | GET PUT PATCH | UserDetailView | `django-api/apps/accounts/views.py:434` | rol: admin | UserSerializer |  |
-| `/api/v1/users/<uuid:pk>/invitar/` | POST | InvitarUsuarioView | `django-api/apps/accounts/views.py:398` | rol: admin |  |  |
-| `/api/v1/users/funciones/` | GET | CatalogoFuncionesView | `django-api/apps/accounts/views.py:522` | rol: admin |  |  |
+| `/api/v1/users/<uuid:pk>/` | GET PUT PATCH | UserDetailView | `django-api/apps/accounts/views.py:439` | rol: admin | UserSerializer |  |
+| `/api/v1/users/<uuid:pk>/invitar/` | POST | InvitarUsuarioView | `django-api/apps/accounts/views.py:403` | rol: admin |  |  |
+| `/api/v1/users/funciones/` | GET | CatalogoFuncionesView | `django-api/apps/accounts/views.py:527` | rol: admin |  |  |
 | `/api/v1/whatsapp-optin/<uuid:pk>/revoke/` | POST | WhatsAppOptInRevokeView | `django-api/apps/whatsapp/views.py:66` | rol: admin/reception |  |  |

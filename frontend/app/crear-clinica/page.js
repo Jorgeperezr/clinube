@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * Crear una clínica (odontología) o dejar una solicitud (medicina y
- * psicología) desde la página pública.
+ * Solicitar una cuenta desde la página pública: odontología, medicina o
+ * psicología, como consultorio de una persona o clínica con equipo.
  *
- * Odontología en dos pasos: los datos, y luego el código que llega al
- * correo junto con la contraseña. Sin el código no se crea nada.
+ * Desde aquí no se crea nada. La solicitud llega a Plataforma →
+ * Solicitudes y, si se aprueba, la persona recibe en su correo un enlace
+ * para elegir su contraseña. Odontología se responde a la brevedad;
+ * medicina y psicología, en un plazo de hasta 12 horas (lo dice la API).
  */
 
 import { Suspense, useEffect, useState } from "react";
@@ -16,23 +18,28 @@ import CampoTelefono from "../../lib/CampoTelefono";
 import { LogoClinube, MARCA } from "../../lib/marca";
 import { useUrlApp } from "../../lib/sitio";
 import { initColorMode } from "../../lib/theme";
-import CampoClave from "../../lib/CampoClave";
 
 const TIPOS = [
   ["odontologia", "Odontología"],
   ["medicina", "Medicina"],
   ["psicologia", "Psicología"],
 ];
+// Lo mismo que SolicitudClinica.PLAZO_HORAS; la respuesta de la API manda.
+const PLAZO_HORAS = { medicina: 12, psicologia: 12 };
 const MODALIDADES = [
   ["consultorio", "Solo yo", "Atiendo a mis pacientes y llevo todo con mi cuenta."],
   ["clinica", "Clínica con equipo", "Hay recepción u otros profesionales."],
 ];
 const VACIO = { modalidad: "consultorio", clinica: "", ciudad: "", ruc: "", nombre: "", correo: "", telefono: "", mensaje: "", sitio_web: "" };
 
-async function publico(ruta, cuerpo) {
+function textoPlazo(horas) {
+  return horas ? `Respuesta en un plazo de hasta ${horas} horas` : "Respuesta a la brevedad";
+}
+
+async function enviarSolicitud(cuerpo) {
   let resp;
   try {
-    resp = await fetch(`${apiBase()}/api/v1/publico/${ruta}`, {
+    resp = await fetch(`${apiBase()}/api/v1/publico/solicitudes/`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
     });
   } catch {
@@ -58,10 +65,7 @@ function CrearClinica() {
   const entrar = useUrlApp("/login/");
   const [tipo, setTipo] = useState("odontologia");
   const [form, setForm] = useState(VACIO);
-  const [paso, setPaso] = useState("datos");          // datos | codigo | creada | enviada
-  const [solicitud, setSolicitud] = useState(null);
-  const [codigo, setCodigo] = useState("");
-  const [clave, setClave] = useState({ una: "", otra: "" });
+  const [enviada, setEnviada] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
 
@@ -72,31 +76,16 @@ function CrearClinica() {
     if (MODALIDADES.some(([k]) => k === m)) setForm((f) => ({ ...f, modalidad: m }));
   }, [params]);
 
-  const odonto = tipo === "odontologia";
-  const solo = odonto && form.modalidad === "consultorio";
+  const solo = form.modalidad === "consultorio";
+  const servicio = TIPOS.find(([k]) => k === tipo)?.[1].toLowerCase();
   const cambia = (campo) => (e) => setForm({ ...form, [campo]: e.target.value });
 
-  async function enviarDatos(e) {
+  async function enviar(e) {
     e.preventDefault();
     setError(""); setEnviando(true);
     try {
-      const r = await publico("solicitudes/", {
-        ...form, tipo, mensaje: odonto ? "" : form.mensaje, modalidad: odonto ? form.modalidad : "clinica",
-      });
-      setSolicitud(r);
-      setPaso(odonto ? "codigo" : "enviada");
-    } catch (err) { setError(err.message); }
-    finally { setEnviando(false); }
-  }
-
-  async function confirmar(e) {
-    e.preventDefault();
-    setError("");
-    if (clave.una !== clave.otra) { setError("Las dos contraseñas no coinciden."); return; }
-    setEnviando(true);
-    try {
-      await publico(`solicitudes/${solicitud.id}/confirmar/`, { codigo: codigo.trim(), password: clave.una });
-      setPaso("creada");
+      const r = await enviarSolicitud({ ...form, tipo });
+      setEnviada({ plazo: r.plazo_horas ?? PLAZO_HORAS[tipo] ?? null });
     } catch (err) { setError(err.message); }
     finally { setEnviando(false); }
   }
@@ -110,39 +99,35 @@ function CrearClinica() {
       </header>
 
       <main className="web-formulario">
-        {paso === "datos" && (
-          <form onSubmit={enviarDatos} className="web-caja">
-            <h1>{!odonto ? "Solicita acceso" : solo ? "Crea tu consultorio" : "Crea tu clínica"}</h1>
+        {!enviada && (
+          <form onSubmit={enviar} className="web-caja">
+            <h1>{solo ? "Solicita tu consultorio" : "Solicita tu clínica"}</h1>
             <p className="web-suave">
-              {odonto
-                ? "Te enviaremos un código al correo para confirmar. Después eliges tu contraseña y entras."
-                : "Clinube aún no está abierto para esta especialidad. Déjanos tus datos y te escribimos cuando lo esté."}
+              Revisamos cada solicitud antes de abrir la cuenta. Cuando la aprobemos, te llegará un correo con
+              el enlace para elegir tu contraseña.
             </p>
 
-            <div className="web-segmentado" role="radiogroup" aria-label="Servicio">
+            <div className="web-segmentado" role="radiogroup" aria-label="Especialidad">
               {TIPOS.map(([k, t]) => (
                 <button key={k} type="button" role="radio" aria-checked={tipo === k} onClick={() => setTipo(k)}>{t}</button>
               ))}
             </div>
+            <span className="web-plazo">{textoPlazo(PLAZO_HORAS[tipo])}</span>
 
-            {odonto && (
-              <div className="web-segmentado web-segmentado--dos" role="radiogroup" aria-label="Quién va a usarlo">
-                {MODALIDADES.map(([k, t, ayuda]) => (
-                  <button key={k} type="button" role="radio" aria-checked={form.modalidad === k} title={ayuda}
-                          onClick={() => setForm({ ...form, modalidad: k })}>{t}</button>
-                ))}
-              </div>
-            )}
-            {odonto && (
-              <p className="web-nota" style={{ marginTop: -4 }}>
-                {MODALIDADES.find(([k]) => k === form.modalidad)?.[2]}
-                {solo && " Si más adelante sumas a alguien, lo das de alta sin cambiar de cuenta."}
-              </p>
-            )}
+            <div className="web-segmentado web-segmentado--dos" role="radiogroup" aria-label="Quién va a usarlo">
+              {MODALIDADES.map(([k, t, ayuda]) => (
+                <button key={k} type="button" role="radio" aria-checked={form.modalidad === k} title={ayuda}
+                        onClick={() => setForm({ ...form, modalidad: k })}>{t}</button>
+              ))}
+            </div>
+            <p className="web-nota" style={{ marginTop: -4 }}>
+              {MODALIDADES.find(([k]) => k === form.modalidad)?.[2]}
+              {solo && " Si más adelante sumas a alguien, lo das de alta sin cambiar de cuenta."}
+            </p>
 
             {error && <div className="error-box">{error}</div>}
             <div className="web-campos">
-              <Campo etiqueta={!odonto ? "Nombre de la clínica o consulta" : solo ? "Nombre del consultorio" : "Nombre de la clínica"} completo>
+              <Campo etiqueta={solo ? "Nombre del consultorio" : "Nombre de la clínica"} completo>
                 <input required minLength={3} maxLength={150} value={form.clinica} onChange={cambia("clinica")} autoComplete="organization" />
               </Campo>
               <Campo etiqueta="Ciudad">
@@ -160,70 +145,36 @@ function CrearClinica() {
               <Campo etiqueta="Correo" completo>
                 <input type="email" required value={form.correo} onChange={cambia("correo")} autoComplete="email" />
               </Campo>
-              {!odonto && (
-                <Campo etiqueta="¿Algo que debamos saber? (opcional)" completo>
-                  <textarea rows={3} maxLength={1000} value={form.mensaje} onChange={cambia("mensaje")} />
-                </Campo>
-              )}
+              <Campo etiqueta="¿Algo que debamos saber? (opcional)" completo>
+                <textarea rows={3} maxLength={1000} value={form.mensaje} onChange={cambia("mensaje")}
+                          placeholder={tipo === "odontologia" ? "Cuántos profesionales son, si vienen de otro sistema…"
+                            : "Qué tipo de consulta llevas y cuántos profesionales son…"} />
+              </Campo>
               {/* Para robots: una persona no lo ve. */}
               <input className="web-trampa" tabIndex={-1} autoComplete="off" aria-hidden="true"
                      value={form.sitio_web} onChange={cambia("sitio_web")} />
             </div>
             <button className="web-boton web-boton--ancho" disabled={enviando}>
-              {enviando ? "Enviando…" : odonto ? "Enviar código" : "Enviar solicitud"}
+              {enviando ? "Enviando…" : "Enviar solicitud"}
             </button>
-            {odonto && (
-              <p className="web-nota">Al entrar por primera vez te pediremos aceptar las condiciones de uso y el tratamiento de datos.</p>
-            )}
+            <p className="web-nota">Al entrar por primera vez te pediremos aceptar las condiciones de uso y el tratamiento de datos.</p>
           </form>
         )}
 
-        {paso === "codigo" && (
-          <form onSubmit={confirmar} className="web-caja">
-            <h1>Revisa tu correo</h1>
-            <p className="web-suave">
-              Enviamos un código de 6 cifras a <strong>{form.correo}</strong>. Vale {solicitud?.minutos || 30} minutos.
-              Si no lo ves, mira en «Spam» o «Promociones».
-            </p>
-            {error && <div className="error-box">{error}</div>}
-            <div className="web-campos">
-              <Campo etiqueta="Código" completo>
-                <input required inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6}
-                       className="web-codigo" value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))} />
-              </Campo>
-              <Campo etiqueta="Elige tu contraseña">
-                <CampoClave required minLength={10} autoComplete="new-password"
-                       value={clave.una} onChange={(e) => setClave({ ...clave, una: e.target.value })} />
-              </Campo>
-              <Campo etiqueta="Repítela">
-                <CampoClave required minLength={10} autoComplete="new-password"
-                       value={clave.otra} onChange={(e) => setClave({ ...clave, otra: e.target.value })} />
-              </Campo>
-            </div>
-            <button className="web-boton web-boton--ancho" disabled={enviando}>
-              {enviando ? "Creando…" : solo ? "Crear mi consultorio" : "Crear mi clínica"}
-            </button>
-            <button type="button" className="web-enlace web-volver" onClick={() => { setPaso("datos"); setError(""); }}>
-              ← Corregir los datos
-            </button>
-          </form>
-        )}
-
-        {paso === "creada" && (
-          <div className="web-caja web-centro">
-            <div className="web-ok" aria-hidden="true">✓</div>
-            <h1>{form.clinica} ya está lista</h1>
-            <p className="web-suave">Entra con <strong>{form.correo}</strong> y tu contraseña. Te enviamos un correo con los primeros pasos.</p>
-            <a className="web-boton web-boton--ancho" href={entrar}>Entrar a Clinube</a>
-            <a className="web-enlace" href="/descargar/">Instalar la app en este dispositivo →</a>
-          </div>
-        )}
-
-        {paso === "enviada" && (
+        {enviada && (
           <div className="web-caja web-centro">
             <div className="web-ok" aria-hidden="true">✓</div>
             <h1>Solicitud recibida</h1>
-            <p className="web-suave">Te escribiremos a <strong>{form.correo}</strong> en cuanto podamos abrir tu consulta.</p>
+            <p className="web-suave">
+              Anotamos <strong>{form.clinica}</strong> para {servicio}. Te escribiremos a <strong>{form.correo}</strong>.
+            </p>
+            <span className="web-plazo">{textoPlazo(enviada.plazo)}</span>
+            <ol className="web-pasos">
+              <li className="web-paso--hecho"><strong>Enviaste la solicitud</strong>Te mandamos una copia al correo.</li>
+              <li><strong>La revisamos</strong>Comprobamos los datos de {solo ? "tu consultorio" : "tu clínica"} antes de abrir la cuenta.</li>
+              <li><strong>Eliges tu contraseña</strong>Si la aprobamos, te llega un enlace al correo. Con él entras por primera vez.</li>
+            </ol>
+            <p className="web-nota">Si no ves nuestro correo, mira en «Spam» o «Promociones».</p>
             <a className="web-boton web-boton--claro web-boton--ancho" href="/">Volver al inicio</a>
           </div>
         )}

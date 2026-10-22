@@ -10,8 +10,8 @@ La odontología es la primera especialidad (odontograma, periodontograma,
 formulario MSP HCU-033/2021). Medicina y psicología se abren por
 solicitud; por eso el nombre no dice «dental».
 
-- **Página pública:** [clinube.com](https://clinube.com): servicios, alta
-  de clínicas y consultorios, y descargas.
+- **Página pública:** [clinube.com](https://clinube.com): servicios,
+  solicitudes de cuenta para clínicas y consultorios, y descargas.
 - **Panel:** [app.clinube.com](https://app.clinube.com), en el navegador
   o instalado como app.
 - **App del paciente:** Flutter, en `movil/`.
@@ -30,7 +30,8 @@ solicitud; por eso el nombre no dice «dental».
 | **Cuentas** | Entrada con correo o Google (con botón para ver la contraseña al escribirla), invitación al personal con la marca de la clínica, funciones a medida de cada persona. |
 | **Consultorio o clínica** | Un consultorio es la cuenta de una sola persona que administra y atiende. En una clínica, cualquier administrador puede marcarse «Atiende pacientes». |
 | **Copias de seguridad** | Cifradas, descargables por la administración de la clínica y verificadas restaurándolas. |
-| **Plataforma** | Alta de clínicas, solicitudes que llegan de la página pública, funciones contratadas por clínica y una clínica de pruebas para estrenar lo nuevo. |
+| **Solicitudes de cuenta** | Desde la página pública nadie crea una clínica: deja una solicitud y la plataforma la aprueba o la descarta. Odontología se responde a la brevedad; medicina y psicología, en un plazo de hasta 12 horas, y Plataforma muestra cuánto queda. Al aprobarla se crea la clínica y su administrador recibe un enlace de un solo uso para elegir su contraseña. |
+| **Plataforma** | Alta de clínicas, revisión de solicitudes, funciones contratadas por clínica y una clínica de pruebas para estrenar lo nuevo. |
 | **Buscadores e IA** | La portada se indexa en buscadores, pero los rastreadores de IA están excluidos (`robots.txt` y `X-Robots-Tag: noai`). El panel no se indexa en ningún sitio. El bloqueo de bots de Cloudflare se activa según DEPLOY.md. |
 
 Algunas funciones son **adicionales** y se activan por clínica desde
@@ -41,7 +42,7 @@ catálogo está en `django-api/apps/common/funcionalidades.py`).
 
 ```
 django-api/         Django 5.2 + DRF: la fuente de verdad de todo el dominio
-frontend/           Next.js 14: panel, página pública y alta de clínicas (export estático)
+frontend/           Next.js 14: panel, página pública y solicitudes de cuenta (export estático)
 movil/              Flutter: la app del paciente
 whatsapp-gateway/   FastAPI: envío de plantillas y webhook de WhatsApp Business
 nginx/              Proxy de producción: dominio raíz → portada, app. → panel
@@ -113,7 +114,7 @@ python manage.py test --settings=config.settings_test
 ```
 
 `config.settings_test` usa SQLite en memoria y tarda unos 20 segundos. Hoy
-son **783 pruebas**. El CI las pasa dos veces: la segunda con
+son **790 pruebas**. El CI las pasa dos veces: la segunda con
 `DJANGO_TIME_ZONE=Pacific/Kiritimati` (UTC+14), para que la fecha del
 servidor y la de la clínica no coincidan nunca. También corre con
 `DJANGO_DEBUG=True`.

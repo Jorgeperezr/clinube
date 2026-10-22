@@ -203,12 +203,13 @@ class SolicitudClinica(models.Model):
     """
     Lo que llega desde la página pública (clinube.com).
 
-    · Odontología: el alta es directa. Se manda un código al correo y,
-      al confirmarlo, se crea la clínica con su administrador
-      (estado «creada»). Sin el código no se crea nada: así una dirección
-      ajena no puede abrir una clínica a nombre de otro.
-    · Medicina y psicología: aún no se pueden crear. Queda la solicitud
-      («pendiente») para que el Super Administrador la atienda.
+    Nada se crea solo: toda solicitud queda «pendiente» hasta que el Super
+    Administrador la revisa en Plataforma → Solicitudes. Al aprobarla se
+    crea la clínica con su administrador, que recibe un enlace para elegir
+    su contraseña («creada»). Si no se aprueba, «descartada».
+
+    Odontología se responde a la brevedad; medicina y psicología, en un
+    plazo de hasta 12 horas (PLAZO_HORAS).
     """
 
     class Tipo(models.TextChoices):
@@ -217,7 +218,6 @@ class SolicitudClinica(models.Model):
         PSICOLOGIA = "psicologia", "Psicología"
 
     class Estado(models.TextChoices):
-        VERIFICANDO = "verificando", "Esperando el código del correo"
         PENDIENTE = "pendiente", "Pendiente"
         CREADA = "creada", "Clínica creada"
         ATENDIDA = "atendida", "Atendida"
@@ -235,16 +235,25 @@ class SolicitudClinica(models.Model):
     correo = models.EmailField()
     telefono = models.CharField(max_length=20, blank=True)
     mensaje = models.TextField(blank=True)
-    # Odontología: un consultorio de una sola persona o una clínica con
-    # equipo (Tenant.modalidad).
+    # Un consultorio de una sola persona o una clínica con equipo
+    # (Tenant.modalidad).
     modalidad = models.CharField(max_length=12, choices=Tenant.MODALIDADES, default="clinica")
-    # Solo el resumen del código, nunca el código.
-    codigo_hash = models.CharField(max_length=128, blank=True)
-    codigo_vence = models.DateTimeField(null=True, blank=True)
-    intentos = models.PositiveSmallIntegerField(default=0)
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     ip = models.GenericIPAddressField(null=True, blank=True)
     nota = models.CharField("Nota interna", max_length=300, blank=True)
+
+    # Horas en las que se promete responder; sin plazo, «a la brevedad».
+    PLAZO_HORAS = {"medicina": 12, "psicologia": 12}
+
+    @property
+    def plazo_horas(self):
+        return self.PLAZO_HORAS.get(self.tipo)
+
+    @property
+    def responder_antes(self):
+        from datetime import timedelta
+
+        return self.created_at + timedelta(hours=self.plazo_horas) if self.plazo_horas and self.created_at else None
 
     class Meta:
         verbose_name = "Solicitud de clínica"
